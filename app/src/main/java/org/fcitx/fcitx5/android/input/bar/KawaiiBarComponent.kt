@@ -5,6 +5,9 @@
 package org.fcitx.fcitx5.android.input.bar
 
 import android.graphics.Color
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Size
 import android.view.KeyEvent
@@ -13,7 +16,7 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InlineSuggestion
 import android.view.inputmethod.InlineSuggestionsResponse
-import android.view.inputmethod.InputMethodSubtype
+import android.widget.Toast
 import android.widget.FrameLayout
 import android.widget.ViewAnimator
 import android.widget.inline.InlineContentView
@@ -67,7 +70,8 @@ import org.fcitx.fcitx5.android.input.status.StatusAreaWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.AppUtil
-import org.fcitx.fcitx5.android.utils.InputMethodUtil
+import org.fcitx.fcitx5.android.input.voice.IflytekAsrClient
+import org.fcitx.fcitx5.android.input.voice.VoicePermissionActivity
 import org.mechdancer.dependency.DynamicScope
 import org.mechdancer.dependency.manager.must
 import splitties.bitflags.hasFlag
@@ -77,6 +81,7 @@ import splitties.views.dsl.core.add
 import splitties.views.dsl.core.lParams
 import splitties.views.dsl.core.matchParent
 import java.util.concurrent.Executor
+import timber.log.Timber
 import kotlin.coroutines.resume
 import kotlin.math.PI
 import kotlin.math.abs
@@ -103,10 +108,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private val expandedCandidateStyle by prefs.keyboard.expandedCandidateStyle
     private val expandToolbarByDefault by prefs.keyboard.expandToolbarByDefault
     private val toolbarNumRowOnPassword by prefs.keyboard.toolbarNumRowOnPassword
-    private val showVoiceInputButton by prefs.keyboard.showVoiceInputButton
-    private val preferredVoiceInput by prefs.keyboard.preferredVoiceInput
 
     private var clipboardTimeoutJob: Job? = null
+    private var voiceCommitJob: Job? = null
 
     private var isClipboardFresh: Boolean = false
     private var isInlineSuggestionPresent: Boolean = false
@@ -254,11 +258,75 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         } else false
     }
 
-    private var voiceInputSubtype: Pair<String, InputMethodSubtype>? = null
+    private val asrClient by lazy {
+        IflytekAsrClient(
+            context,
+            onStateChanged = { state ->
+                idleUi.setVoiceInputActive(state != IflytekAsrClient.State.Idle)
+                when (state) {
+                    IflytekAsrClient.State.Starting ->
+                        idleUi.showVoiceTranscript(context.getString(R.string.voice_input_connecting))
+                    IflytekAsrClient.State.Listening ->
+                        idleUi.showVoiceTranscript(context.getString(R.string.voice_input_listening))
+                    IflytekAsrClient.State.Finishing ->
+                        idleUi.showVoiceTranscript(context.getString(R.string.voice_input_calibrating))
+                    IflytekAsrClient.State.Idle -> idleUi.hideVoiceTranscript()
+                }
+            },
+            onFinal = { text ->
+                idleUi.showVoiceTranscript(text)
+                voiceCommitJob?.cancel()
+                voiceCommitJob = service.lifecycleScope.launch {
+                    delay(VOICE_FINAL_PREVIEW_MS)
+                    service.commitText(text)
+                    idleUi.hideVoiceTranscript()
+                }
+            },
+            onError = { message ->
+                idleUi.hideVoiceTranscript()
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.voice_input_error, message),
+                    Toast.LENGTH_SHORT
+                ).show()
+            },
+            onPartial = idleUi::showVoiceTranscript
+        )
+    }
 
-    private val switchToVoiceInputCallback = View.OnClickListener {
-        val (id, subtype) = voiceInputSubtype ?: return@OnClickListener
-        InputMethodUtil.switchInputMethod(service, id, subtype)
+    private var voicePressActive = false
+
+    private val voiceInputGestureCallback = CustomGestureView.OnGestureListener { _, event ->
+        Timber.i(
+            "iFlytek ASR gesture=${event.type} active=$voicePressActive state=${asrClient.state}"
+        )
+        when (event.type) {
+            CustomGestureView.GestureType.Down -> {
+                if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    context.startActivity(
+                        Intent(context, VoicePermissionActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                } else {
+                    voiceCommitJob?.cancel()
+                    voiceCommitJob = null
+                    asrClient.cancel()
+                    idleUi.hideVoiceTranscript()
+                    voicePressActive = true
+                    asrClient.start()
+                }
+            }
+            CustomGestureView.GestureType.Up -> {
+                if (voicePressActive) {
+                    voicePressActive = false
+                    asrClient.stop()
+                }
+            }
+            CustomGestureView.GestureType.Move -> Unit
+        }
+        true
     }
 
     private val idleUi: IdleUi by lazy {
@@ -441,13 +509,22 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             idleUi.inlineSuggestionsBar.clear()
         }
-        voiceInputSubtype = InputMethodUtil.findVoiceSubtype(preferredVoiceInput)
-        val shouldShowVoiceInput =
-            showVoiceInputButton && voiceInputSubtype != null && !capFlags.has(CapabilityFlag.Password)
-        idleUi.setHideKeyboardIsVoiceInput(
-            shouldShowVoiceInput,
-            if (shouldShowVoiceInput) switchToVoiceInputCallback else hideKeyboardCallback
-        )
+        asrClient.cancel()
+        voiceCommitJob?.cancel()
+        voiceCommitJob = null
+        idleUi.hideVoiceTranscript()
+        voicePressActive = false
+        val shouldShowVoiceInput = !capFlags.has(CapabilityFlag.Password)
+        idleUi.setHideKeyboardIsVoiceInput(shouldShowVoiceInput)
+        idleUi.hideKeyboardButton.apply {
+            setOnClickListener(if (shouldShowVoiceInput) null else hideKeyboardCallback)
+            swipeEnabled = !shouldShowVoiceInput
+            onGestureListener = if (shouldShowVoiceInput) {
+                voiceInputGestureCallback
+            } else {
+                swipeHideKeyboardCallback
+            }
+        }
         evalIdleUiState()
     }
 
@@ -537,7 +614,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     }
 
     companion object {
-        const val HEIGHT = 40
+        const val HEIGHT = 48
+        const val VOICE_FINAL_PREVIEW_MS = 300L
     }
 
     fun onKeyboardLayoutSwitched(isNumber: Boolean) {
