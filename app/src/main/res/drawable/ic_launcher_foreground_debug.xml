@@ -14,7 +14,7 @@
         android:fillColor="#FFFFFF"
         android:pathData="M54,17m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0" />
 
-    <!-- K-E-M-I text in white on blue background -->
+    <!-- K-E-M-I text in blue on white -->
     <!-- K -->
     <path
         android:fillColor="#1E5BFF"
@@ -44,6 +44,5 @@
     <!-- Capsule -->
     <path
         android:fillColor="#1E5BFF"
-        android:pathData="M54,50m-5,0a5,5 0,1 1,10 0v8a5,5 0,1 1,-10 0z" />
-
+        android:pathData="M54,54m-5,0a5,5 0,1 1,10 0v8a5,5 0,1 1,-10 0z" />
 </vector>
