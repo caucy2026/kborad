@@ -3,40 +3,47 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
     <!-- Blue background -->
     <path
         android:fillColor="#1E5BFF"
         android:pathData="M0,0h108v108h-108z" />
-    <!-- White circle behind text -->
+
+    <!-- White circle behind text and mic -->
     <path
         android:fillColor="#FFFFFF"
         android:pathData="M54,17m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0" />
+
+    <!-- K-E-M-I text in white on blue background -->
     <!-- K -->
     <path
         android:fillColor="#1E5BFF"
-        android:pathData="M37.5,31.3l2.0,0l0,4.0l2.8,0l0,-4.0l2.0,0l0,8.6l-2.0,0l0,-3.4l-2.8,0l0,3.4l-2.0,0z" />
+        android:pathData="M37.5,27.5l2.2,0l0,3.8l3.0,0l0,-3.8l2.2,0l0,9.0l-2.2,0l0,-3.6l-3.0,0l0,3.6l-2.2,0z" />
     <!-- E -->
     <path
         android:fillColor="#1E5BFF"
-        android:pathData="M46.0,31.3l5.0,0l0,1.6l-3.0,0l0,1.5l2.8,0l0,1.5l-2.8,0l0,2.4l3.0,0l0,1.6l-5.0,0z" />
+        android:pathData="M46.5,27.5l5.2,0l0,1.7l-3.0,0l0,1.4l2.8,0l0,1.6l-2.8,0l0,2.6l3.0,0l0,1.7l-5.2,0z" />
     <!-- M -->
     <path
         android:fillColor="#1E5BFF"
-        android:pathData="M52.5,31.3l2.4,0l1.8,4.5l1.8,-4.5l2.4,0l0,8.6l-1.8,0l0,-5.6l-1.8,4.5l-1.2,0l-1.8,-4.5l0,5.6l-1.8,0z" />
+        android:pathData="M53.5,27.5l2.5,0l1.6,4.5l1.6,-4.5l2.5,0l0,9.0l-1.8,0l0,-5.5l-1.6,4.2l-1.4,0l-1.6,-4.2l0,5.5l-1.8,0z" />
     <!-- I -->
     <path
         android:fillColor="#1E5BFF"
-        android:pathData="M64.8,31.3l2.0,0l0,8.6l-2.0,0z" />
-    <!-- Microphone body -->
+        android:pathData="M66.0,27.5l2.2,0l0,9.0l-2.2,0z" />
+
+    <!-- Microphone in blue -->
+    <!-- Stand/base -->
     <path
         android:fillColor="#1E5BFF"
-        android:pathData="M54,54m-5,0a5,5 0,1 1,10 0v8a5,5 0,1 1,-10 0z" />
-    <!-- Microphone arc -->
+        android:pathData="M53,72h2v3h4v2h-10v-2h4z" />
+    <!-- Arc -->
     <path
         android:fillColor="#1E5BFF"
-        android:pathData="M62,62.5c0,4.4 -3.1,7.8 -8,8 -4.9,-0.2 -8,-3.6 -8,-8h2c0,3.4 2.3,6 6,6 3.7,0 6,-2.6 6,-6z" />
-    <!-- Microphone stand -->
+        android:pathData="M62,63.5c0,4.4 -3.1,7.8 -8,8 -4.9,-0.2 -8,-3.6 -8,-8h2c0,3.4 2.3,6 6,6 3.7,0 6,-2.6 6,-6z" />
+    <!-- Capsule -->
     <path
         android:fillColor="#1E5BFF"
-        android:pathData="M53,70.5h2v4h4v2h-10v-2h4z" />
+        android:pathData="M54,50m-5,0a5,5 0,1 1,10 0v8a5,5 0,1 1,-10 0z" />
+
 </vector>
