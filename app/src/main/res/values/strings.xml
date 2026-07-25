@@ -317,5 +317,11 @@
     <string name="hide_unsupported_emojis">Hide unsupported Emojis</string>
     <string name="key_border_stroke">Enable stroke for key border</string>
     <string name="preferred_voice_input">Preferred voice input</string>
+    <string name="start_voice_input">Start voice input</string>
+    <string name="stop_voice_input">Stop voice input</string>
+    <string name="voice_input_error">Voice input failed: %1$s</string>
+    <string name="voice_input_connecting">Connecting…</string>
+    <string name="voice_input_listening">Speak now…</string>
+    <string name="voice_input_calibrating">Finalizing…</string>
     <string name="edit_text_playground">EditText Playground</string>
 </resources>

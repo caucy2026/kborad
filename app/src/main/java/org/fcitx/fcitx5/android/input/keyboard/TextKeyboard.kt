@@ -10,12 +10,14 @@ import android.view.View
 import androidx.annotation.Keep
 import androidx.core.view.allViews
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.core.FcitxKeyMapping
 import org.fcitx.fcitx5.android.core.InputMethodEntry
 import org.fcitx.fcitx5.android.core.KeyState
 import org.fcitx.fcitx5.android.core.KeyStates
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.data.theme.Theme
+import org.fcitx.fcitx5.android.input.picker.PickerWindow
 import org.fcitx.fcitx5.android.input.popup.PopupAction
 import splitties.views.imageResource
 
@@ -32,46 +34,65 @@ class TextKeyboard(
 
         val Layout: List<List<KeyDef>> = listOf(
             listOf(
-                AlphabetKey("Q", "1"),
-                AlphabetKey("W", "2"),
-                AlphabetKey("E", "3"),
-                AlphabetKey("R", "4"),
-                AlphabetKey("T", "5"),
-                AlphabetKey("Y", "6"),
-                AlphabetKey("U", "7"),
-                AlphabetKey("I", "8"),
-                AlphabetKey("O", "9"),
-                AlphabetKey("P", "0")
+                TabKey(0.1f),
+                AlphabetKey("Q", "1", 0.08f),
+                AlphabetKey("W", "2", 0.08f),
+                AlphabetKey("E", "3", 0.08f),
+                AlphabetKey("R", "4", 0.08f),
+                AlphabetKey("T", "5", 0.08f),
+                AlphabetKey("Y", "6", 0.08f),
+                AlphabetKey("U", "7", 0.08f),
+                AlphabetKey("I", "8", 0.08f),
+                AlphabetKey("O", "9", 0.08f),
+                AlphabetKey("P", "0", 0.08f),
+                BackspaceKey(0.1f)
             ),
             listOf(
-                AlphabetKey("A", "@"),
-                AlphabetKey("S", "*"),
-                AlphabetKey("D", "+"),
-                AlphabetKey("F", "-"),
-                AlphabetKey("G", "="),
-                AlphabetKey("H", "/"),
-                AlphabetKey("J", "#"),
-                AlphabetKey("K", "("),
-                AlphabetKey("L", ")")
+                CapsLockKey(0.12f),
+                AlphabetKey("A", "@", 0.081f),
+                AlphabetKey("S", "*", 0.081f),
+                AlphabetKey("D", "+", 0.081f),
+                AlphabetKey("F", "-", 0.081f),
+                AlphabetKey("G", "=", 0.081f),
+                AlphabetKey("H", "/", 0.081f),
+                AlphabetKey("J", "#", 0.081f),
+                AlphabetKey("K", "(", 0.081f),
+                AlphabetKey("L", ")", 0.081f),
+                ReturnKey(0.151f)
             ),
             listOf(
-                CapsKey(),
-                AlphabetKey("Z", "'"),
-                AlphabetKey("X", ":"),
-                AlphabetKey("C", "\""),
-                AlphabetKey("V", "?"),
-                AlphabetKey("B", "!"),
-                AlphabetKey("N", "~"),
-                AlphabetKey("M", "\\"),
-                BackspaceKey()
+                CapsKey(0.16f),
+                AlphabetKey("Z", "'", 0.08f),
+                AlphabetKey("X", ":", 0.08f),
+                AlphabetKey("C", "\"", 0.08f),
+                AlphabetKey("V", "?", 0.08f),
+                AlphabetKey("B", "!", 0.08f),
+                AlphabetKey("N", "~", 0.08f),
+                AlphabetKey("M", "\\", 0.08f),
+                CommaKey(0.08f, KeyDef.Appearance.Variant.Normal),
+                SymbolKey(".", 0.08f),
+                SymbolKey("'", 0.08f),
+                SpacerKey(0.04f)
             ),
             listOf(
-                LayoutSwitchKey("?123", ""),
-                CommaKey(0.1f, KeyDef.Appearance.Variant.Alternative),
-                LanguageKey(),
+                LayoutSwitchKey("?123", PickerWindow.Key.Symbol.name, 0.08f),
+                ImagePickerSwitchKey(
+                    R.drawable.ic_baseline_tag_faces_24,
+                    PickerWindow.Key.Emoji,
+                    0.08f,
+                    KeyDef.Appearance.Variant.Alternative
+                ),
+                LanguageKey(0.08f),
                 SpaceKey(),
-                SymbolKey(".", 0.1f, KeyDef.Appearance.Variant.Alternative),
-                ReturnKey()
+                CursorKey(
+                    R.drawable.ic_baseline_keyboard_arrow_left_24,
+                    FcitxKeyMapping.FcitxKey_Left
+                ),
+                CursorKey(
+                    R.drawable.ic_baseline_keyboard_arrow_right_24,
+                    FcitxKeyMapping.FcitxKey_Right
+                ),
+                LayoutSwitchKey("?123", PickerWindow.Key.Symbol.name, 0.08f)
             )
         )
     }
@@ -166,7 +187,12 @@ class TextKeyboard(
 
     override fun onInputMethodUpdate(ime: InputMethodEntry) {
         space.mainText.text = buildString {
-            append(ime.displayName)
+            append(
+                if (
+                    ime.displayName.equals("Pinyin", ignoreCase = true) ||
+                    ime.uniqueName.equals("pinyin", ignoreCase = true)
+                ) "拼音" else ime.displayName
+            )
             ime.subMode.run { label.ifEmpty { name.ifEmpty { null } } }?.let { append(" ($it)") }
         }
         if (capsState != CapsState.None) {
@@ -251,7 +277,7 @@ class TextKeyboard(
             } else {
                 it.def as KeyDef.Appearance.Text
                 it.mainText.text = it.def.displayText.let { str ->
-                    if (str[0].run { isLetter() || isWhitespace() }) return@forEach
+                    if (str.isEmpty() || str[0].run { isLetter() || isWhitespace() }) return@forEach
                     transformPunctuation(str)
                 }
             }

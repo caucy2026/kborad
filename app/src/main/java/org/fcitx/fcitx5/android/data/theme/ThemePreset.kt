@@ -6,6 +6,32 @@ package org.fcitx.fcitx5.android.data.theme
 
 object ThemePreset {
 
+    val GboardLight = Theme.Builtin(
+        name = "GboardLight",
+        isDark = false,
+        backgroundColor = 0xffecf1f7,
+        barColor = 0xffecf1f7,
+        keyboardColor = 0xffecf1f7,
+        keyBackgroundColor = 0xfffffeff,
+        keyTextColor = 0xff212528,
+        candidateTextColor = 0xff212528,
+        candidateLabelColor = 0xff212528,
+        candidateCommentColor = 0xff5f6368,
+        altKeyBackgroundColor = 0xffd9eaf6,
+        altKeyTextColor = 0xff212528,
+        accentKeyBackgroundColor = 0xffd9eaf6,
+        accentKeyTextColor = 0xff212528,
+        keyPressHighlightColor = 0x1f212528,
+        keyShadowColor = 0x00000000,
+        popupBackgroundColor = 0xfffffeff,
+        popupTextColor = 0xff212528,
+        spaceBarColor = 0xfffffeff,
+        dividerColor = 0x33212528,
+        clipboardEntryColor = 0xfffffeff,
+        genericActiveBackgroundColor = 0xffd9eaf6,
+        genericActiveForegroundColor = 0xff212528
+    )
+
     val MaterialLight = Theme.Builtin(
         name = "MaterialLight",
         isDark = false,

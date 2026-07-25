@@ -5,6 +5,7 @@
 package org.fcitx.fcitx5.android.input.bar.ui
 
 import android.content.Context
+import android.text.TextUtils
 import android.transition.Slide
 import android.transition.TransitionManager
 import android.transition.TransitionSet
@@ -14,6 +15,7 @@ import android.view.animation.AlphaAnimation
 import android.view.animation.AnimationSet
 import android.view.animation.TranslateAnimation
 import android.widget.Space
+import android.widget.TextView
 import android.widget.ViewAnimator
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
@@ -77,6 +79,11 @@ class IdleUi(
 
     val hideKeyboardButton = ToolButton(ctx, R.drawable.ic_baseline_arrow_drop_down_24, theme)
 
+    private val voiceSeparator = View(ctx).apply {
+        setBackgroundColor((theme.altKeyTextColor and 0x00ffffff) or 0x33000000)
+        visibility = View.GONE
+    }
+
     val emptyBar = Space(ctx)
 
     val buttonsUi = ButtonsBarUi(ctx, theme)
@@ -88,6 +95,15 @@ class IdleUi(
     }
 
     val inlineSuggestionsBar = InlineSuggestionsUi(ctx)
+    private val voiceTranscript = TextView(ctx).apply {
+        ellipsize = TextUtils.TruncateAt.END
+        gravity = Gravity.CENTER
+        maxLines = 1
+        setPadding(dp(16), 0, dp(16), 0)
+        setTextColor(theme.keyTextColor)
+        textSize = 18f
+        visibility = View.GONE
+    }
 
     private val animator = ViewAnimator(ctx).apply {
         add(emptyBar, lParams(matchParent, matchParent))
@@ -122,10 +138,21 @@ class IdleUi(
         add(hideKeyboardButton, lParams(size, size) {
             endOfParent()
             centerVertically()
+            marginEnd = dp(32)
+        })
+        add(voiceSeparator, lParams(dp(1), dp(32)) {
+            before(hideKeyboardButton)
+            centerVertically()
+            marginEnd = dp(28)
         })
         add(animator, lParams(matchConstraints, matchParent) {
             after(menuButton)
-            before(hideKeyboardButton)
+            before(voiceSeparator)
+            centerVertically()
+        })
+        add(voiceTranscript, lParams(matchConstraints, matchParent) {
+            after(menuButton)
+            before(voiceSeparator)
             centerVertically()
         })
     }
@@ -171,15 +198,38 @@ class IdleUi(
         }
     }
 
-    fun setHideKeyboardIsVoiceInput(isVoiceInput: Boolean, callback: View.OnClickListener) {
+    fun setHideKeyboardIsVoiceInput(isVoiceInput: Boolean) {
+        voiceSeparator.visibility = if (isVoiceInput) View.VISIBLE else View.GONE
         if (isVoiceInput) {
             hideKeyboardButton.setIcon(R.drawable.ic_baseline_keyboard_voice_24)
-            hideKeyboardButton.contentDescription = ctx.getString(R.string.switch_to_voice_input)
+            hideKeyboardButton.useFullSizeIcon()
+            hideKeyboardButton.setCircleBackgroundColor(theme.keyBackgroundColor)
+            hideKeyboardButton.contentDescription = ctx.getString(R.string.start_voice_input)
         } else {
             hideKeyboardButton.setIcon(R.drawable.ic_baseline_arrow_drop_down_24)
+            hideKeyboardButton.setPressHighlightColor(theme.keyPressHighlightColor)
             hideKeyboardButton.contentDescription = ctx.getString(R.string.hide_keyboard)
         }
-        hideKeyboardButton.setOnClickListener(callback)
+    }
+
+    fun setVoiceInputActive(active: Boolean) {
+        hideKeyboardButton.setCircleBackgroundColor(
+            if (active) theme.genericActiveBackgroundColor else theme.keyBackgroundColor
+        )
+        hideKeyboardButton.contentDescription = ctx.getString(
+            if (active) R.string.stop_voice_input else R.string.start_voice_input
+        )
+    }
+    fun showVoiceTranscript(text: CharSequence) {
+        voiceTranscript.text = text
+        voiceTranscript.visibility = View.VISIBLE
+        animator.visibility = View.INVISIBLE
+    }
+
+    fun hideVoiceTranscript() {
+        voiceTranscript.text = ""
+        voiceTranscript.visibility = View.GONE
+        animator.visibility = View.VISIBLE
     }
 
     private fun clearAnimation() {

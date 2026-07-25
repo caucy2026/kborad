@@ -15,7 +15,10 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.text.SpannableString
+import android.text.Spanned
 import android.text.InputType
+import android.text.style.BackgroundColorSpan
 import android.util.LruCache
 import android.util.Size
 import android.view.KeyCharacterMap
@@ -126,6 +129,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     private val composing = CursorRange()
     private var composingText = FormattedText.Empty
+    private var voiceComposingStart = -1
 
     private fun resetComposingState() {
         composing.clear()
@@ -449,6 +453,52 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 commitText(text, 1)
                 setSelection(target, target)
             }
+        }
+    }
+
+    fun beginVoiceComposing() {
+        cancelVoiceComposing()
+        finishComposing()
+        voiceComposingStart = selection.latest.start
+        postFcitxJob { reset() }
+    }
+
+    fun updateVoiceComposing(text: String) {
+        if (text.isBlank() || voiceComposingStart < 0) return
+        val ic = currentInputConnection ?: return
+        val styledText = SpannableString(text).apply {
+            setSpan(
+                BackgroundColorSpan(highlightColor),
+                0,
+                length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        selection.predict(voiceComposingStart + text.length)
+        ic.setComposingText(styledText, 1)
+    }
+
+    fun commitVoiceComposing(text: String) {
+        if (voiceComposingStart < 0) {
+            commitText(text)
+            return
+        }
+        val ic = currentInputConnection ?: return
+        val start = voiceComposingStart
+        voiceComposingStart = -1
+        selection.predict(start + text.length)
+        ic.commitText(text, 1)
+    }
+
+    fun cancelVoiceComposing() {
+        if (voiceComposingStart < 0) return
+        val ic = currentInputConnection
+        val start = voiceComposingStart
+        voiceComposingStart = -1
+        selection.predict(start)
+        ic?.withBatchEdit {
+            setComposingText("", 1)
+            finishComposingText()
         }
     }
 

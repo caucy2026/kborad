@@ -6,6 +6,9 @@ package org.fcitx.fcitx5.android.input.bar.ui
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
+import android.view.Gravity
 import android.view.ViewPropertyAnimator
 import android.widget.ImageView
 import androidx.annotation.ColorInt
@@ -56,11 +59,26 @@ class ToolButton(context: Context) : CustomGestureView(context) {
         image.imageResource = icon
     }
 
+    fun useFullSizeIcon() {
+        image.setPadding(0, 0, 0, 0)
+        image.layoutParams = LayoutParams(dp(24), dp(24), Gravity.CENTER)
+    }
+
     fun setPressHighlightColor(@ColorInt color: Int) {
         background = if (disableAnimation) {
             circlePressHighlightDrawable(color)
         } else {
             borderlessRippleDrawable(color, dp(20))
         }
+    }
+
+    fun setCircleBackgroundColor(@ColorInt color: Int) {
+        background = InsetDrawable(
+            GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(color)
+            },
+            dp(6)
+        )
     }
 }

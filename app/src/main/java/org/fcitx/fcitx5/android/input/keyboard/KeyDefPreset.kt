@@ -26,7 +26,7 @@ class SymbolKey(
 ) : KeyDef(
     Appearance.Text(
         displayText = symbol,
-        textSize = 23f,
+        textSize = 28f,
         percentWidth = percentWidth,
         variant = variant
     ),
@@ -42,13 +42,15 @@ class SymbolKey(
 class AlphabetKey(
     val character: String,
     val punctuation: String,
+    percentWidth: Float = 0.1f,
     variant: Variant = Variant.Normal,
     popup: Array<Popup>? = null
 ) : KeyDef(
     Appearance.AltText(
         displayText = character,
         altText = punctuation,
-        textSize = 23f,
+        textSize = 28f,
+        percentWidth = percentWidth,
         variant = variant
     ),
     setOf(
@@ -93,17 +95,55 @@ class AlphabetDigitKey(
     )
 }
 
-class CapsKey : KeyDef(
+class CapsKey(percentWidth: Float = 0.15f) : KeyDef(
     Appearance.Image(
         src = R.drawable.ic_capslock_none,
         viewId = R.id.button_caps,
-        percentWidth = 0.15f,
+        percentWidth = percentWidth,
         variant = Variant.Alternative
     ),
     setOf(
         Behavior.Press(KeyAction.CapsAction(false)),
         Behavior.LongPress(KeyAction.CapsAction(true)),
         Behavior.DoubleTap(KeyAction.CapsAction(true))
+    )
+)
+
+class CapsLockKey(percentWidth: Float = 0.1f) : KeyDef(
+    Appearance.Image(
+        src = R.drawable.ic_capslock_lock,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative
+    ),
+    setOf(
+        Behavior.Press(KeyAction.CapsAction(true))
+    )
+)
+
+class TabKey(percentWidth: Float = 0.1f) : KeyDef(
+    Appearance.Image(
+        src = R.drawable.ic_baseline_keyboard_tab_24,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative
+    ),
+    setOf(
+        Behavior.Press(KeyAction.SymAction(KeySym(FcitxKeyMapping.FcitxKey_Tab)))
+    )
+)
+
+class CursorKey(
+    @DrawableRes icon: Int,
+    sym: Int,
+    percentWidth: Float = 0.08f
+) : KeyDef(
+    Appearance.Image(
+        src = icon,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative
+    ),
+    setOf(
+        Behavior.Press(KeyAction.SymAction(KeySym(sym))),
+        Behavior.Repeat(KeyAction.SymAction(KeySym(sym)))
     )
 )
 
@@ -192,9 +232,10 @@ class CommaKey(
     )
 )
 
-class LanguageKey : KeyDef(
+class LanguageKey(percentWidth: Float = 0.1f) : KeyDef(
     Appearance.Image(
         src = R.drawable.ic_baseline_language_24,
+        percentWidth = percentWidth,
         variant = Variant.AltForeground,
         viewId = R.id.button_lang
     ),
@@ -204,10 +245,21 @@ class LanguageKey : KeyDef(
     )
 )
 
+class SpacerKey(percentWidth: Float) : KeyDef(
+    Appearance.Text(
+        displayText = "",
+        textSize = 1f,
+        percentWidth = percentWidth,
+        border = Border.Off,
+        margin = false
+    ),
+    emptySet()
+)
+
 class SpaceKey : KeyDef(
     Appearance.Text(
         displayText = " ",
-        textSize = 13f,
+        textSize = 15f,
         percentWidth = 0f,
         border = Border.Special,
         viewId = R.id.button_space,

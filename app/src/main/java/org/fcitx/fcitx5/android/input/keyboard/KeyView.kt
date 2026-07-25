@@ -27,6 +27,7 @@ import androidx.core.view.updateLayoutParams
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
+import org.fcitx.fcitx5.android.data.theme.ThemePreset
 import org.fcitx.fcitx5.android.data.theme.ThemePrefs.PunctuationPosition
 import org.fcitx.fcitx5.android.input.AutoScaleTextView
 import org.fcitx.fcitx5.android.input.keyboard.KeyDef.Appearance.Border
@@ -63,17 +64,18 @@ abstract class KeyView(ctx: Context, val theme: Theme, val def: KeyDef.Appearanc
 
     init {
         val prefs = ThemeManager.prefs
-        bordered = prefs.keyBorder.getValue()
-        borderStroke = prefs.keyBorderStroke.getValue()
-        rippled = prefs.keyRippleEffect.getValue()
-        radius = dp(prefs.keyRadius.getValue().toFloat())
+        val gboardTheme = theme.name == ThemePreset.GboardLight.name
+        bordered = gboardTheme || prefs.keyBorder.getValue()
+        borderStroke = !gboardTheme && prefs.keyBorderStroke.getValue()
+        rippled = gboardTheme || prefs.keyRippleEffect.getValue()
+        radius = dp(if (gboardTheme) 12f else prefs.keyRadius.getValue().toFloat())
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         val hMarginPref =
             if (landscape) prefs.keyHorizontalMarginLandscape else prefs.keyHorizontalMargin
         val vMarginPref =
             if (landscape) prefs.keyVerticalMarginLandscape else prefs.keyVerticalMargin
-        hMargin = if (def.margin) dp(hMarginPref.getValue()) else 0
-        vMargin = if (def.margin) dp(vMarginPref.getValue()) else 0
+        hMargin = if (def.margin) dp(if (gboardTheme) 6 else hMarginPref.getValue()) else 0
+        vMargin = if (def.margin) dp(if (gboardTheme) 6 else vMarginPref.getValue()) else 0
     }
 
     private val cachedLocation = intArrayOf(0, 0)
@@ -285,7 +287,7 @@ class AltTextKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.AltText)
         isClickable = false
         isFocusable = false
         // TODO hardcoded alt text size
-        setTextSize(TypedValue.COMPLEX_UNIT_DIP, 10.666667f)
+        setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13f)
         setTypeface(typeface, Typeface.BOLD)
         text = def.altText
         textDirection = View.TEXT_DIRECTION_FIRST_STRONG_LTR

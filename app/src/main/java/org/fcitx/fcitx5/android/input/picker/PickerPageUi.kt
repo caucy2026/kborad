@@ -62,7 +62,7 @@ class PickerPageUi(
         val showBackspace: Boolean
     ) {
         // symbol: 10/10/8, backspace on bottom right
-        High(28, 10, 3, 19f, false, true),
+        High(28, 10, 3, 27f, false, true),
 
         // emoji: 7/7/6, backspace on bottom right
         Medium(20, 7, 3, 23.7f, false, true),

@@ -131,7 +131,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         val focusChangeResetKeyboard =
             switch(R.string.reset_keyboard_on_focus_change, "reset_keyboard_on_focus_change", true)
         val expandToolbarByDefault =
-            switch(R.string.expand_toolbar_by_default, "expand_toolbar_by_default", false)
+            switch(R.string.expand_toolbar_by_default, "expand_toolbar_by_default", true)
         val inlineSuggestions = switch(R.string.inline_suggestions, "inline_suggestions", true)
         val toolbarNumRowOnPassword =
             switch(R.string.toolbar_num_row_on_password, "toolbar_num_row_on_password", true)
@@ -190,7 +190,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 30,
                 R.string.landscape,
                 "keyboard_height_percent_landscape",
-                49,
+                44,
                 10,
                 90,
                 "%"
@@ -207,7 +207,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 R.string.keyboard_side_padding,
                 R.string.portrait,
                 "keyboard_side_padding",
-                0,
+                10,
                 R.string.landscape,
                 "keyboard_side_padding_landscape",
                 0,

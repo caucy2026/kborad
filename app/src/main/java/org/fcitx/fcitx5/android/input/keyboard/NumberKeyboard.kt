@@ -21,35 +21,39 @@ class NumberKeyboard(
     companion object {
         const val Name = "Number"
 
+        // Keep 123-page label sizes close to Gboard with balanced visual weight.
+        private const val DigitTextSize = 26f
+        private const val OperatorTextSize = 23f
+
         val Layout: List<List<KeyDef>> = listOf(
             listOf(
-                NumPadKey("+", 0xffab, 23f, 0.15f, KeyDef.Appearance.Variant.Alternative),
-                NumPadKey("1", 0xffb1, 30f, 0f),
-                NumPadKey("2", 0xffb2, 30f, 0f),
-                NumPadKey("3", 0xffb3, 30f, 0f),
-                NumPadKey("/", 0xffaf, 23f, 0.15f, KeyDef.Appearance.Variant.Alternative),
+                NumPadKey("+", 0xffab, OperatorTextSize, 0.15f, KeyDef.Appearance.Variant.Alternative),
+                NumPadKey("1", 0xffb1, DigitTextSize, 0f),
+                NumPadKey("2", 0xffb2, DigitTextSize, 0f),
+                NumPadKey("3", 0xffb3, DigitTextSize, 0f),
+                NumPadKey("/", 0xffaf, OperatorTextSize, 0.15f, KeyDef.Appearance.Variant.Alternative),
             ),
             listOf(
-                NumPadKey("-", 0xffad, 23f, 0.15f, KeyDef.Appearance.Variant.Alternative),
-                NumPadKey("4", 0xffb4, 30f, 0f),
-                NumPadKey("5", 0xffb5, 30f, 0f),
-                NumPadKey("6", 0xffb6, 30f, 0f),
+                NumPadKey("-", 0xffad, OperatorTextSize, 0.15f, KeyDef.Appearance.Variant.Alternative),
+                NumPadKey("4", 0xffb4, DigitTextSize, 0f),
+                NumPadKey("5", 0xffb5, DigitTextSize, 0f),
+                NumPadKey("6", 0xffb6, DigitTextSize, 0f),
                 MiniSpaceKey()
             ),
             listOf(
-                NumPadKey("*", 0xffaa, 23f, 0.15f, KeyDef.Appearance.Variant.Alternative),
-                NumPadKey("7", 0xffb7, 30f, 0f),
-                NumPadKey("8", 0xffb8, 30f, 0f),
-                NumPadKey("9", 0xffb9, 30f, 0f),
+                NumPadKey("*", 0xffaa, OperatorTextSize, 0.15f, KeyDef.Appearance.Variant.Alternative),
+                NumPadKey("7", 0xffb7, DigitTextSize, 0f),
+                NumPadKey("8", 0xffb8, DigitTextSize, 0f),
+                NumPadKey("9", 0xffb9, DigitTextSize, 0f),
                 BackspaceKey()
             ),
             listOf(
                 LayoutSwitchKey("ABC", TextKeyboard.Name),
-                NumPadKey(",", 0xffac, 23f, 0.1f, KeyDef.Appearance.Variant.Alternative),
+                NumPadKey(",", 0xffac, OperatorTextSize, 0.1f, KeyDef.Appearance.Variant.Alternative),
                 LayoutSwitchKey("!?#", PickerWindow.Key.Symbol.name, 0.13333f, KeyDef.Appearance.Variant.AltForeground),
-                NumPadKey("0", 0xffb0, 30f, 0.23334f),
-                NumPadKey("=", 0xffbd, 23f, 0.13333f, KeyDef.Appearance.Variant.AltForeground),
-                NumPadKey(".", 0xffae, 23f, 0.1f, KeyDef.Appearance.Variant.Alternative),
+                NumPadKey("0", 0xffb0, DigitTextSize, 0.23334f),
+                NumPadKey("=", 0xffbd, OperatorTextSize, 0.13333f, KeyDef.Appearance.Variant.AltForeground),
+                NumPadKey(".", 0xffae, OperatorTextSize, 0.1f, KeyDef.Appearance.Variant.Alternative),
                 ReturnKey()
             )
         )
