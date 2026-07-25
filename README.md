@@ -61,6 +61,15 @@ In case you want Fcitx5 on other platforms: [macOS](https://github.com/fcitx-con
 - Customizable keyboard layout
 - More input methods (via plugin)
 
+## KEMI Product Requirements
+
+This repository currently carries KEMI-specific requirements for local preview builds.
+
+- Launcher name: `KEMI语音输入法` (release and debug).
+- Debug launcher icon: blue background, `KEMI` text, microphone glyph below.
+- Do NOT rename to `KEMI远程桌面`, `Fcitx5`, or `小企鹅输入法`.
+- Local build entry: `./scripts/assemble-debug-local.sh`
+
 ## Screenshots
 
 |拼音, Material Light theme, key border enabled|自然码双拼, Pixel Dark theme, key border disabled|
