@@ -76,7 +76,7 @@
 | Build-tools 36.1.0 | ✅ | 已安装 |
 | Gradle 9.4.1 | ✅ | wrapper 自动下载 |
 | ECM 6.14.0 | ✅ | 手动编译安装到 /tmp/ecm-install |
-| gettext (msgmerge/msgfmt) | ✅ | 使用 dummy 脚本替代（Android 不需要翻译） |
+| gettext (msgmerge/msgfmt) | ✅ | 必须生成有效 GNU MO；项目内 `compile_mo.py` 可作为无系统 gettext 时的后备实现 |
 
 ### 5.2 网络环境
 
@@ -92,7 +92,7 @@
 | Gradle Plugin Portal 找不到 Kotlin 插件 | build-logic/settings.gradle.kts 添加 mavenCentral() 到 pluginManagement |
 | git clone 超时 | 配置 http.proxy + http.sslVerify=false |
 | 缺少 ECM | 下载源码，用 Android SDK cmake 编译安装 |
-| 缺少 gettext | 创建 dummy msgmerge/msgfmt 脚本 |
+| 缺少 gettext | 优先安装 GNU gettext；后备包装器必须将 PO 编译为二进制 MO，禁止直接复制改名 |
 | libime 缺少 kenlm 子模块 | `git submodule update --init --recursive` |
 | fcitx5 缺少 yoga 子模块 | 同上 |
 | Maven 依赖下载 TLS 错误 | gradle.properties 添加 JVM 代理参数 |
@@ -101,7 +101,7 @@
 
 ```bash
 cd /Users/newlink/kemi/kboard/fcitx5-android
-export ECM_DIR=/tmp/ecm-install/share/ECM/cmake
+export ECM_DIR=/tmp/ecm/install/share/ECM/cmake
 export PATH="/tmp/gettext-install/bin:$PATH"
 ./gradlew :app:assembleDebug
 ```
@@ -137,3 +137,56 @@ adb shell monkey -p org.fcitx.fcitx5.android.debug -c android.intent.category.LA
 - ✅ 已设为默认输入法
 - ✅ 应用正常运行（PID 8900, FcitxApplication 初始化成功）
 - ⏳ 待测试: 实际输入功能、拼音输入、双屏适配
+
+### 5.8 Fcitx 动态配置中文失效闭环（2026-07-26）
+
+#### 现象
+
+- Android 系统语言为 `zh-CN`。
+- 设置首页的 Android 字符串正常显示中文。
+- 点击“全局选项”后，`Hotkey`、`Behavior`、`Reset state on Focus In` 等 Fcitx 动态配置全部显示英文。
+
+#### 排除项
+
+```bash
+adb shell getprop persist.sys.locale
+adb logcat -d | grep -A5 "Starting fcitx with"
+```
+
+实测系统为 `zh-CN`，Fcitx 启动参数为 `locale=zh_CN:zh`，因此不是系统 Locale 或 Java 资源匹配问题。
+
+#### 根因
+
+旧的本地 `msgfmt` 占位脚本只执行 PO 文件复制，导致输出文件虽命名为 `.mo`，内容仍是文本：
+
+```bash
+xxd -l 16 app/src/main/assets/usr/share/locale/zh_CN/LC_MESSAGES/fcitx5.mo
+# 错误文件以 23 20 开头，即文本 "# "
+```
+
+Fcitx 的 libintl 无法加载这种伪 MO，于是回退到源码中的英文。Android 界面资源和 Fcitx gettext 是两条独立本地化链路。
+
+#### 修复
+
+- `scripts/compile_mo.py` 负责将 PO 编译为 little-endian GNU MO。
+- `scripts/setup-local-native-deps.sh` 的 `msgfmt` 包装器在普通 PO 编译场景调用该脚本。
+- 删除旧生成的 `.mo` 后重新执行 `:app:assembleDebug`，避免 Gradle/Ninja 复用错误产物。
+
+#### 判定标准
+
+```bash
+xxd -l 8 app/src/main/assets/usr/share/locale/zh_CN/LC_MESSAGES/fcitx5.mo
+# 正确 little-endian GNU MO 魔数：de12 0495
+
+python3 - <<'PY'
+import gettext
+path = "app/src/main/assets/usr/share/locale/zh_CN/LC_MESSAGES/fcitx5.mo"
+with open(path, "rb") as stream:
+	translations = gettext.GNUTranslations(stream)
+print(translations.gettext("Hotkey"))
+print(translations.gettext("Behavior"))
+PY
+# 期望：快捷键、行为
+```
+
+最终还需安装 APK、强制停止进程、重新启动，并用 UI dump 或截图确认动态配置页已显示中文。仅检查 `strings.xml` 或构建成功不足以证明修复有效。

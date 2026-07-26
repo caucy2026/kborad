@@ -17,6 +17,7 @@ object NameLocalization {
         "Wubi Pinyin" to "五笔拼音",
         "Dianbaoma" to "电报码",
         "Ziranma" to "自然码",
+        "English" to "英文",
         "Keyboard" to "键盘",
         "Keyboard-English" to "英文键盘",
     )

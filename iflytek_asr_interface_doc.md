@@ -380,4 +380,67 @@ cloud_vad_eos    = "3000"
 
 ---
 
+## 10. Android 真机稳定性与调试闭环（2026-07-26）
+
+### 10.1 必需 Manifest 项
+
+```xml
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+```
+
+- `VoicePermissionActivity` 必须在 application 中声明且 `exported=false`。
+- 使用 `ConnectivityManager.activeNetwork` 做断网预检时，缺少 `ACCESS_NETWORK_STATE` 会直接抛 `SecurityException`。
+- 即使 WebSocket 库已接入，缺少 `INTERNET` 仍会导致连接阶段失败。
+
+### 10.2 明文 HTTP/WS 策略
+
+本项目鉴权 URL 是 HTTP，听写 URL 是 WS。Android 默认明文策略可能阻止两者，application 必须绑定 `networkSecurityConfig`，并仅对实际使用的域名放行，避免全局开放明文流量。
+
+排查时重点搜索：
+
+```bash
+adb logcat -d | grep -iE "cleartext|CLEARTEXT|UnknownServiceException|SecurityException"
+```
+
+### 10.3 已遇到的故障签名
+
+| 现象 | 日志/根因 | 修复 |
+|------|-----------|------|
+| 点击语音立即崩溃 | `ActivityNotFoundException: VoicePermissionActivity` | 注册 Activity，核对 debug 包最终合并 Manifest |
+| 开始识别后无响应 | 缺少 `INTERNET` 或 HTTP/WS 被明文策略拦截 | 补权限并绑定域名白名单网络配置 |
+| 增加断网判断后崩溃 | `SecurityException`，缺少 `ACCESS_NETWORK_STATE` | 补权限；网络读取增加异常兜底 |
+| 短按误触发录音 | 触摸按下立即启动会话 | 增加按住阈值、移动取消和权限页节流 |
+
+### 10.4 用户提示与风险控制
+
+- 无网：直接提示“当前未联网，请连接网络后再使用语音输入”，不启动录音。
+- 未授权：中文说明麦克风权限用途，并限制权限页重复弹出频率。
+- 参数缺失、鉴权失败、网络策略拦截、麦克风不可用：映射成可读中文错误，不直接展示底层异常。
+- 活动态：识别期间语音图标使用系统绿色；会话结束或取消后恢复默认色。
+- Android 系统麦克风隐私指示器由系统控制，应用不能隐藏，只能通过延迟启动和取消策略减少误触发。
+
+### 10.5 推荐闭环命令
+
+```bash
+# 1. 构建并安装
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/<debug-apk>
+
+# 2. 清日志并彻底重启进程
+adb shell am force-stop org.fcitx.fcitx5.android.debug
+adb logcat -c
+adb shell am start -n \
+  org.fcitx.fcitx5.android.debug/org.fcitx.fcitx5.android.ui.main.MainActivity
+
+# 3. 操作一次语音输入后检查关键故障
+adb logcat -d | grep -iE \
+  "FATAL EXCEPTION|ActivityNotFoundException|SecurityException|cleartext|WebSocket|ASR"
+```
+
+判定完成不能只看 APK 构建成功。至少需要：安装成功、目标进程重启、实际触发 ASR、logcat 无旧崩溃签名、界面状态和中文提示符合预期。
+
+---
+
 *文档版本：2026-07，按讯飞 ASR 协议与通用 Android 集成经验整理，面向跨项目复用。*

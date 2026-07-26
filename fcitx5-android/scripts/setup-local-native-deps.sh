@@ -109,7 +109,8 @@ mkdir -p "$(dirname "$out")"
 if [ -n "$template" ] && [ -f "$template" ]; then
   cp "$template" "$out"
 elif [ -n "$input" ] && [ -f "$input" ]; then
-  cp "$input" "$out"
+  root_dir=$(CDPATH= cd -- "$(dirname "$0")/../../.." && pwd)
+  python3 "$root_dir/scripts/compile_mo.py" "$input" "$out"
 else
   : > "$out"
 fi
