@@ -1,0 +1,48 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- MIC input symbol (top) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M54,24.4c-2.1,0 -3.9,1.8 -3.9,3.9v6.6c0,2.1 1.8,3.9 3.9,3.9 2.1,0 3.9,-1.8 3.9,-3.9v-6.6c0,-2.1 -1.8,-3.9 -3.9,-3.9z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M62.3,36.8c0,3.8 -3,7 -8.3,7 -5.3,0 -8.3,-3.2 -8.3,-7h2.5c0,2.8 2.2,5.1 5.8,5.1 3.6,0 5.8,-2.3 5.8,-5.1z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M53,44.8h2v2.9h4.8v2.3H48.2v-2.3H53z" />
+
+    <!-- Keyboard symbol (bottom) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M24,61c0,-3 2.2,-5.2 5.2,-5.2h49.6c3,0 5.2,2.2 5.2,5.2v16.8c0,3 -2.2,5.2 -5.2,5.2H29.2c-3,0 -5.2,-2.2 -5.2,-5.2z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,63h8v3.5h-8z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,63h8v3.5h-8z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M56,63h8v3.5h-8z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M68,63h8v3.5h-8z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,68.5h8v3.5h-8z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,68.5h8v3.5h-8z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M56,68.5h8v3.5h-8z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M68,68.5h8v3.5h-8z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,74h32v3.5H38z" />
+</vector>

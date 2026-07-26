@@ -1,0 +1,491 @@
+/*
+ * SPDX-FileCopyrightText: 2016-2016 CSSlayer <wengxt@gmail.com>
+ *
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ *
+ */
+#ifndef _FCITX_CANDIDATELIST_H_
+#define _FCITX_CANDIDATELIST_H_
+
+#include <cstddef>
+#include <functional>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+#include <fcitx-utils/key.h>
+#include <fcitx-utils/macros.h>
+#include <fcitx/candidateaction.h>
+#include <fcitx/fcitxcore_export.h>
+#include <fcitx/text.h>
+#include <span>
+
+namespace fcitx {
+
+class InputContext;
+class PageableCandidateList;
+class BulkCandidateList;
+class ModifiableCandidateList;
+class CursorMovableCandidateList;
+class CursorModifiableCandidateList;
+class BulkCursorCandidateList;
+class ActionableCandidateList;
+class TabbedCandidateList;
+
+class CandidateListPrivate;
+
+enum class CandidateLayoutHint { NotSet, Vertical, Horizontal };
+
+class CandidateWordPrivate;
+
+/// Base class of candidate word.
+class FCITXCORE_EXPORT CandidateWord {
+public:
+    CandidateWord(Text text = {});
+    virtual ~CandidateWord();
+    /**
+     * Called when candidate is selected by user.
+     *
+     * @param inputContext the associated input context for the candidate.
+     */
+    virtual void select(InputContext *inputContext) const = 0;
+
+    const Text &text() const;
+    /**
+     * Whether the candidate is only a place holder.
+     *
+     * If candidate is a place holder, it will not be displayed by UI, but it
+     * will still take one place in the candidate list.
+     */
+    bool isPlaceHolder() const;
+    bool hasCustomLabel() const;
+    const Text &customLabel() const;
+    /**
+     * Return comment corresponding to the candidate.
+     *
+     * @return value of comment.
+     * @since 5.1.9
+     */
+    const Text &comment() const;
+    /**
+     * Return text with comment.
+     *
+     * @param separator separator between text and comment.
+     * @return value of comment.
+     * @since 5.1.9
+     */
+    Text textWithComment(std::string separator = " ") const;
+
+    /**
+     * Whether there should be no space between text and comment.
+     *
+     * This is optional and may not be used if UI doesn't support it.
+     * By default the value is true.
+     *
+     * This doesn't change the behavior of textWithComment. The caller of
+     * textWithComment should check this function and decide whether to add
+     * space or not.
+     *
+     * @return true if there should be space, false otherwise.
+     * @since 5.1.20
+     */
+    bool spaceBetweenComment() const;
+
+protected:
+    void setText(Text text);
+    void setPlaceHolder(bool placeHolder);
+    void resetCustomLabel();
+    void setCustomLabel(Text text);
+    void setComment(Text comment);
+    void setSpaceBetweenComment(bool space);
+
+private:
+    std::unique_ptr<CandidateWordPrivate> d_ptr;
+    FCITX_DECLARE_PRIVATE(CandidateWord);
+};
+
+// basic stuff
+class FCITXCORE_EXPORT CandidateList {
+public:
+    CandidateList();
+    virtual ~CandidateList();
+
+    virtual const Text &label(int idx) const = 0;
+    virtual const CandidateWord &candidate(int idx) const = 0;
+    virtual int size() const = 0;
+    virtual int cursorIndex() const = 0;
+    virtual CandidateLayoutHint layoutHint() const = 0;
+
+    bool empty() const;
+
+    PageableCandidateList *toPageable() const;
+    BulkCandidateList *toBulk() const;
+    ModifiableCandidateList *toModifiable() const;
+    CursorMovableCandidateList *toCursorMovable() const;
+    CursorModifiableCandidateList *toCursorModifiable() const;
+    BulkCursorCandidateList *toBulkCursor() const;
+    ActionableCandidateList *toActionable() const;
+
+    /**
+     * Cast to TabbedCandidateList if available.
+     *
+     * @return TabbedCandidateList pointer or nullptr.
+     * @since 5.1.20
+     */
+    TabbedCandidateList *toTabbed() const;
+
+protected:
+    void setPageable(PageableCandidateList *list);
+    void setBulk(BulkCandidateList *list);
+    void setModifiable(ModifiableCandidateList *list);
+    void setCursorMovable(CursorMovableCandidateList *list);
+    void setCursorModifiable(CursorModifiableCandidateList *list);
+    void setBulkCursor(BulkCursorCandidateList *list);
+    void setActionable(ActionableCandidateList *list);
+
+    /**
+     * Set the TabbedCandidateList implementation.
+     *
+     * @param list pointer to TabbedCandidateList.
+     * @since 5.1.20
+     */
+    void setTabbed(TabbedCandidateList *list);
+
+private:
+    std::unique_ptr<CandidateListPrivate> d_ptr;
+    FCITX_DECLARE_PRIVATE(CandidateList);
+};
+
+// useful for regular input method
+class FCITXCORE_EXPORT PageableCandidateList {
+public:
+    // Need for paging
+    virtual bool hasPrev() const = 0;
+    virtual bool hasNext() const = 0;
+    virtual void prev() = 0;
+    virtual void next() = 0;
+
+    virtual bool usedNextBefore() const = 0;
+
+    // Following are optional.
+    virtual int totalPages() const { return -1; }
+    virtual int currentPage() const { return -1; }
+    virtual void setPage(int /*unused*/) {}
+};
+
+class FCITXCORE_EXPORT CursorMovableCandidateList {
+public:
+    virtual void prevCandidate() = 0;
+    virtual void nextCandidate() = 0;
+};
+
+class FCITXCORE_EXPORT CursorModifiableCandidateList {
+public:
+    virtual void setCursorIndex(int index) = 0;
+};
+
+// useful for virtual keyboard
+class FCITXCORE_EXPORT BulkCandidateList {
+public:
+    /**
+     * If idx is out of range, it may raise exception. Catching the exception is
+     * useful to iterate over all candidate list for candidate list has no total
+     * size.
+     */
+    virtual const CandidateWord &candidateFromAll(int idx) const = 0;
+    /**
+     * It's possible for this function to return -1 if the implement has no
+     * clear number how many candidates are available.
+     */
+    virtual int totalSize() const = 0;
+};
+
+// useful for module other than input method
+class FCITXCORE_EXPORT ModifiableCandidateList : public BulkCandidateList {
+public:
+    // All index used there are global index
+    virtual void insert(int idx, std::unique_ptr<CandidateWord> word) = 0;
+    virtual void remove(int idx) = 0;
+    virtual void replace(int idx, std::unique_ptr<CandidateWord> word) = 0;
+    virtual void move(int from, int to) = 0;
+
+    void append(std::unique_ptr<CandidateWord> word) {
+        insert(totalSize(), std::move(word));
+    }
+
+    template <typename CandidateWordType, typename... Args>
+    void append(Args &&...args) {
+        append(
+            std::make_unique<CandidateWordType>(std::forward<Args>(args)...));
+    }
+};
+
+class FCITXCORE_EXPORT DisplayOnlyCandidateWord : public CandidateWord {
+public:
+    DisplayOnlyCandidateWord(Text text) : CandidateWord(std::move(text)) {}
+    DisplayOnlyCandidateWord(Text text, Text comment)
+        : CandidateWord(std::move(text)) {
+        setComment(std::move(comment));
+    }
+
+    void select(InputContext * /*inputContext*/) const override {}
+};
+
+class FCITXCORE_EXPORT BulkCursorCandidateList {
+public:
+    virtual int globalCursorIndex() const = 0;
+    virtual void setGlobalCursorIndex(int index) = 0;
+};
+
+/**
+ * Interface for trigger actions on candidates.
+ *
+ * @since 5.1.10
+ */
+class FCITXCORE_EXPORT ActionableCandidateList {
+public:
+    virtual ~ActionableCandidateList();
+
+    /**
+     * Check whether this candidate has action.
+     *
+     * This function should be fast and guarantee that candidateActions return a
+     * not empty vector.
+     */
+    virtual bool hasAction(const CandidateWord &candidate) const = 0;
+
+    /**
+     * Return a list of actions.
+     */
+    virtual std::vector<CandidateAction>
+    candidateActions(const CandidateWord &candidate) const = 0;
+
+    /**
+     * Trigger the action based on the index returned from candidateActions.
+     */
+    virtual void triggerAction(const CandidateWord &candidate, int id) = 0;
+};
+
+/**
+ * Interface for tab-related actions on candidate list.
+ *
+ * @since 5.1.20
+ */
+class FCITXCORE_EXPORT TabbedCandidateList {
+public:
+    virtual ~TabbedCandidateList();
+
+    /**
+     * Return a list of tab actions.
+     *
+     * From UI perspective, the returned vector is expected to be small (less
+     * than 10). The text should at most be 6 latin-letters or 2 Chinese
+     * characters.
+     *
+     * The return value is only valid at the time the function is called. The
+     * caller should not keep reference.
+     *
+     * The implementatino can choose lazily construct the return value upon
+     * calling the function.
+     *
+     * @return vector of CandidateAction.
+     * @since 5.1.20
+     */
+    virtual std::span<const CandidateAction> tabActions() = 0;
+
+    /**
+     * Trigger the tab action based on the index returned from tabActions.
+     *
+     * @param id action index.
+     * @since 5.1.20
+     */
+    virtual void triggerTabAction(int id) = 0;
+};
+
+class DisplayOnlyCandidateListPrivate;
+
+class FCITXCORE_EXPORT DisplayOnlyCandidateList : public CandidateList {
+public:
+    DisplayOnlyCandidateList();
+    ~DisplayOnlyCandidateList();
+
+    void setContent(const std::vector<std::string> &content);
+    void setContent(std::vector<Text> content);
+    void setLayoutHint(CandidateLayoutHint hint);
+    void setCursorIndex(int index);
+
+    // CandidateList
+    const fcitx::Text &label(int idx) const override;
+    const CandidateWord &candidate(int idx) const override;
+    int cursorIndex() const override;
+    int size() const override;
+    CandidateLayoutHint layoutHint() const override;
+
+private:
+    std::unique_ptr<DisplayOnlyCandidateListPrivate> d_ptr;
+    FCITX_DECLARE_PRIVATE(DisplayOnlyCandidateList);
+};
+
+class CommonCandidateListPrivate;
+
+enum class CursorPositionAfterPaging { SameAsLast, DonotChange, ResetToFirst };
+
+/**
+ * A common simple candidate list that serves most of the purpose.
+ */
+class FCITXCORE_EXPORT CommonCandidateList : public CandidateList,
+                                             public PageableCandidateList,
+                                             public ModifiableCandidateList,
+                                             public CursorMovableCandidateList {
+public:
+    CommonCandidateList();
+    ~CommonCandidateList();
+
+    void clear();
+
+    /**
+     * Set the label of candidate list.
+     *
+     * The labels less than 10 will be automatically filled with to empty ones
+     * up to 10 to be more error prone.
+     *
+     * @param labels list of labels.
+     *
+     * @since 5.0.4
+     */
+    void setLabels(const std::vector<std::string> &labels = {});
+
+    /**
+     * Set the label of candidate list by key.
+     *
+     * @param keyList list of selection key
+     */
+    void setSelectionKey(const KeyList &keyList);
+
+    void setPageSize(int size);
+    int pageSize() const;
+    void setLayoutHint(CandidateLayoutHint hint);
+    void setGlobalCursorIndex(int index);
+    /**
+     * Return Global cursor index.
+     *
+     * -1 means it is not selected.
+     *
+     * @return cursor index.
+     * @since 5.0.4
+     */
+    int globalCursorIndex() const;
+
+    /**
+     * Set cursor index on current page.
+     *
+     * @param index index on current page;
+     * @since 5.1.9
+     */
+    void setCursorIndex(int index);
+
+    // CandidateList
+    const fcitx::Text &label(int idx) const override;
+    const CandidateWord &candidate(int idx) const override;
+    int cursorIndex() const override;
+    int size() const override;
+
+    // PageableCandidateList
+    bool hasPrev() const override;
+    bool hasNext() const override;
+    void prev() override;
+    void next() override;
+
+    bool usedNextBefore() const override;
+
+    int totalPages() const override;
+    int currentPage() const override;
+    void setPage(int page) override;
+
+    CandidateLayoutHint layoutHint() const override;
+
+    // BulkCandidateList
+    const CandidateWord &candidateFromAll(int idx) const override;
+    int totalSize() const override;
+
+    // ModifiableCandidateList
+    void insert(int idx, std::unique_ptr<CandidateWord> word) override;
+    void remove(int idx) override;
+    void replace(int idx, std::unique_ptr<CandidateWord> word) override;
+    void move(int from, int to) override;
+
+    // CursorMovableCandidateList
+    void prevCandidate() override;
+    void nextCandidate() override;
+
+    // A simple switch to change the behavior of prevCandidate and nextCandidate
+    void setCursorIncludeUnselected(bool);
+    void setCursorKeepInSamePage(bool);
+    void setCursorPositionAfterPaging(CursorPositionAfterPaging afterPaging);
+
+    /**
+     * Set an optional implementation of actionable candidate list
+     *
+     * @since 5.1.10
+     */
+    void setActionableImpl(std::unique_ptr<ActionableCandidateList> actionable);
+
+    /**
+     * Set an optional implementation of tabbed candidate list.
+     *
+     * @param tabbed pointer to TabbedCandidateList.
+     * @since 5.1.20
+     */
+    void setTabbedImpl(std::unique_ptr<TabbedCandidateList> tabbed);
+
+    /**
+     * Set a filter function for the candidate list.
+     *
+     * Any modification to the candidate list may clear the filter, so it's
+     * better to set filter after all modification is done.
+     *
+     * @param filterFunc A function that takes a CandidateWord and returns a
+     * boolean. Only candidates for which the function returns true will be
+     * included.
+     *
+     * @since 5.1.20
+     */
+    void
+    setFilter(const std::function<bool(const CandidateWord &)> &filterFunc);
+
+    /**
+     * Clear the filter function for the candidate list.
+     *
+     * @since 5.1.20
+     * @see CommonCandidateList::setFilter
+     */
+    void clearFilter();
+
+    /**
+     * Return the candidate at the specified index, ignore filter.
+     *
+     * @param idx Index of the candidate.
+     * @return Reference to the candidate.
+     * @since 5.1.20
+     */
+    const CandidateWord &originCandidate(size_t idx) const;
+
+    /**
+     * Return the total number of candidates, ignore filter.
+     *
+     * @return Total number of candidates.
+     * @since 5.1.20
+     * @see totalSize
+     */
+    size_t originSize() const;
+
+private:
+    void fixAfterUpdate();
+    void moveCursor(bool prev);
+
+    std::unique_ptr<CommonCandidateListPrivate> d_ptr;
+    FCITX_DECLARE_PRIVATE(CommonCandidateList);
+};
+} // namespace fcitx
+
+#endif // _FCITX_CANDIDATELIST_H_
