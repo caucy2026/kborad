@@ -212,7 +212,8 @@ abstract class KeyView(ctx: Context, val theme: Theme, val def: KeyDef.Appearanc
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        if (bordered) return
+        val circularKey = def.viewId == R.id.button_punctuation || def.viewId == R.id.button_return
+        if (bordered && !circularKey) return
         when (def.viewId) {
             R.id.button_space -> {
                 val bkgRadius = dp(3f)
@@ -232,12 +233,18 @@ abstract class KeyView(ctx: Context, val theme: Theme, val def: KeyDef.Appearanc
                     )
                 )
             }
-            R.id.button_return -> {
-                val drawableSize = min(min(w, h), dp(35))
+            R.id.button_punctuation, R.id.button_return -> {
+                val drawableSize = min(min(w, h), dp(48))
                 val hInset = (w - drawableSize) / 2
                 val vInset = (h - drawableSize) / 2
                 appearanceView.background = insetOvalDrawable(
-                    hInset, vInset, theme.accentKeyBackgroundColor
+                    hInset,
+                    vInset,
+                    if (def.viewId == R.id.button_return) {
+                        theme.accentKeyBackgroundColor
+                    } else {
+                        theme.altKeyBackgroundColor
+                    }
                 )
                 appearanceView.padding = 0
                 setupPressHighlight(

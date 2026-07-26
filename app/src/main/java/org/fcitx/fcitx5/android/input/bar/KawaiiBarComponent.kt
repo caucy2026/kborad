@@ -111,6 +111,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private val expandedCandidateStyle by prefs.keyboard.expandedCandidateStyle
     private val expandToolbarByDefault by prefs.keyboard.expandToolbarByDefault
     private val toolbarNumRowOnPassword by prefs.keyboard.toolbarNumRowOnPassword
+    private val floatingKeyboard = prefs.keyboard.floatingKeyboard
 
     private var clipboardTimeoutJob: Job? = null
     private var voiceCommitJob: Job? = null
@@ -122,10 +123,18 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private var isCapabilityFlagsPassword: Boolean = false
     private var isKeyboardLayoutNumber: Boolean = false
     private var isToolbarManuallyToggled: Boolean = false
+    private var shouldShowVoiceInput: Boolean = false
 
     private enum class NumberRowState { Auto, ForceShow, ForceHide }
 
     private var numberRowState = NumberRowState.Auto
+
+    @Keep
+    private val onFloatingKeyboardUpdateListener =
+        ManagedPreference.OnChangeListener<Boolean> { _, isFloating ->
+            idleUi.buttonsUi.updateFloatingKeyboardState(isFloating)
+            updateHideKeyboardButton()
+        }
 
     @Keep
     private val onClipboardUpdateListener =
@@ -204,6 +213,45 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
 
     private val hideKeyboardCallback = View.OnClickListener {
         service.requestHideSelf(0)
+    }
+
+    private val toggleToolbarCallback = View.OnClickListener {
+        when (idleUi.currentState) {
+            IdleUi.State.Empty -> {
+                isToolbarManuallyToggled = !expandToolbarByDefault
+                evalIdleUiState(fromUser = true)
+            }
+            IdleUi.State.Toolbar -> {
+                isToolbarManuallyToggled = expandToolbarByDefault
+                evalIdleUiState(fromUser = true)
+            }
+            else -> {
+                isToolbarManuallyToggled = !expandToolbarByDefault
+                idleUi.updateState(IdleUi.State.Toolbar, fromUser = true)
+            }
+        }
+        if (clipboardTimeoutJob != null) {
+            launchClipboardTimeoutJob()
+        }
+    }
+
+    private fun updateHideKeyboardButton() {
+        val useVoiceInput = shouldShowVoiceInput
+        idleUi.menuButton.apply {
+            setOnClickListener(toggleToolbarCallback)
+            swipeEnabled = false
+            onGestureListener = null
+        }
+        idleUi.setHideKeyboardIsVoiceInput(useVoiceInput)
+        idleUi.hideKeyboardButton.apply {
+            setOnClickListener(if (useVoiceInput) null else hideKeyboardCallback)
+            swipeEnabled = !useVoiceInput
+            onGestureListener = if (useVoiceInput) {
+                voiceInputGestureCallback
+            } else {
+                swipeHideKeyboardCallback
+            }
+        }
     }
 
     private val swipeDownExpandCallback = CustomGestureView.OnGestureListener { _, e ->
@@ -411,26 +459,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
 
     private val idleUi: IdleUi by lazy {
         IdleUi(context, theme, popup, commonKeyActionListener).apply {
-            menuButton.setOnClickListener {
-                when (idleUi.currentState) {
-                    IdleUi.State.Empty -> {
-                        isToolbarManuallyToggled = !expandToolbarByDefault
-                        evalIdleUiState(fromUser = true)
-                    }
-                    IdleUi.State.Toolbar -> {
-                        isToolbarManuallyToggled = expandToolbarByDefault
-                        evalIdleUiState(fromUser = true)
-                    }
-                    else -> {
-                        isToolbarManuallyToggled = !expandToolbarByDefault
-                        idleUi.updateState(IdleUi.State.Toolbar, fromUser = true)
-                    }
-                }
-                // reset timeout timer (if present) when user switch layout
-                if (clipboardTimeoutJob != null) {
-                    launchClipboardTimeoutJob()
-                }
-            }
+            menuButton.setOnClickListener(toggleToolbarCallback)
             hideKeyboardButton.apply {
                 setOnClickListener(hideKeyboardCallback)
                 swipeEnabled = true
@@ -451,6 +480,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 clipboardButton.setOnClickListener {
                     windowManager.attachWindow(ClipboardWindow())
                 }
+                floatingKeyboardButton.setOnClickListener {
+                    updateFloatingKeyboardState(service.toggleFloatingKeyboard())
+                }
+                updateFloatingKeyboardState(prefs.keyboard.floatingKeyboard.getValue())
                 moreButton.setOnClickListener {
                     windowManager.attachWindow(StatusAreaWindow())
                 }
@@ -577,6 +610,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         ClipboardManager.addOnUpdateListener(onClipboardUpdateListener)
         clipboardSuggestion.registerOnChangeListener(onClipboardSuggestionUpdateListener)
         clipboardItemTimeout.registerOnChangeListener(onClipboardTimeoutUpdateListener)
+        floatingKeyboard.registerOnChangeListener(onFloatingKeyboardUpdateListener)
     }
 
     override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
@@ -596,17 +630,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         voiceStartJob = null
         idleUi.hideVoiceTranscript()
         voicePressActive = false
-        val shouldShowVoiceInput = !capFlags.has(CapabilityFlag.Password)
-        idleUi.setHideKeyboardIsVoiceInput(shouldShowVoiceInput)
-        idleUi.hideKeyboardButton.apply {
-            setOnClickListener(if (shouldShowVoiceInput) null else hideKeyboardCallback)
-            swipeEnabled = !shouldShowVoiceInput
-            onGestureListener = if (shouldShowVoiceInput) {
-                voiceInputGestureCallback
-            } else {
-                swipeHideKeyboardCallback
-            }
-        }
+        shouldShowVoiceInput = !capFlags.has(CapabilityFlag.Password)
+        updateHideKeyboardButton()
         evalIdleUiState()
     }
 

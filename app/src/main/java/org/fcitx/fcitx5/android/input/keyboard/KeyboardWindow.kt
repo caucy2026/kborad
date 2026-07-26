@@ -68,10 +68,17 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     private val keyboards: HashMap<String, BaseKeyboard> by lazy {
         hashMapOf(
             TextKeyboard.Name to TextKeyboard(context, theme),
+            TextKeyboard.FloatingName to TextKeyboard(
+                context,
+                theme,
+                TextKeyboard.FloatingLayout,
+                alwaysShowLanguageKey = true
+            ),
             NumberKeyboard.Name to NumberKeyboard(context, theme)
         )
     }
     private var currentKeyboardName = ""
+    private var floatingMode = false
     private var lastSymbolType: String by AppPrefs.getInstance().internal.lastSymbolLayout
 
     private val currentKeyboard: BaseKeyboard? get() = keyboards[currentKeyboardName]
@@ -117,7 +124,10 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     }
 
     fun switchLayout(to: String, remember: Boolean = true) {
-        val target = to.ifEmpty { lastSymbolType }
+        val target = when (val requested = to.ifEmpty { lastSymbolType }) {
+            TextKeyboard.Name if (floatingMode) -> TextKeyboard.FloatingName
+            else -> requested
+        }
         ContextCompat.getMainExecutor(service).execute {
             if (keyboards.containsKey(target)) {
                 if (remember && target != TextKeyboard.Name) {
@@ -142,9 +152,17 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         val targetLayout = when (info.inputType and InputType.TYPE_MASK_CLASS) {
             InputType.TYPE_CLASS_NUMBER -> NumberKeyboard.Name
             InputType.TYPE_CLASS_PHONE -> NumberKeyboard.Name
-            else -> TextKeyboard.Name
+            else -> if (floatingMode) TextKeyboard.FloatingName else TextKeyboard.Name
         }
         switchLayout(targetLayout, remember = false)
+    }
+
+    fun setFloatingMode(enabled: Boolean) {
+        if (floatingMode == enabled) return
+        floatingMode = enabled
+        if (currentKeyboardName == TextKeyboard.Name || currentKeyboardName == TextKeyboard.FloatingName) {
+            switchLayout(if (enabled) TextKeyboard.FloatingName else TextKeyboard.Name, remember = false)
+        }
     }
 
     override fun onImeUpdate(ime: InputMethodEntry) {

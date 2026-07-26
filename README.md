@@ -69,6 +69,7 @@ This repository currently carries KEMI-specific requirements for local preview b
 - Debug launcher icon: blue background, `KEMI` text, microphone glyph below.
 - Do NOT rename to `KEMI远程桌面`, `Fcitx5`, or `小企鹅输入法`.
 - Local build entry: `./scripts/assemble-debug-local.sh`
+- Keyboard preview change record: [docs/kemi-keyboard-preview-v1.md](docs/kemi-keyboard-preview-v1.md).
 
 ## Screenshots
 

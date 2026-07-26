@@ -44,12 +44,13 @@ class AlphabetKey(
     val punctuation: String,
     percentWidth: Float = 0.1f,
     variant: Variant = Variant.Normal,
+    textSize: Float = 28f,
     popup: Array<Popup>? = null
 ) : KeyDef(
     Appearance.AltText(
         displayText = character,
         altText = punctuation,
-        textSize = 28f,
+        textSize = textSize,
         percentWidth = percentWidth,
         variant = variant
     ),
@@ -60,6 +61,23 @@ class AlphabetKey(
     popup ?: arrayOf(
         Popup.AltPreview(character, punctuation),
         Popup.Keyboard.Preset(character)
+    )
+)
+
+class PlainAlphabetKey(
+    val character: String,
+    percentWidth: Float = 0.1f,
+    variant: Variant = Variant.Normal,
+    textSize: Float = 28f
+) : KeyDef(
+    Appearance.Text(
+        displayText = character,
+        textSize = textSize,
+        percentWidth = percentWidth,
+        variant = variant
+    ),
+    setOf(
+        Behavior.Press(KeyAction.FcitxKeyAction(character))
     )
 )
 
@@ -151,14 +169,18 @@ class LayoutSwitchKey(
     displayText: String,
     val to: String = "",
     percentWidth: Float = 0.15f,
-    variant: Variant = Variant.Alternative
+    variant: Variant = Variant.Alternative,
+    border: Border = Border.Default,
+    viewId: Int = -1
 ) : KeyDef(
     Appearance.Text(
         displayText,
         textSize = 16f,
         textStyle = Typeface.BOLD,
         percentWidth = percentWidth,
-        variant = variant
+        variant = variant,
+        border = border,
+        viewId = viewId
     ),
     setOf(
         Behavior.Press(KeyAction.LayoutSwitchAction(to))

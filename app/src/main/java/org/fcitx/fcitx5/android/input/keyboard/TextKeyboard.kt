@@ -24,13 +24,16 @@ import splitties.views.imageResource
 @SuppressLint("ViewConstructor")
 class TextKeyboard(
     context: Context,
-    theme: Theme
-) : BaseKeyboard(context, theme, Layout) {
+    theme: Theme,
+    layout: List<List<KeyDef>> = Layout,
+    private val alwaysShowLanguageKey: Boolean = false
+) : BaseKeyboard(context, theme, layout) {
 
     enum class CapsState { None, Once, Lock }
 
     companion object {
         const val Name = "Text"
+        const val FloatingName = "FloatingText"
 
         val Layout: List<List<KeyDef>> = listOf(
             listOf(
@@ -49,26 +52,26 @@ class TextKeyboard(
             ),
             listOf(
                 CapsLockKey(0.12f),
-                AlphabetKey("A", "@", 0.081f),
-                AlphabetKey("S", "*", 0.081f),
-                AlphabetKey("D", "+", 0.081f),
-                AlphabetKey("F", "-", 0.081f),
-                AlphabetKey("G", "=", 0.081f),
-                AlphabetKey("H", "/", 0.081f),
-                AlphabetKey("J", "#", 0.081f),
-                AlphabetKey("K", "(", 0.081f),
-                AlphabetKey("L", ")", 0.081f),
+                PlainAlphabetKey("A", 0.081f),
+                PlainAlphabetKey("S", 0.081f),
+                PlainAlphabetKey("D", 0.081f),
+                PlainAlphabetKey("F", 0.081f),
+                PlainAlphabetKey("G", 0.081f),
+                PlainAlphabetKey("H", 0.081f),
+                PlainAlphabetKey("J", 0.081f),
+                PlainAlphabetKey("K", 0.081f),
+                PlainAlphabetKey("L", 0.081f),
                 ReturnKey(0.151f)
             ),
             listOf(
                 CapsKey(0.16f),
-                AlphabetKey("Z", "'", 0.08f),
-                AlphabetKey("X", ":", 0.08f),
-                AlphabetKey("C", "\"", 0.08f),
-                AlphabetKey("V", "?", 0.08f),
-                AlphabetKey("B", "!", 0.08f),
-                AlphabetKey("N", "~", 0.08f),
-                AlphabetKey("M", "\\", 0.08f),
+                PlainAlphabetKey("Z", 0.08f),
+                PlainAlphabetKey("X", 0.08f),
+                PlainAlphabetKey("C", 0.08f),
+                PlainAlphabetKey("V", 0.08f),
+                PlainAlphabetKey("B", 0.08f),
+                PlainAlphabetKey("N", 0.08f),
+                PlainAlphabetKey("M", 0.08f),
                 CommaKey(0.08f, KeyDef.Appearance.Variant.Normal),
                 SymbolKey(".", 0.08f),
                 SymbolKey("'", 0.08f),
@@ -95,12 +98,67 @@ class TextKeyboard(
                 LayoutSwitchKey("?123", PickerWindow.Key.Symbol.name, 0.08f)
             )
         )
+
+        val FloatingLayout: List<List<KeyDef>> = listOf(
+            listOf(
+                AlphabetKey("Q", "1", 0.1f, textSize = 22f),
+                AlphabetKey("W", "2", 0.1f, textSize = 22f),
+                AlphabetKey("E", "3", 0.1f, textSize = 22f),
+                AlphabetKey("R", "4", 0.1f, textSize = 22f),
+                AlphabetKey("T", "5", 0.1f, textSize = 22f),
+                AlphabetKey("Y", "6", 0.1f, textSize = 22f),
+                AlphabetKey("U", "7", 0.1f, textSize = 22f),
+                AlphabetKey("I", "8", 0.1f, textSize = 22f),
+                AlphabetKey("O", "9", 0.1f, textSize = 22f),
+                AlphabetKey("P", "0", 0.1f, textSize = 22f)
+            ),
+            listOf(
+                SpacerKey(0.05f),
+                PlainAlphabetKey("A", 0.1f, textSize = 22f),
+                PlainAlphabetKey("S", 0.1f, textSize = 22f),
+                PlainAlphabetKey("D", 0.1f, textSize = 22f),
+                PlainAlphabetKey("F", 0.1f, textSize = 22f),
+                PlainAlphabetKey("G", 0.1f, textSize = 22f),
+                PlainAlphabetKey("H", 0.1f, textSize = 22f),
+                PlainAlphabetKey("J", 0.1f, textSize = 22f),
+                PlainAlphabetKey("K", 0.1f, textSize = 22f),
+                PlainAlphabetKey("L", 0.1f, textSize = 22f),
+                SpacerKey(0.05f)
+            ),
+            listOf(
+                CapsKey(0.13f),
+                PlainAlphabetKey("Z", 0.1f, textSize = 22f),
+                PlainAlphabetKey("X", 0.1f, textSize = 22f),
+                PlainAlphabetKey("C", 0.1f, textSize = 22f),
+                PlainAlphabetKey("V", 0.1f, textSize = 22f),
+                PlainAlphabetKey("B", 0.1f, textSize = 22f),
+                PlainAlphabetKey("N", 0.1f, textSize = 22f),
+                PlainAlphabetKey("M", 0.1f, textSize = 22f),
+                BackspaceKey(0.17f)
+            ),
+            listOf(
+                ImagePickerSwitchKey(
+                    R.drawable.ic_baseline_tag_faces_24,
+                    PickerWindow.Key.Emoji,
+                    0.14f,
+                    KeyDef.Appearance.Variant.Alternative
+                ),
+                LanguageKey(0.14f),
+                SpaceKey(),
+                LayoutSwitchKey(
+                    "?123", PickerWindow.Key.Symbol.name, 0.14f,
+                    border = KeyDef.Appearance.Border.Special,
+                    viewId = R.id.button_punctuation
+                ),
+                ReturnKey(0.14f)
+            )
+        )
     }
 
     val caps: ImageKeyView by lazy { findViewById(R.id.button_caps) }
     val backspace: ImageKeyView by lazy { findViewById(R.id.button_backspace) }
     val quickphrase: ImageKeyView by lazy { findViewById(R.id.button_quickphrase) }
-    val lang: ImageKeyView by lazy { findViewById(R.id.button_lang) }
+    private val lang: ImageKeyView? by lazy { findViewById(R.id.button_lang) }
     val space: TextKeyView by lazy { findViewById(R.id.button_space) }
     val `return`: ImageKeyView by lazy { findViewById(R.id.button_return) }
 
@@ -256,13 +314,13 @@ class TextKeyboard(
     }
 
     private fun updateLangSwitchKey(visible: Boolean) {
-        lang.visibility = if (visible) View.VISIBLE else View.GONE
+        lang?.visibility = if (alwaysShowLanguageKey || visible) View.VISIBLE else View.GONE
     }
 
     private fun updateAlphabetKeys() {
         textKeys.forEach {
-            if (it.def !is KeyDef.Appearance.AltText) return
-            it.mainText.text = it.def.displayText.let { str ->
+            val appearance = it.def as? KeyDef.Appearance.Text ?: return@forEach
+            it.mainText.text = appearance.displayText.let { str ->
                 if (str.length != 1 || !str[0].isLetter()) return@forEach
                 if (keepLettersUppercase) str.uppercase() else transformAlphabet(str)
             }
