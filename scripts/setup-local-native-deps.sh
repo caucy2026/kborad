@@ -58,7 +58,16 @@ bootstrap_ecm() {
   unpack_dir="$src_dir/extra-cmake-modules-${ECM_VERSION}"
   mkdir -p "$src_dir"
   if [ ! -f "$archive" ]; then
-    curl -L "https://github.com/KDE/extra-cmake-modules/archive/refs/tags/v${ECM_VERSION}.tar.gz" -o "$archive"
+    archive_tmp="${archive}.tmp"
+    rm -f "$archive_tmp"
+    if ! curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 \
+      "https://codeload.github.com/KDE/extra-cmake-modules/tar.gz/refs/tags/v${ECM_VERSION}" \
+      -o "$archive_tmp"; then
+      rm -f "$archive_tmp"
+      echo "Unable to download ECM ${ECM_VERSION}. Check network access and retry." >&2
+      exit 1
+    fi
+    mv "$archive_tmp" "$archive"
   fi
   rm -rf "$unpack_dir"
   tar -xzf "$archive" -C "$src_dir"

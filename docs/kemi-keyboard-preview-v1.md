@@ -58,15 +58,39 @@ Both layouts intentionally use the same reuse policy for letter keys.
 - `app/src/main/res/drawable/`: floating, docked, hide, resize, corner, and drag-line drawables.
 - `app/src/main/res/values/strings.xml` and `app/src/main/res/values-zh-rCN/strings.xml`: accessibility labels.
 
-## Validation
+## Build From GitHub
 
-The following was run from the repository root after the final key-layout change:
+The repository has fixed Git submodule revisions. Clone the backup branch, initialize them recursively, then use the project build entry point:
 
 ```shell
-./gradlew :app:assembleDebug
+git clone --branch backup/kboard-preview-v1-20260727 --single-branch \
+	git@github.com:caucy2026/kborad.git kemi-keyboard
+cd kemi-keyboard
+git submodule update --init --recursive
+./scripts/assemble-debug-local.sh
 ```
 
-The build completed with `BUILD SUCCESSFUL`. The APK was installed on `192.168.1.6:5555`, and the current IME was explicitly set to:
+The entry point downloads and installs the pinned KDE Extra CMake Modules 6.9.0 under `.local-deps/`, supplies its `ECM_DIR` to Gradle, and creates lightweight local `msgfmt` and `msgmerge` wrappers required by the native build. The ECM download uses a temporary file, retries transient network failures, and stops the build cleanly if dependency preparation cannot complete.
+
+The generated debug APK is written beneath `app/build/outputs/apk/debug/`. Its filename and `BuildConfig` include the checked-out Git commit through `git describe` and `git rev-parse HEAD`. A build from a later backup commit therefore has a different hash in its filename and metadata even when the application source tree is unchanged; that metadata difference is expected and does not change the keyboard implementation.
+
+## Validation
+
+The following was run from a new clone of GitHub backup commit `fe87b20cc1e67ae0772f356e180648c2a99d10d3` after deleting its `.local-deps/` directory:
+
+```shell
+git submodule update --init --recursive
+./scripts/assemble-debug-local.sh
+```
+
+All 19 direct and nested submodules were checked out at the commits recorded by the repository. ECM 6.9.0 was downloaded from scratch, native code was configured and built, and the build completed with `BUILD SUCCESSFUL` in 51 seconds. The produced APK was:
+
+```text
+app/build/outputs/apk/debug/org.fcitx.fcitx5.android-fe87b20-arm64-v8a-debug.apk
+SHA-256: e48e6df08a493c84d72791c97d3a0b118a5c836f605630bf5bee34386e9a8635
+```
+
+The prior device build was installed on `192.168.1.6:5555`, and the current IME was explicitly set to:
 
 ```text
 org.fcitx.fcitx5.android.debug/org.fcitx.fcitx5.android.input.FcitxInputMethodService
