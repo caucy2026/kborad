@@ -59,6 +59,10 @@ class ToolButton(context: Context) : CustomGestureView(context) {
         image.imageResource = icon
     }
 
+    fun setIconTintColor(@ColorInt color: Int) {
+        image.imageTintList = ColorStateList.valueOf(color)
+    }
+
     fun useFullSizeIcon() {
         image.setPadding(0, 0, 0, 0)
         image.layoutParams = LayoutParams(dp(24), dp(24), Gravity.CENTER)

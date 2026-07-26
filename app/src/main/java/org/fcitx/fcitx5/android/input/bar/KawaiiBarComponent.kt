@@ -8,7 +8,10 @@ import android.graphics.Color
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
+import android.os.SystemClock
 import android.util.Size
 import android.view.KeyEvent
 import android.view.View
@@ -111,6 +114,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
 
     private var clipboardTimeoutJob: Job? = null
     private var voiceCommitJob: Job? = null
+    private var voiceStartJob: Job? = null
+    private var lastVoicePermissionPromptAt = 0L
 
     private var isClipboardFresh: Boolean = false
     private var isInlineSuggestionPresent: Boolean = false
@@ -286,7 +291,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 idleUi.hideVoiceTranscript()
                 Toast.makeText(
                     context,
-                    context.getString(R.string.voice_input_error, message),
+                    localizeVoiceError(message),
                     Toast.LENGTH_SHORT
                 ).show()
             },
@@ -305,28 +310,103 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
                     PackageManager.PERMISSION_GRANTED
                 ) {
-                    context.startActivity(
-                        Intent(context, VoicePermissionActivity::class.java)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.voice_input_permission_required),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - lastVoicePermissionPromptAt > VOICE_PERMISSION_REQUEST_COOLDOWN_MS) {
+                        lastVoicePermissionPromptAt = now
+                        context.startActivity(
+                            Intent(context, VoicePermissionActivity::class.java)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
                 } else {
+                    if (!isNetworkAvailableForVoice()) {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.voice_input_network_unavailable),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return@OnGestureListener true
+                    }
                     voiceCommitJob?.cancel()
                     voiceCommitJob = null
+                    voiceStartJob?.cancel()
                     asrClient.cancel()
                     idleUi.hideVoiceTranscript()
-                    voicePressActive = true
-                    asrClient.start()
+                    voicePressActive = false
+                    voiceStartJob = service.lifecycleScope.launch {
+                        delay(VOICE_PRESS_TO_START_MS)
+                        voicePressActive = true
+                        asrClient.start()
+                    }
                 }
             }
             CustomGestureView.GestureType.Up -> {
+                if (voiceStartJob?.isActive == true) {
+                    voiceStartJob?.cancel()
+                    voiceStartJob = null
+                    idleUi.hideVoiceTranscript()
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.voice_input_hold_to_talk),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
                 if (voicePressActive) {
                     voicePressActive = false
                     asrClient.stop()
                 }
             }
-            CustomGestureView.GestureType.Move -> Unit
+            CustomGestureView.GestureType.Move -> {
+                if (voiceStartJob?.isActive == true &&
+                    (abs(event.totalX) > VOICE_CANCEL_MOVE_THRESHOLD ||
+                        abs(event.totalY) > VOICE_CANCEL_MOVE_THRESHOLD)
+                ) {
+                    voiceStartJob?.cancel()
+                    voiceStartJob = null
+                    idleUi.hideVoiceTranscript()
+                }
+            }
         }
         true
+    }
+
+    private fun localizeVoiceError(message: String): String {
+        val lower = message.lowercase()
+        return when {
+            lower.contains("cleartext") || lower.contains("network security policy") ->
+                context.getString(R.string.voice_input_error_network_policy)
+            lower.contains("eai_nodata") || lower.contains("failed to connect") ||
+                lower.contains("unable to resolve host") || lower.contains("timeout") ->
+                context.getString(R.string.voice_input_network_unavailable)
+            lower.contains("internet") && lower.contains("permission") ->
+                context.getString(R.string.voice_input_error_internet_permission)
+            lower.contains("iflytek_params") ->
+                context.getString(R.string.voice_input_error_missing_params)
+            lower.contains("microphone") || lower.contains("audio") ->
+                context.getString(R.string.voice_input_error_microphone)
+            else -> context.getString(R.string.voice_input_error, message)
+        }
+    }
+
+    private fun isNetworkAvailableForVoice(): Boolean {
+        return runCatching {
+            val manager = context.getSystemService(ConnectivityManager::class.java) ?: return false
+            val network = manager.activeNetwork ?: return false
+            val caps = manager.getNetworkCapabilities(network) ?: return false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN))
+        }.getOrElse {
+            Timber.w(it, "Failed to read network state for voice check")
+            false
+        }
     }
 
     private val idleUi: IdleUi by lazy {
@@ -511,7 +591,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         }
         asrClient.cancel()
         voiceCommitJob?.cancel()
+        voiceStartJob?.cancel()
         voiceCommitJob = null
+        voiceStartJob = null
         idleUi.hideVoiceTranscript()
         voicePressActive = false
         val shouldShowVoiceInput = !capFlags.has(CapabilityFlag.Password)
@@ -616,6 +698,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     companion object {
         const val HEIGHT = 48
         const val VOICE_FINAL_PREVIEW_MS = 300L
+        const val VOICE_PRESS_TO_START_MS = 180L
+        const val VOICE_PERMISSION_REQUEST_COOLDOWN_MS = 2_000L
+        const val VOICE_CANCEL_MOVE_THRESHOLD = 24f
     }
 
     fun onKeyboardLayoutSwitched(isNumber: Boolean) {

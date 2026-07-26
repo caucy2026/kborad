@@ -51,6 +51,10 @@ class IdleUi(
     private val commonKeyActionListener: CommonKeyActionListener
 ) : Ui {
 
+    private companion object {
+        const val VOICE_ICON_SYSTEM_GREEN = -13346741 // 0xFF34C759
+    }
+
     enum class State {
         Empty, Toolbar, Clipboard, NumberRow, InlineSuggestion
     }
@@ -202,17 +206,21 @@ class IdleUi(
         voiceSeparator.visibility = if (isVoiceInput) View.VISIBLE else View.GONE
         if (isVoiceInput) {
             hideKeyboardButton.setIcon(R.drawable.ic_baseline_keyboard_voice_24)
+            hideKeyboardButton.setIconTintColor(theme.altKeyTextColor)
             hideKeyboardButton.useFullSizeIcon()
             hideKeyboardButton.setCircleBackgroundColor(theme.keyBackgroundColor)
             hideKeyboardButton.contentDescription = ctx.getString(R.string.start_voice_input)
         } else {
             hideKeyboardButton.setIcon(R.drawable.ic_baseline_arrow_drop_down_24)
+            hideKeyboardButton.setIconTintColor(theme.altKeyTextColor)
             hideKeyboardButton.setPressHighlightColor(theme.keyPressHighlightColor)
             hideKeyboardButton.contentDescription = ctx.getString(R.string.hide_keyboard)
         }
     }
 
     fun setVoiceInputActive(active: Boolean) {
+        hideKeyboardButton.setIcon(R.drawable.ic_baseline_keyboard_voice_24)
+        hideKeyboardButton.setIconTintColor(if (active) VOICE_ICON_SYSTEM_GREEN else theme.altKeyTextColor)
         hideKeyboardButton.setCircleBackgroundColor(
             if (active) theme.genericActiveBackgroundColor else theme.keyBackgroundColor
         )

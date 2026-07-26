@@ -319,9 +319,16 @@
     <string name="preferred_voice_input">Preferred voice input</string>
     <string name="start_voice_input">Start voice input</string>
     <string name="stop_voice_input">Stop voice input</string>
-    <string name="voice_input_error">Voice input failed: %1$s</string>
-    <string name="voice_input_connecting">Connecting…</string>
-    <string name="voice_input_listening">Speak now…</string>
-    <string name="voice_input_calibrating">Finalizing…</string>
+    <string name="voice_input_error">语音识别失败：%1$s</string>
+    <string name="voice_input_connecting">正在连接语音服务…</string>
+    <string name="voice_input_listening">正在听写，请继续说…</string>
+    <string name="voice_input_calibrating">正在收尾识别…</string>
+    <string name="voice_input_hold_to_talk">请按住麦克风说话，松手结束</string>
+    <string name="voice_input_permission_required">需要麦克风权限，请先授权后再试</string>
+    <string name="voice_input_error_network_policy">语音网络被系统安全策略拦截，请检查网络配置</string>
+    <string name="voice_input_network_unavailable">当前未联网，语音功能暂不可用</string>
+    <string name="voice_input_error_internet_permission">语音网络权限异常，请检查应用网络权限</string>
+    <string name="voice_input_error_missing_params">语音参数缺失，请联系维护人员检查 iflytek_params</string>
+    <string name="voice_input_error_microphone">麦克风不可用，请检查录音权限或设备占用</string>
     <string name="edit_text_playground">EditText Playground</string>
 </resources>
