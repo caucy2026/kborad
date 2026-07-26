@@ -15,6 +15,7 @@ import org.fcitx.fcitx5.android.ui.common.OnItemChangedListener
 import org.fcitx.fcitx5.android.ui.main.settings.ProgressFragment
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.utils.navigateWithAnim
+import org.fcitx.fcitx5.android.utils.NameLocalization
 
 class InputMethodListFragment : ProgressFragment(), OnItemChangedListener<InputMethodEntry> {
 
@@ -43,11 +44,11 @@ class InputMethodListFragment : ProgressFragment(), OnItemChangedListener<InputM
             initSettingsButton = { entry ->
                 setOnClickListener {
                     navigateWithAnim(
-                        SettingsRoute.InputMethodConfig(entry.displayName, entry.uniqueName),
+                        SettingsRoute.InputMethodConfig(NameLocalization.imeName(entry.displayName), entry.uniqueName),
                     )
                 }
             },
-            show = { it.displayName }
+            show = { NameLocalization.imeName(it.displayName) }
         )
         ui.addOnItemChangedListener(this@InputMethodListFragment)
         ui.setViewModel(viewModel)

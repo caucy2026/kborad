@@ -42,7 +42,7 @@ class MainFragment : PaddingPreferenceFragment() {
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         preferenceScreen = preferenceManager.createPreferenceScreen(requireContext()).apply {
-            addCategory("Fcitx") {
+            addCategory("KEMI") {
                 addDestinationPreference(
                     R.string.global_options,
                     R.drawable.ic_baseline_tune_24,

@@ -3,13 +3,13 @@
     <string name="app_name_release">KEMI语音输入法</string>
     <string name="app_name_debug">KEMI语音输入法</string>
     <string name="save">Save</string>
-    <string name="input_methods">Input Methods</string>
-    <string name="add_input_method">Add Input Method</string>
-    <string name="addons">Addons</string>
-    <string name="conf">Configuration</string>
-    <string name="global_options">Global Options</string>
-    <string name="behavior">Behavior</string>
-    <string name="advanced">Advanced</string>
+    <string name="input_methods">输入法</string>
+    <string name="add_input_method">添加输入法</string>
+    <string name="addons">附加组件</string>
+    <string name="conf">配置</string>
+    <string name="global_options">全局选项</string>
+    <string name="behavior">行为</string>
+    <string name="advanced">高级</string>
     <string name="ignore_sys_cursor">Ignore system cursor position</string>
     <string name="hide_key_config">Hide hotkey configurations</string>
     <string name="_not_available_">(Not Available)</string>
@@ -34,7 +34,7 @@
     <string name="setup_keyboard">Finish setting up the keyboard</string>
     <string name="setup_channel">Setup Wizard</string>
     <string name="pinyin_dict">Pinyin Dictionaries</string>
-    <string name="reloading">Reloading</string>
+    <string name="reloading">重新加载中</string>
     <string name="importing">Importing</string>
     <string name="import_error">Import Error</string>
     <string name="dict_already_exists">Dictionary already exists</string>
@@ -42,7 +42,7 @@
     <string name="whether_import_dict">Would you like to import this dictionary?</string>
     <string name="import_">Import</string>
     <string name="synced">Synced!</string>
-    <string name="loading">Loading</string>
+    <string name="loading">加载中</string>
     <string name="clipboard_listening">Clipboard listening</string>
     <string name="clipboard_limit">Clipboard history limit</string>
     <string name="clipboard_enable">Enable Clipboard</string>
@@ -74,7 +74,7 @@
     <string name="licenses_of_third_party_libraries">Licenses of third-party libraries</string>
     <string name="github_repo">GitHub repository</string>
     <string name="expanded_candidate_grid_span_count">Number of expanded candidate spans in grid style</string>
-    <string name="no_config_options">Currently no configuration options are available</string>
+    <string name="no_config_options">目前没有可用的配置选项</string>
     <string name="unimplemented_type">⛔ Unimplemented type</string>
     <string name="select">Select</string>
     <string name="text_editing">Text Editing</string>
@@ -100,8 +100,8 @@
     <string name="reset">Reset</string>
     <string name="quickphrase_keyword">Keyword</string>
     <string name="quickphrase_phrase">Phrase</string>
-    <string name="reload_config">Reload Config</string>
-    <string name="input_method_options">Input Method Options</string>
+    <string name="reload_config">重载配置</string>
+    <string name="input_method_options">输入法设置</string>
     <string name="theme">Theme</string>
     <string name="key_ripple_effect">Enable key ripple effect</string>
     <string name="key_border">Enable key border</string>
@@ -154,7 +154,7 @@
     <string name="choose_input_method">Choose input method</string>
     <string name="edit_clipboard">Edit clipboard</string>
     <string name="clipboard_edit_text_hint">Clipboard content</string>
-    <string name="config_addon_not_loaded">No configuration options available, maybe this addon is disabled when fcitx starts?</string>
+    <string name="config_addon_not_loaded">无可用配置项，该附加组件可能在 Fcitx 启动时处于禁用状态。</string>
     <string name="portrait">Portrait</string>
     <string name="landscape">Landscape</string>
     <string name="keyboard_bottom_padding">Keyboard bottom padding</string>
@@ -172,7 +172,7 @@
     <string name="system_default">System default</string>
     <string name="editor_info_inspector">EditorInfo Inspector</string>
     <string name="default_">Default</string>
-    <string name="saving">Saving</string>
+    <string name="saving">保存中</string>
     <string name="delete_all_pinned_items">Delete all pinned items?</string>
     <string name="vivo_keypress_workaround">vivo Origin OS keypress workaround</string>
     <string name="invalid_im">Invalid input method configuration file:\n%1$s</string>

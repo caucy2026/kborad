@@ -17,6 +17,7 @@ import org.fcitx.fcitx5.android.ui.common.OnItemChangedListener
 import org.fcitx.fcitx5.android.ui.main.settings.ProgressFragment
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.utils.navigateWithAnim
+import org.fcitx.fcitx5.android.utils.NameLocalization
 
 class AddonListFragment : ProgressFragment(), OnItemChangedListener<AddonInfo> {
 
@@ -55,7 +56,7 @@ class AddonListFragment : ProgressFragment(), OnItemChangedListener<AddonInfo> {
 
             if (depStr != null || optDepStr != null) {
                 val msg = buildString {
-                    appendLine(getString(R.string.disable_addon_warn_name, entry.displayName))
+                    appendLine(getString(R.string.disable_addon_warn_name, NameLocalization.addonName(entry.displayName)))
                     depStr?.let {
                         append("- ")
                         appendLine(it)
@@ -119,11 +120,11 @@ class AddonListFragment : ProgressFragment(), OnItemChangedListener<AddonInfo> {
                     ) View.VISIBLE else View.INVISIBLE
                 setOnClickListener {
                     navigateWithAnim(
-                        SettingsRoute.AddonConfig(entry.displayName, entry.uniqueName)
+                        SettingsRoute.AddonConfig(NameLocalization.addonName(entry.displayName), entry.uniqueName)
                     )
                 }
             },
-            show = { it.displayName }
+            show = { NameLocalization.addonName(it.displayName) }
         )
         ui.addOnItemChangedListener(this)
         return ui.root
