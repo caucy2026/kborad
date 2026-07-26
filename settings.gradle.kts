@@ -29,7 +29,7 @@ include(":lib:plugin-base")
 include(":plugin:anthy")
 include(":plugin:clipboard-filter")
 include(":plugin:unikey")
-include(":plugin:rime")
+// include(":plugin:rime")  -- disabled: only need pinyin + English
 include(":plugin:hangul")
 include(":plugin:chewing")
 include(":plugin:sayura")
