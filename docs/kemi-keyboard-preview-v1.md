@@ -97,3 +97,37 @@ org.fcitx.fcitx5.android.debug/org.fcitx.fcitx5.android.input.FcitxInputMethodSe
 ```
 
 A Display 0 screenshot confirmed the docked layout: first-row digits remain visible, while the second and third letter rows show no right-upper symbols.
+
+## Startup I/O Optimization
+
+On 2026-07-27, device-encrypted preference synchronization was changed to write only entries whose effective value differs from the destination store. The preference and theme abstractions compare the serialized value before adding it to the `SharedPreferences.Editor`; an empty update returns without creating an editor transaction.
+
+This preserves direct-boot behavior because every missing or stale entry is still written before use, while avoiding redundant XML writes on later process starts. It does not defer Fcitx startup, change the input method layout, alter candidate behavior, or skip `DataManager.sync()`.
+
+Validation on `192.168.1.6:5555` used two consecutive force-stop cold launches. On the second launch, the device-encrypted preference file remained unchanged:
+
+```text
+before: 1785106042:4147
+after:  1785106042:4147
+```
+
+The optimization build completed successfully, Fcitx reached `ReadyEvent` after cold startup, and KEMI was restored as the selected default IME. Activity cold-launch time still varied around 3.9 seconds, so larger cold-start gains require a separately benchmarked Baseline Profile and first-frame trace phase.
+
+## Signed Release APK
+
+The local release workflow is `scripts/assemble-release-local.sh`. It builds the optimized `arm64-v8a` release variant and copies only a signed result to `build/kboard.apk`.
+
+The signing identity is intentionally external to the repository. Gradle receives `SIGN_KEY_FILE` (or `SIGN_KEY_BASE64`), `SIGN_KEY_PWD`, and `SIGN_KEY_ALIAS` through the local environment. The script refuses to produce a delivery artifact when these values are absent.
+
+The 2026-07-27 release build was verified with `apksigner`: APK Signature Schemes v1 and v2 both verified with one RSA-4096 signer. The resulting artifact was:
+
+```text
+build/kboard.apk
+SHA-256: c5ad1b7b2afd3aa33aacf01ab65b61d85fac64b16e9174efd68b3ef3df1120c9
+size: 46,032,515 bytes
+package: org.fcitx.fcitx5.android
+version: 102 (b5b9be12)
+ABI: arm64-v8a
+```
+
+Device validation on `192.168.1.6:5555` installed the release APK, enabled its IME ID `org.fcitx.fcitx5.android/.input.FcitxInputMethodService`, and selected it as the default input method. `InputMethodManager` reported the same ID as its current method and an active `FcitxInputMethodService` record in the release process.

@@ -29,4 +29,10 @@ class ManagedThemePreference(
         editor.putString(key, getValue().name)
     }
 
+    override fun isValueSyncedTo(sharedPreferences: SharedPreferences): Boolean =
+        runCatching {
+            sharedPreferences.contains(key) &&
+                sharedPreferences.getString(key, defaultValue.name) == getValue().name
+        }.getOrDefault(false)
+
 }

@@ -150,10 +150,12 @@ object ThemeManager {
     fun syncToDeviceEncryptedStorage() {
         val ctx = appContext.createDeviceProtectedStorageContext()
         val sp = PreferenceManager.getDefaultSharedPreferences(ctx)
+        val unsyncedPreferences = prefs.managedPreferences
+            .map { it.value }
+            .filterNot { it.isValueSyncedTo(sp) }
+        if (unsyncedPreferences.isEmpty()) return
         sp.edit {
-            prefs.managedPreferences.forEach {
-                it.value.putValueTo(this@edit)
-            }
+            unsyncedPreferences.forEach { it.putValueTo(this@edit) }
         }
     }
 

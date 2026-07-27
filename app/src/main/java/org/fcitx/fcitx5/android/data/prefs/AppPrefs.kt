@@ -412,25 +412,24 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
     fun syncToDeviceEncryptedStorage() {
         val ctx = appContext.createDeviceProtectedStorageContext()
         val sp = PreferenceManager.getDefaultSharedPreferences(ctx)
+        val preferences = buildList<ManagedPreference<*>> {
+            addAll(
+                listOf(
+                    internal.verboseLog,
+                    internal.editorInfoInspector,
+                    advanced.ignoreSystemCursor,
+                    advanced.disableAnimation,
+                    advanced.vivoKeypressWorkaround
+                )
+            )
+            listOf(keyboard, candidates, clipboard).forEach { category ->
+                addAll(category.managedPreferences.map { it.value })
+            }
+        }
+        val unsyncedPreferences = preferences.filterNot { it.isValueSyncedTo(sp) }
+        if (unsyncedPreferences.isEmpty()) return
         sp.edit {
-            listOf(
-                internal.verboseLog,
-                internal.editorInfoInspector,
-                advanced.ignoreSystemCursor,
-                advanced.disableAnimation,
-                advanced.vivoKeypressWorkaround
-            ).forEach {
-                it.putValueTo(this@edit)
-            }
-            listOf(
-                keyboard,
-                candidates,
-                clipboard
-            ).forEach { category ->
-                category.managedPreferences.forEach {
-                    it.value.putValueTo(this@edit)
-                }
-            }
+            unsyncedPreferences.forEach { it.putValueTo(this@edit) }
         }
     }
 
