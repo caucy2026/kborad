@@ -15,11 +15,13 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CapabilityFlags
 import org.fcitx.fcitx5.android.core.InputMethodEntry
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.data.theme.ThemePreset
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
 import org.fcitx.fcitx5.android.input.dependency.fcitx
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
+import org.fcitx.fcitx5.android.input.dependency.inputView
 import org.fcitx.fcitx5.android.input.dependency.theme
 import org.fcitx.fcitx5.android.input.picker.PickerWindow
 import org.fcitx.fcitx5.android.input.popup.PopupActionListener
@@ -37,6 +39,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     InputBroadcastReceiver {
 
     private val service by manager.inputMethodService()
+    private val inputView by manager.inputView()
     private val fcitx by manager.fcitx()
     private val theme by manager.theme()
     private val commonKeyActionListener: CommonKeyActionListener by manager.must()
@@ -74,10 +77,12 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
                 TextKeyboard.FloatingLayout,
                 alwaysShowLanguageKey = true
             ),
+            DesktopKeyboard.Name to DesktopKeyboard(context, ThemePreset.AMOLEDBlack),
             NumberKeyboard.Name to NumberKeyboard(context, theme)
         )
     }
     private var currentKeyboardName = ""
+    private var desktopMode = false
     private var floatingMode = false
     private var lastSymbolType: String by AppPrefs.getInstance().internal.lastSymbolLayout
 
@@ -165,6 +170,19 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         }
     }
 
+    fun showDesktopKeyboard() {
+        switchLayout(DesktopKeyboard.Name, remember = false)
+    }
+
+    fun toggleDesktopKeyboard() {
+        val target = if (currentKeyboardName == DesktopKeyboard.Name) {
+            if (floatingMode) TextKeyboard.FloatingName else TextKeyboard.Name
+        } else {
+            DesktopKeyboard.Name
+        }
+        switchLayout(target, remember = false)
+    }
+
     override fun onImeUpdate(ime: InputMethodEntry) {
         currentKeyboard?.onInputMethodUpdate(ime)
     }
@@ -200,5 +218,10 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     // 2) currently keyboard window is attached and switchLayout was used
     private fun notifyBarLayoutChanged() {
         bar.onKeyboardLayoutSwitched(currentKeyboardName == NumberKeyboard.Name)
+        val nextDesktopMode = currentKeyboardName == DesktopKeyboard.Name
+        if (desktopMode != nextDesktopMode) {
+            desktopMode = nextDesktopMode
+            inputView.setDesktopKeyboardMode(desktopMode)
+        }
     }
 }

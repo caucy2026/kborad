@@ -8,6 +8,20 @@ ECM_PREFIX="$DEPS_DIR/ecm/install"
 ECM_DIR="$ECM_PREFIX/share/ECM/cmake"
 GETTEXT_BIN_DIR="$DEPS_DIR/gettext/bin"
 
+bootstrap_submodules() {
+  if git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Initializing native source dependencies..." >&2
+    git -C "$ROOT_DIR" submodule sync --recursive >&2
+    git -C "$ROOT_DIR" submodule update --init --recursive --jobs 8 >&2
+    return 0
+  fi
+
+  if [ ! -f "$ROOT_DIR/lib/fcitx5/src/main/cpp/fcitx5/CMakeLists.txt" ]; then
+    echo "Native dependencies are missing. Clone this repository with Git instead of downloading a source archive." >&2
+    exit 1
+  fi
+}
+
 find_sdk_dir() {
   if [ -n "${ANDROID_SDK_ROOT:-}" ] && [ -d "$ANDROID_SDK_ROOT" ]; then
     printf '%s\n' "$ANDROID_SDK_ROOT"
@@ -158,6 +172,7 @@ EOF
   chmod +x "$GETTEXT_BIN_DIR/msgfmt" "$GETTEXT_BIN_DIR/msgmerge"
 }
 
+bootstrap_submodules
 bootstrap_ecm
 bootstrap_gettext_wrappers
 

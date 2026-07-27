@@ -8,6 +8,8 @@ import android.content.Context
 import android.graphics.Rect
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.widget.LinearLayout
 import androidx.annotation.CallSuper
 import androidx.annotation.DrawableRes
 import androidx.constraintlayout.widget.ConstraintLayout
@@ -46,7 +48,8 @@ import kotlin.math.roundToInt
 abstract class BaseKeyboard(
     context: Context,
     protected val theme: Theme,
-    private val keyLayout: List<List<KeyDef>>
+    private val keyLayout: List<List<KeyDef>>,
+    private val headerView: View? = null
 ) : ConstraintLayout(context) {
 
     var keyActionListener: KeyActionListener? = null
@@ -87,6 +90,12 @@ abstract class BaseKeyboard(
 
     init {
         isMotionEventSplittingEnabled = true
+        headerView?.let {
+            add(it, lParams(MATCH_PARENT, dp(48)) {
+                topOfParent()
+                centerHorizontally()
+            })
+        }
         keyRows = keyLayout.map { row ->
             val keyViews = row.map(::createKeyView)
             constraintLayout Row@{
@@ -117,13 +126,13 @@ abstract class BaseKeyboard(
                 }
                 if (expandKeypressArea && totalWidth < 1f) {
                     val free = (1f - totalWidth) / 2f
-                    keyViews.first().apply {
+                    (keyViews.first() as? KeyView)?.apply {
                         updateLayoutParams<LayoutParams> {
                             matchConstraintPercentWidth += free
                         }
                         layoutMarginLeft = free / (row.first().appearance.percentWidth + free)
                     }
-                    keyViews.last().apply {
+                    (keyViews.last() as? KeyView)?.apply {
                         updateLayoutParams<LayoutParams> {
                             matchConstraintPercentWidth += free
                         }
@@ -134,7 +143,9 @@ abstract class BaseKeyboard(
         }
         keyRows.forEachIndexed { index, row ->
             add(row, lParams {
-                if (index == 0) topOfParent()
+                if (index == 0) {
+                    headerView?.let(::below) ?: topOfParent()
+                }
                 else below(keyRows[index - 1])
                 if (index == keyRows.size - 1) bottomOfParent()
                 else above(keyRows[index + 1])
@@ -144,20 +155,27 @@ abstract class BaseKeyboard(
         spaceSwipeMoveCursor.registerOnChangeListener(spaceSwipeChangeListener)
     }
 
-    private fun createKeyView(def: KeyDef): KeyView {
+    private fun createKeyView(def: KeyDef): View {
+        if (def.appearance is KeyDef.Appearance.VerticalGroup) {
+            return LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                def.appearance.keys.forEach { key ->
+                    addView(
+                        createKeyView(key),
+                        LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f)
+                    )
+                }
+            }
+        }
         return when (def.appearance) {
             is KeyDef.Appearance.AltText -> AltTextKeyView(context, theme, def.appearance)
             is KeyDef.Appearance.ImageText -> ImageTextKeyView(context, theme, def.appearance)
             is KeyDef.Appearance.Text -> TextKeyView(context, theme, def.appearance)
             is KeyDef.Appearance.Image -> ImageKeyView(context, theme, def.appearance)
+            is KeyDef.Appearance.VerticalGroup -> error("VerticalGroup is handled above")
+            is KeyDef.Appearance.StackedText -> StackedTextKeyView(context, theme, def.appearance)
         }.apply {
-            soundEffect = when (def) {
-                is SpaceKey -> InputFeedbacks.SoundEffect.SpaceBar
-                is MiniSpaceKey -> InputFeedbacks.SoundEffect.SpaceBar
-                is BackspaceKey -> InputFeedbacks.SoundEffect.Delete
-                is ReturnKey -> InputFeedbacks.SoundEffect.Return
-                else -> InputFeedbacks.SoundEffect.Standard
-            }
+            soundEffect = def.appearance.soundEffect
             if (def is SpaceKey) {
                 spaceKeys.add(this)
                 swipeEnabled = spaceSwipeMoveCursor.getValue()

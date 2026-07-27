@@ -218,6 +218,21 @@ class IdleUi(
         }
     }
 
+    fun setVoiceInputAvailable(available: Boolean) {
+        hideKeyboardButton.isEnabled = available
+        hideKeyboardButton.alpha = if (available) 1f else 0.38f
+        hideKeyboardButton.setIconTintColor(
+            if (available) theme.altKeyTextColor else 0xff777777.toInt()
+        )
+    }
+
+    fun setHideKeyboardButtonVisible(visible: Boolean) {
+        hideKeyboardButton.visibility = if (visible) View.VISIBLE else View.INVISIBLE
+        voiceSeparator.visibility = if (visible && hideKeyboardButton.contentDescription ==
+            ctx.getString(R.string.start_voice_input)
+        ) View.VISIBLE else View.INVISIBLE
+    }
+
     fun setVoiceInputActive(active: Boolean) {
         hideKeyboardButton.setIcon(R.drawable.ic_baseline_keyboard_voice_24)
         hideKeyboardButton.setIconTintColor(if (active) VOICE_ICON_SYSTEM_GREEN else theme.altKeyTextColor)

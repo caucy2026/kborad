@@ -7,6 +7,8 @@ package org.fcitx.fcitx5.android.input
 
 import android.annotation.SuppressLint
 import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.graphics.Outline
 import android.os.Build
 import android.view.MotionEvent
@@ -36,6 +38,7 @@ import org.fcitx.fcitx5.android.input.broadcast.PunctuationComponent
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
 import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateComponent
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
+import org.fcitx.fcitx5.android.input.keyboard.DesktopKeyboard
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
 import org.fcitx.fcitx5.android.input.picker.emojiPicker
 import org.fcitx.fcitx5.android.input.picker.emoticonPicker
@@ -43,6 +46,8 @@ import org.fcitx.fcitx5.android.input.picker.symbolPicker
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
 import org.fcitx.fcitx5.android.input.preedit.PreeditComponent
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
+import org.fcitx.fcitx5.android.utils.InputMethodUtil
+import org.fcitx.fcitx5.android.utils.switchToNextIME
 import org.fcitx.fcitx5.android.utils.unset
 import org.mechdancer.dependency.DynamicScope
 import org.mechdancer.dependency.manager.wrapToUniqueComponent
@@ -80,6 +85,42 @@ class InputView(
     private val customBackground = imageView {
         scaleType = ImageView.ScaleType.CENTER_CROP
     }
+
+    private val desktopVoiceButton by lazy {
+        ToolButton(context, R.drawable.ic_baseline_keyboard_voice_24, theme).apply {
+            visibility = GONE
+            useFullSizeIcon()
+        }
+    }
+
+    private val desktopOperationArea = view(::View) {
+        visibility = GONE
+        setBackgroundColor(Color.BLACK)
+    }
+
+    private val desktopHideButton = ToolButton(context, R.drawable.ic_keyboard_arrow_down_24, theme).apply {
+        visibility = GONE
+        contentDescription = context.getString(R.string.hide_keyboard)
+        useFullSizeIcon()
+        setCircleBackgroundColor(theme.altKeyBackgroundColor)
+        setIconTintColor(theme.altKeyTextColor)
+        setOnClickListener { service.requestHideSelf(0) }
+    }
+
+    private val desktopExitButton = ToolButton(context, R.drawable.ic_dock_keyboard_24, theme).apply {
+        visibility = GONE
+        contentDescription = context.getString(R.string.exit_desktop_keyboard)
+        useFullSizeIcon()
+        setCircleBackgroundColor(theme.altKeyBackgroundColor)
+        setIconTintColor(theme.altKeyTextColor)
+        setOnClickListener { keyboardWindow.toggleDesktopKeyboard() }
+    }
+
+    private val desktopOperationButtons = listOf(
+        desktopHideButton,
+        desktopExitButton,
+        desktopVoiceButton
+    )
 
     private val placeholderOnClickListener = OnClickListener { }
 
@@ -195,6 +236,7 @@ class InputView(
         keyboardBottomPadding,
         keyboardBottomPaddingLandscape,
     )
+    private var desktopKeyboardMode = false
 
     private val floatingKeyboardOutline = object : ViewOutlineProvider() {
         override fun getOutline(view: View, outline: Outline) {
@@ -254,6 +296,24 @@ class InputView(
     }
 
     val keyboardView: View
+
+    private fun bringDesktopButtonsToFront() {
+        desktopVoiceButton.bringToFront()
+        desktopExitButton.bringToFront()
+        desktopHideButton.bringToFront()
+    }
+
+    private fun updateDesktopPreeditPosition() {
+        if (!desktopKeyboardMode) return
+        windowManager.view.post {
+            if (!desktopKeyboardMode) return@post
+            val availableHeight = windowManager.view.height - dp(16)
+            preedit.ui.root.updateLayoutParams<LayoutParams> {
+                topMargin = dp(KawaiiBarComponent.HEIGHT + 4) +
+                        DesktopKeyboard.compositionInset(availableHeight)
+            }
+        }
+    }
 
     init {
         // MUST call before any operation
@@ -331,6 +391,25 @@ class InputView(
                  * set start and end constrain in [updateKeyboardSize]
                  */
             })
+            add(desktopOperationArea, lParams(matchParent, dp(DESKTOP_OPERATION_HEIGHT_DP)) {
+                bottomOfParent()
+                centerHorizontally()
+            })
+            add(desktopHideButton, lParams(dp(DESKTOP_OPERATION_BUTTON_SIZE_DP), dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
+                startOfParent()
+                bottomOfParent()
+                marginStart = dp(24)
+            })
+            add(desktopExitButton, lParams(dp(DESKTOP_OPERATION_BUTTON_SIZE_DP), dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
+                startToEndOf(desktopHideButton)
+                bottomOfParent()
+                marginStart = dp(4)
+            })
+            add(desktopVoiceButton, lParams(dp(DESKTOP_OPERATION_BUTTON_SIZE_DP), dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
+                endOfParent()
+                bottomOfParent()
+                marginEnd = dp(24)
+            })
             add(bottomPaddingSpace, lParams {
                 startToEndOf(leftPaddingSpace)
                 endToStartOf(rightPaddingSpace)
@@ -339,6 +418,7 @@ class InputView(
         }
 
         updateKeyboardSize()
+        kawaiiBar.setDesktopVoiceButton(desktopVoiceButton)
 
         add(preedit.ui.root, lParams(matchParent, wrapContent) {
             above(keyboardView)
@@ -366,6 +446,58 @@ class InputView(
         val isFloating = !floatingKeyboard.getValue()
         floatingKeyboard.setValue(isFloating)
         return isFloating
+    }
+
+    fun setDesktopKeyboardMode(enabled: Boolean) {
+        if (desktopKeyboardMode == enabled) return
+        desktopKeyboardMode = enabled
+        kawaiiBar.setDesktopKeyboardMode(enabled)
+        desktopOperationArea.visibility = if (enabled) VISIBLE else GONE
+        desktopOperationButtons.filter { it !== desktopVoiceButton }.forEach {
+            it.visibility = if (enabled) VISIBLE else GONE
+        }
+        if (enabled) {
+            bringDesktopButtonsToFront()
+            // Explicitly hide floating‑keyboard controls so they never appear
+            // alongside the desktop operation bar.
+            floatingHideKeyboardButton.visibility = GONE
+            floatingWindowHandle.visibility = GONE
+            floatingResizeButton.visibility = GONE
+        } else {
+            updateFloatingKeyboardLayout()
+        }
+        kawaiiBar.view.setBackgroundColor(
+            if (enabled) theme.barColor
+            else if (keyBorder) Color.TRANSPARENT else theme.barColor
+        )
+        keyboardView.setBackgroundColor(if (enabled) Color.BLACK else Color.TRANSPARENT)
+        customBackground.imageDrawable = if (enabled) {
+            ColorDrawable(Color.BLACK)
+        } else {
+            theme.backgroundDrawable(keyBorder)
+        }
+        keyboardView.updateLayoutParams<LayoutParams> {
+            height = if (enabled) matchParent else wrapContent
+            if (enabled) {
+                topToBottom = unset
+            } else {
+                topToBottom = unset
+            }
+        }
+        preedit.ui.root.updateLayoutParams<LayoutParams> {
+            if (enabled) {
+                topOfParent()
+                bottomToTop = unset
+                topMargin = dp(KawaiiBarComponent.HEIGHT + 4)
+            } else {
+                topToTop = unset
+                bottomToTop = keyboardView.id
+                topMargin = 0
+            }
+        }
+        if (enabled) preedit.ui.root.bringToFront()
+        updateKeyboardSize()
+        updateDesktopPreeditPosition()
     }
 
     private fun updateFloatingKeyboardLayout() {
@@ -544,7 +676,9 @@ class InputView(
 
     private fun updateKeyboardSize() {
         windowManager.view.updateLayoutParams {
-            height = if (floatingKeyboard.getValue()) {
+            height = if (desktopKeyboardMode) {
+                0
+            } else if (floatingKeyboard.getValue()) {
                 keyboardHeightPx * floatingKeyboardHeightPercent.getValue()
                     .coerceIn(FLOATING_KEYBOARD_MIN_HEIGHT_PERCENT, FLOATING_KEYBOARD_MAX_HEIGHT_PERCENT) / 100
             } else {
@@ -552,10 +686,13 @@ class InputView(
             }
         }
         bottomPaddingSpace.updateLayoutParams {
-            height = if (floatingKeyboard.getValue()) 0 else keyboardBottomPaddingPx
+            height = if (desktopKeyboardMode || floatingKeyboard.getValue()) 0 else keyboardBottomPaddingPx
         }
         windowManager.view.updateLayoutParams<LayoutParams> {
-            if (floatingKeyboard.getValue()) {
+            if (desktopKeyboardMode) {
+                bottomToTop = unset
+                above(desktopOperationArea)
+            } else if (floatingKeyboard.getValue()) {
                 bottomToTop = unset
                 above(floatingWindowHandle)
             } else {
@@ -563,7 +700,7 @@ class InputView(
                 above(bottomPaddingSpace)
             }
         }
-        val sidePadding = keyboardSidePaddingPx
+        val sidePadding = if (desktopKeyboardMode) dp(16) else keyboardSidePaddingPx
         if (sidePadding == 0) {
             // hide side padding space views when unnecessary
             leftPaddingSpace.visibility = GONE
@@ -678,6 +815,8 @@ class InputView(
         const val FLOATING_HANDLE_HEIGHT_DP = 32
         const val FLOATING_HIDE_BUTTON_SIZE_DP = 48
         const val FLOATING_HIDE_BUTTON_OFFSET_DP = 12
+        const val DESKTOP_OPERATION_HEIGHT_DP = 64
+        const val DESKTOP_OPERATION_BUTTON_SIZE_DP = 56
         const val FLOATING_KEYBOARD_RADIUS_DP = 24
         const val FLOATING_RESIZE_CORNER_SIZE_DP = 24
         const val FLOATING_KEYBOARD_DOCK_THRESHOLD_DP = 28

@@ -88,6 +88,23 @@ open class KeyDef(
             margin: Boolean = true,
             viewId: Int = -1
         ) : Text(displayText, textSize, textStyle, percentWidth, variant, border, margin, viewId)
+
+        class VerticalGroup(
+            val keys: List<KeyDef>,
+            percentWidth: Float,
+            variant: Variant = Variant.Alternative
+        ) : Appearance(percentWidth, variant, Border.Off, false, -1, InputFeedbacks.SoundEffect.Standard)
+
+        class StackedText(
+            val topText: String,
+            val bottomText: String,
+            val textSize: Float,
+            percentWidth: Float,
+            variant: Variant = Variant.Alternative,
+            border: Border = Border.Default,
+            margin: Boolean = true,
+            viewId: Int = -1
+        ) : Appearance(percentWidth, variant, border, margin, viewId, InputFeedbacks.SoundEffect.Standard)
     }
 
     sealed class Behavior {

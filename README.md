@@ -71,6 +71,22 @@ This repository currently carries KEMI-specific requirements for local preview b
 - Local build entry: `./scripts/assemble-debug-local.sh`
 - Keyboard preview change record: [docs/kemi-keyboard-preview-v1.md](docs/kemi-keyboard-preview-v1.md).
 
+### KEMI reproducible build
+
+Install JDK 17 and Android SDK 36 with NDK `28.0.13004108`, CMake `3.31.6`, and
+Build-Tools `36.1.0`. Then clone and build:
+
+```shell
+git clone --branch kboard-preview-v1 https://github.com/caucy2026/kborad.git
+cd kborad
+./scripts/assemble-debug-local.sh
+```
+
+The build script initializes every pinned Git submodule recursively, downloads
+the pinned ECM release, creates the required gettext tools, and uses the checked-in
+Gradle Wrapper. No manual native dependency lookup is required. The APK is written
+to `app/build/outputs/apk/debug/`.
+
 ## Screenshots
 
 |拼音, Material Light theme, key border enabled|自然码双拼, Pixel Dark theme, key border disabled|

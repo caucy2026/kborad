@@ -17,8 +17,10 @@ import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.RippleDrawable
 import android.graphics.drawable.StateListDrawable
 import android.util.TypedValue
+import android.view.MotionEvent
 import android.view.View
 import android.widget.ImageView
+import android.widget.LinearLayout
 import androidx.annotation.ColorInt
 import androidx.annotation.DrawableRes
 import androidx.annotation.FloatRange
@@ -183,6 +185,19 @@ abstract class KeyView(ctx: Context, val theme: Theme, val def: KeyDef.Appearanc
     override fun setEnabled(enabled: Boolean) {
         super.setEnabled(enabled)
         appearanceView.alpha = if (enabled) 1f else styledFloat(android.R.attr.disabledAlpha)
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                appearanceView.animate().cancel()
+                appearanceView.animate().translationY(dp(2).toFloat()).setDuration(35).start()
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                appearanceView.animate().translationY(0f).setDuration(70).start()
+            }
+        }
+        return super.onTouchEvent(event)
     }
 
     fun updateBounds() {
@@ -395,6 +410,40 @@ class ImageKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.Image) :
                 centerInParent()
             })
         }
+    }
+}
+
+@SuppressLint("ViewConstructor")
+class StackedTextKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.StackedText) :
+    KeyView(ctx, theme, def) {
+    val topText = view(::AutoScaleTextView) {
+        isClickable = false
+        isFocusable = false
+        background = null
+        text = def.topText
+        setTextSize(TypedValue.COMPLEX_UNIT_DIP, def.textSize)
+        setTypeface(typeface, Typeface.BOLD)
+        setTextColor(theme.altKeyTextColor)
+        gravity = android.view.Gravity.CENTER
+    }
+    val bottomText = view(::AutoScaleTextView) {
+        isClickable = false
+        isFocusable = false
+        background = null
+        text = def.bottomText
+        setTextSize(TypedValue.COMPLEX_UNIT_DIP, def.textSize)
+        setTypeface(typeface, Typeface.BOLD)
+        setTextColor(theme.altKeyTextColor)
+        gravity = android.view.Gravity.CENTER
+    }
+
+    init {
+        val stack = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(topText, LinearLayout.LayoutParams(matchParent, 0, 1f))
+            addView(bottomText, LinearLayout.LayoutParams(matchParent, 0, 1f))
+        }
+        appearanceView.addView(stack, ConstraintLayout.LayoutParams(matchParent, matchParent))
     }
 }
 

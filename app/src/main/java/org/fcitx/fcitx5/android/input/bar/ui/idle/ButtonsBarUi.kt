@@ -49,6 +49,10 @@ class ButtonsBarUi(override val ctx: Context, private val theme: Theme) : Ui {
         contentDescription = ctx.getString(R.string.floating_keyboard)
     }
 
+    val desktopKeyboardButton = toolButton(R.drawable.ic_baseline_keyboard_24).apply {
+        contentDescription = ctx.getString(R.string.desktop_keyboard)
+    }
+
     fun updateFloatingKeyboardState(isFloating: Boolean) {
         floatingKeyboardButton.setIcon(
             if (isFloating) R.drawable.ic_floating_keyboard_docked_24 else R.drawable.ic_floating_keyboard_24
@@ -62,6 +66,7 @@ class ButtonsBarUi(override val ctx: Context, private val theme: Theme) : Ui {
         cursorMoveButton.visibility = standardControls
         clipboardButton.visibility = standardControls
         floatingKeyboardButton.visibility = View.VISIBLE
+        desktopKeyboardButton.visibility = standardControls
     }
 
     val moreButton = toolButton(R.drawable.ic_baseline_more_horiz_24).apply {

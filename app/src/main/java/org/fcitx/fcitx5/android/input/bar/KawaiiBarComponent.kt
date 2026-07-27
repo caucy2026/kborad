@@ -1,6 +1,5 @@
 /*
  * SPDX-License-Identifier: LGPL-2.1-or-later
- * SPDX-FileCopyrightText: Copyright 2021-2025 Fcitx5 for Android Contributors
  */
 package org.fcitx.fcitx5.android.input.bar
 
@@ -9,11 +8,13 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.SystemClock
 import android.util.Size
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -124,6 +125,17 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private var isKeyboardLayoutNumber: Boolean = false
     private var isToolbarManuallyToggled: Boolean = false
     private var shouldShowVoiceInput: Boolean = false
+    private var desktopKeyboardMode: Boolean = false
+    private var desktopVoiceButton: ToolButton? = null
+
+    private val voiceNetworkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) = refreshVoiceInputAvailability()
+
+        override fun onLost(network: Network) = refreshVoiceInputAvailability()
+
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) =
+            refreshVoiceInputAvailability()
+    }
 
     private enum class NumberRowState { Auto, ForceShow, ForceHide }
 
@@ -252,6 +264,75 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 swipeHideKeyboardCallback
             }
         }
+        idleUi.setVoiceInputAvailable(!useVoiceInput || isNetworkAvailableForVoice())
+        idleUi.setHideKeyboardButtonVisible(!(desktopKeyboardMode && useVoiceInput))
+        updateDesktopVoiceButton(useVoiceInput)
+    }
+
+    fun setDesktopVoiceButton(button: ToolButton?) {
+        desktopVoiceButton = button
+        updateHideKeyboardButton()
+    }
+
+    fun setDesktopKeyboardMode(enabled: Boolean) {
+        desktopKeyboardMode = enabled
+        view.visibility = if (enabled && view.displayedChild ==
+            KawaiiBarStateMachine.State.Idle.ordinal
+        ) View.INVISIBLE else View.VISIBLE
+        updateHideKeyboardButton()
+    }
+
+    private fun updateDesktopVoiceButton(useVoiceInput: Boolean) {
+        desktopVoiceButton?.apply {
+            visibility = if (desktopKeyboardMode && useVoiceInput) View.VISIBLE else View.GONE
+            if (!desktopKeyboardMode || !useVoiceInput) return@apply
+            setIcon(R.drawable.ic_baseline_keyboard_voice_24)
+            useFullSizeIcon()
+            setCircleBackgroundColor(theme.altKeyBackgroundColor)
+            setIconTintColor(theme.altKeyTextColor)
+            contentDescription = context.getString(R.string.start_voice_input)
+            isEnabled = isNetworkAvailableForVoice()
+            isClickable = true
+            alpha = if (isEnabled) 1f else 0.38f
+            swipeEnabled = false
+            setOnTouchListener { view, event ->
+                if (!isEnabled) return@setOnTouchListener false
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        view.parent.requestDisallowInterceptTouchEvent(true)
+                        view.isPressed = true
+                        voiceInputGestureCallback.onGesture(
+                            this, CustomGestureView.Event(
+                                CustomGestureView.GestureType.Down,
+                                false, event.x, event.y, 0, 0, 0, 0
+                            )
+                        )
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> true
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        view.parent.requestDisallowInterceptTouchEvent(false)
+                        view.isPressed = false
+                        voiceInputGestureCallback.onGesture(
+                            this, CustomGestureView.Event(
+                                CustomGestureView.GestureType.Up,
+                                false, event.x, event.y, 0, 0, 0, 0
+                            )
+                        )
+                        true
+                    }
+                    else -> false
+                }
+            }
+            onGestureListener = null
+            setOnClickListener(null)
+        }
+    }
+
+    private fun refreshVoiceInputAvailability() {
+        view.post {
+            if (shouldShowVoiceInput) updateHideKeyboardButton()
+        }
     }
 
     private val swipeDownExpandCallback = CustomGestureView.OnGestureListener { _, e ->
@@ -316,6 +397,20 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             context,
             onStateChanged = { state ->
                 idleUi.setVoiceInputActive(state != IflytekAsrClient.State.Idle)
+                desktopVoiceButton?.let { button ->
+                    button.setIconTintColor(
+                        if (state != IflytekAsrClient.State.Idle) 0xff34a853.toInt()
+                        else theme.altKeyTextColor
+                    )
+                    button.setCircleBackgroundColor(
+                        if (state != IflytekAsrClient.State.Idle) theme.genericActiveBackgroundColor
+                        else theme.altKeyBackgroundColor
+                    )
+                    button.contentDescription = context.getString(
+                        if (state != IflytekAsrClient.State.Idle) R.string.stop_voice_input
+                        else R.string.start_voice_input
+                    )
+                }
                 when (state) {
                     IflytekAsrClient.State.Starting ->
                         idleUi.showVoiceTranscript(context.getString(R.string.voice_input_connecting))
@@ -383,27 +478,14 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     voiceCommitJob?.cancel()
                     voiceCommitJob = null
                     voiceStartJob?.cancel()
+                    voiceStartJob = null
                     asrClient.cancel()
                     idleUi.hideVoiceTranscript()
-                    voicePressActive = false
-                    voiceStartJob = service.lifecycleScope.launch {
-                        delay(VOICE_PRESS_TO_START_MS)
-                        voicePressActive = true
-                        asrClient.start()
-                    }
+                    voicePressActive = true
+                    asrClient.start()
                 }
             }
             CustomGestureView.GestureType.Up -> {
-                if (voiceStartJob?.isActive == true) {
-                    voiceStartJob?.cancel()
-                    voiceStartJob = null
-                    idleUi.hideVoiceTranscript()
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.voice_input_hold_to_talk),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
                 if (voicePressActive) {
                     voicePressActive = false
                     asrClient.stop()
@@ -482,6 +564,12 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 }
                 floatingKeyboardButton.setOnClickListener {
                     updateFloatingKeyboardState(service.toggleFloatingKeyboard())
+                }
+                desktopKeyboardButton.setOnClickListener {
+                    Timber.d("Desktop keyboard button clicked")
+                    windowManager.attachWindow(KeyboardWindow)
+                    (windowManager.getEssentialWindow(KeyboardWindow) as KeyboardWindow)
+                        .toggleDesktopKeyboard()
                 }
                 updateFloatingKeyboardState(prefs.keyboard.floatingKeyboard.getValue())
                 moreButton.setOnClickListener {
@@ -577,6 +665,11 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     }
 
     private fun switchUiByState(state: KawaiiBarStateMachine.State) {
+        view.visibility = if (desktopKeyboardMode && state == KawaiiBarStateMachine.State.Idle) {
+            View.INVISIBLE
+        } else {
+            View.VISIBLE
+        }
         val index = state.ordinal
         if (view.displayedChild == index) return
         val new = view.getChildAt(index)
@@ -611,6 +704,14 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         clipboardSuggestion.registerOnChangeListener(onClipboardSuggestionUpdateListener)
         clipboardItemTimeout.registerOnChangeListener(onClipboardTimeoutUpdateListener)
         floatingKeyboard.registerOnChangeListener(onFloatingKeyboardUpdateListener)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            runCatching {
+                context.getSystemService(ConnectivityManager::class.java)
+                    ?.registerDefaultNetworkCallback(voiceNetworkCallback)
+            }.onFailure {
+                Timber.w(it, "Unable to observe voice network state")
+            }
+        }
     }
 
     override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
@@ -723,7 +824,6 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     companion object {
         const val HEIGHT = 48
         const val VOICE_FINAL_PREVIEW_MS = 300L
-        const val VOICE_PRESS_TO_START_MS = 180L
         const val VOICE_PERMISSION_REQUEST_COOLDOWN_MS = 2_000L
         const val VOICE_CANCEL_MOVE_THRESHOLD = 24f
     }

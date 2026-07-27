@@ -165,6 +165,46 @@ class CursorKey(
     )
 )
 
+class DesktopModifierKey(
+    displayText: String,
+    state: KeyState,
+    percentWidth: Float,
+    border: Border = Border.On
+) : KeyDef(
+    Appearance.Text(
+        displayText = displayText,
+        textSize = 14f,
+        textStyle = Typeface.BOLD,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative,
+        border = border
+    ),
+    setOf(Behavior.Press(KeyAction.ModifierAction(state)))
+)
+
+class DesktopSymKey(
+    displayText: String,
+    sym: Int,
+    percentWidth: Float,
+    repeat: Boolean = false,
+    border: Border = Border.On,
+    soundEffect: InputFeedbacks.SoundEffect = InputFeedbacks.SoundEffect.Standard
+) : KeyDef(
+    Appearance.Text(
+        displayText = displayText,
+        textSize = 14f,
+        textStyle = Typeface.BOLD,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative,
+        border = border,
+        soundEffect = soundEffect
+    ),
+    buildSet {
+        add(Behavior.Press(KeyAction.SymAction(KeySym(sym))))
+        if (repeat) add(Behavior.Repeat(KeyAction.SymAction(KeySym(sym))))
+    }
+)
+
 class LayoutSwitchKey(
     displayText: String,
     val to: String = "",
@@ -278,11 +318,11 @@ class SpacerKey(percentWidth: Float) : KeyDef(
     emptySet()
 )
 
-class SpaceKey : KeyDef(
+open class SpaceKey(percentWidth: Float = 0f) : KeyDef(
     Appearance.Text(
         displayText = " ",
         textSize = 15f,
-        percentWidth = 0f,
+        percentWidth = percentWidth,
         border = Border.Special,
         viewId = R.id.button_space,
         soundEffect = InputFeedbacks.SoundEffect.SpaceBar
@@ -290,6 +330,34 @@ class SpaceKey : KeyDef(
     setOf(
         Behavior.Press(KeyAction.SymAction(KeySym(FcitxKeyMapping.FcitxKey_space))),
         Behavior.LongPress(KeyAction.SpaceLongPressAction)
+    )
+)
+
+class DesktopSpaceKey(percentWidth: Float) : KeyDef(
+    Appearance.Text(
+        displayText = " ",
+        textSize = 15f,
+        percentWidth = percentWidth,
+        border = Border.On,
+        viewId = R.id.button_space,
+        soundEffect = InputFeedbacks.SoundEffect.SpaceBar
+    ),
+    setOf(
+        Behavior.Press(KeyAction.SymAction(KeySym(FcitxKeyMapping.FcitxKey_space))),
+        Behavior.LongPress(KeyAction.SpaceLongPressAction)
+    )
+)
+
+class NumLockKey(percentWidth: Float) : KeyDef(
+    Appearance.StackedText(
+        topText = "NUM",
+        bottomText = "LOCK",
+        textSize = 8f,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative
+    ),
+    setOf(
+        Behavior.Press(KeyAction.SymAction(KeySym(FcitxKeyMapping.FcitxKey_Num_Lock)))
     )
 )
 
