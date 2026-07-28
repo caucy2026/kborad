@@ -34,8 +34,8 @@ while [ "$attempt" -le 3 ]; do
 	grep -A 10 'What went wrong:' "$GRADLE_LOG" | head -15 | while IFS= read -r errline; do
 		echo "::error::${errline}"
 	done || true
-	# Also capture key failure indicators
-	grep -iE 'Could not|Unable to|No such|not found|denied|refused|timeout|does not exist' "$GRADLE_LOG" | head -20 | while IFS= read -r errline; do
+	# Also capture key failure indicators including HTTP/network errors
+	grep -iE 'Could not|Unable to|No such|not found|denied|refused|timeout|does not exist|resolve|download|connect|network|SSL|HTTP|status code' "$GRADLE_LOG" | head -30 | while IFS= read -r errline; do
 		echo "::error::${errline}"
 	done || true
 	echo "::endgroup::"

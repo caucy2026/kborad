@@ -70,7 +70,7 @@ jobs:
           ./scripts/assemble-debug-local.sh
         env:
           KEMI_GRADLE_COMMAND: gradle
-          KEMI_GRADLE_EXTRA_ARGS: --no-daemon --stacktrace
+          KEMI_GRADLE_EXTRA_ARGS: --no-daemon --debug
           KEMI_SUBMODULES_READY: "1"
 
       - name: Upload debug APK
