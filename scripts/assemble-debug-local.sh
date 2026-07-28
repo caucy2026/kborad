@@ -12,9 +12,10 @@ fi
 eval "$(sed 's/^/export /' "$DEPS_ENV")"
 
 cd "$ROOT_DIR"
+GRADLE_COMMAND=${KEMI_GRADLE_COMMAND:-./gradlew}
 attempt=1
 while [ "$attempt" -le 3 ]; do
-	if PATH="$GETTEXT_BIN_DIR:$PATH" ECM_DIR="$ECM_DIR" ./gradlew :app:assembleDebug "$@"; then
+	if PATH="$GETTEXT_BIN_DIR:$PATH" ECM_DIR="$ECM_DIR" "$GRADLE_COMMAND" :app:assembleDebug "$@"; then
 		exit 0
 	fi
 	if [ "$attempt" -eq 3 ]; then
