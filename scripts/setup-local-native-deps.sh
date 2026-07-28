@@ -23,7 +23,7 @@ bootstrap_submodules() {
     git -C "$ROOT_DIR" submodule sync --recursive >&2
     attempt=1
     while [ "$attempt" -le 3 ]; do
-      if git -C "$ROOT_DIR" submodule update --init --recursive --jobs 8 >&2; then
+      if git -C "$ROOT_DIR" submodule update --init --recursive --jobs 2 >&2; then
         return 0
       fi
       if [ "$attempt" -eq 3 ]; then
