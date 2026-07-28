@@ -312,7 +312,7 @@ cd kemi-keyboard
 ./scripts/assemble-debug-local.sh
 ```
 
-The entry point synchronizes and initializes all recursive Git submodules, downloads and installs the pinned KDE Extra CMake Modules 6.9.0 under `.local-deps/`, supplies its `ECM_DIR` to Gradle, and creates lightweight local `msgfmt` and `msgmerge` wrappers required by the native build. The ECM download uses a temporary file, retries transient network failures, and stops the build cleanly if dependency preparation cannot complete.
+The entry point synchronizes and initializes all recursive Git submodules, reads the pinned Android Platform, Build-Tools, NDK, and CMake versions from `Versions.kt`, and installs missing Android components through `sdkmanager`. It also downloads and installs KDE Extra CMake Modules 6.9.0 under `.local-deps/`, supplies its `ECM_DIR` to Gradle, and creates lightweight local `msgfmt` and `msgmerge` wrappers required by the native build. The ECM download uses a temporary file, retries transient network failures, and stops the build cleanly if dependency preparation cannot complete. A colleague only needs JDK 17 and Android Studio or Android SDK Command-line Tools; project-specific native dependencies are prepared by the build entry point.
 
 The generated debug APK is written beneath `app/build/outputs/apk/debug/`. Its filename and `BuildConfig` include the checked-out Git commit through `git describe` and `git rev-parse HEAD`. A build from a later backup commit therefore has a different hash in its filename and metadata even when the application source tree is unchanged; that metadata difference is expected and does not change the keyboard implementation.
 

@@ -1,0 +1,42 @@
+name: KEMI Reproducible Build
+
+on:
+  push:
+    branches:
+      - kboard-preview-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clean-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fetch source without dependencies
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android command-line tools
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Build with repository bootstrap
+        run: ./scripts/assemble-debug-local.sh
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: kemi-arm64-debug-${{ github.sha }}
+          path: app/build/outputs/apk/debug/*arm64-v8a-debug.apk
+          if-no-files-found: error
