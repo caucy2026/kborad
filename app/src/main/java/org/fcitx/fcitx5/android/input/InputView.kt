@@ -38,7 +38,6 @@ import org.fcitx.fcitx5.android.input.broadcast.PunctuationComponent
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
 import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateComponent
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
-import org.fcitx.fcitx5.android.input.keyboard.DesktopKeyboard
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
 import org.fcitx.fcitx5.android.input.picker.emojiPicker
 import org.fcitx.fcitx5.android.input.picker.emoticonPicker
@@ -46,8 +45,6 @@ import org.fcitx.fcitx5.android.input.picker.symbolPicker
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
 import org.fcitx.fcitx5.android.input.preedit.PreeditComponent
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
-import org.fcitx.fcitx5.android.utils.InputMethodUtil
-import org.fcitx.fcitx5.android.utils.switchToNextIME
 import org.fcitx.fcitx5.android.utils.unset
 import org.mechdancer.dependency.DynamicScope
 import org.mechdancer.dependency.manager.wrapToUniqueComponent
@@ -98,15 +95,6 @@ class InputView(
         setBackgroundColor(Color.BLACK)
     }
 
-    private val desktopHideButton = ToolButton(context, R.drawable.ic_keyboard_arrow_down_24, theme).apply {
-        visibility = GONE
-        contentDescription = context.getString(R.string.hide_keyboard)
-        useFullSizeIcon()
-        setCircleBackgroundColor(theme.altKeyBackgroundColor)
-        setIconTintColor(theme.altKeyTextColor)
-        setOnClickListener { service.requestHideSelf(0) }
-    }
-
     private val desktopExitButton = ToolButton(context, R.drawable.ic_dock_keyboard_24, theme).apply {
         visibility = GONE
         contentDescription = context.getString(R.string.exit_desktop_keyboard)
@@ -117,7 +105,6 @@ class InputView(
     }
 
     private val desktopOperationButtons = listOf(
-        desktopHideButton,
         desktopExitButton,
         desktopVoiceButton
     )
@@ -300,17 +287,20 @@ class InputView(
     private fun bringDesktopButtonsToFront() {
         desktopVoiceButton.bringToFront()
         desktopExitButton.bringToFront()
-        desktopHideButton.bringToFront()
     }
 
     private fun updateDesktopPreeditPosition() {
         if (!desktopKeyboardMode) return
         windowManager.view.post {
             if (!desktopKeyboardMode) return@post
-            val availableHeight = windowManager.view.height - dp(16)
+            val firstRowTop = keyboardWindow.desktopFirstRowTopOnScreen() ?: return@post
+            val parent = preedit.ui.root.parent as? View ?: return@post
+            val parentLocation = IntArray(2)
+            parent.getLocationOnScreen(parentLocation)
             preedit.ui.root.updateLayoutParams<LayoutParams> {
-                topMargin = dp(KawaiiBarComponent.HEIGHT + 4) +
-                        DesktopKeyboard.compositionInset(availableHeight)
+                topMargin = (firstRowTop - parentLocation[1] -
+                        preedit.ui.root.measuredHeight - dp(DESKTOP_PREEDIT_GAP_DP))
+                    .coerceAtLeast(dp(KawaiiBarComponent.HEIGHT))
             }
         }
     }
@@ -395,20 +385,17 @@ class InputView(
                 bottomOfParent()
                 centerHorizontally()
             })
-            add(desktopHideButton, lParams(dp(DESKTOP_OPERATION_BUTTON_SIZE_DP), dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
-                startOfParent()
-                bottomOfParent()
-                marginStart = dp(24)
-            })
             add(desktopExitButton, lParams(dp(DESKTOP_OPERATION_BUTTON_SIZE_DP), dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
-                startToEndOf(desktopHideButton)
+                startOfParent()
+                endToStartOf(desktopVoiceButton)
                 bottomOfParent()
-                marginStart = dp(4)
+                horizontalChainStyle = LayoutParams.CHAIN_PACKED
             })
             add(desktopVoiceButton, lParams(dp(DESKTOP_OPERATION_BUTTON_SIZE_DP), dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
+                startToEndOf(desktopExitButton)
                 endOfParent()
                 bottomOfParent()
-                marginEnd = dp(24)
+                marginStart = dp(16)
             })
             add(bottomPaddingSpace, lParams {
                 startToEndOf(leftPaddingSpace)
@@ -419,6 +406,12 @@ class InputView(
 
         updateKeyboardSize()
         kawaiiBar.setDesktopVoiceButton(desktopVoiceButton)
+        windowManager.view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            updateDesktopPreeditPosition()
+        }
+        preedit.ui.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            updateDesktopPreeditPosition()
+        }
 
         add(preedit.ui.root, lParams(matchParent, wrapContent) {
             above(keyboardView)
@@ -817,6 +810,7 @@ class InputView(
         const val FLOATING_HIDE_BUTTON_OFFSET_DP = 12
         const val DESKTOP_OPERATION_HEIGHT_DP = 64
         const val DESKTOP_OPERATION_BUTTON_SIZE_DP = 56
+        const val DESKTOP_PREEDIT_GAP_DP = 4
         const val FLOATING_KEYBOARD_RADIUS_DP = 24
         const val FLOATING_RESIZE_CORNER_SIZE_DP = 24
         const val FLOATING_KEYBOARD_DOCK_THRESHOLD_DP = 28

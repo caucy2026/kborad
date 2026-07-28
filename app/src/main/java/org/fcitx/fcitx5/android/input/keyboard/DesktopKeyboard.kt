@@ -250,6 +250,13 @@ class DesktopKeyboard(context: Context, theme: Theme) :
         }
     }
 
+    fun firstRowTopOnScreen(): Int? {
+        if (!isLaidOut || childCount < 2) return null
+        val location = IntArray(2)
+        getLocationOnScreen(location)
+        return location[1] + getChildAt(1).top
+    }
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         val topPadding = context.dp(4)
