@@ -13,9 +13,11 @@ eval "$(sed 's/^/export /' "$DEPS_ENV")"
 
 cd "$ROOT_DIR"
 GRADLE_COMMAND=${KEMI_GRADLE_COMMAND:-./gradlew}
+GRADLE_EXTRA_ARGS=${KEMI_GRADLE_EXTRA_ARGS:-}
 attempt=1
 while [ "$attempt" -le 3 ]; do
-	if PATH="$GETTEXT_BIN_DIR:$PATH" ECM_DIR="$ECM_DIR" "$GRADLE_COMMAND" :app:assembleDebug "$@"; then
+	# shellcheck disable=SC2086
+	if PATH="$GETTEXT_BIN_DIR:$PATH" ECM_DIR="$ECM_DIR" "$GRADLE_COMMAND" :app:assembleDebug $GRADLE_EXTRA_ARGS "$@"; then
 		exit 0
 	fi
 	if [ "$attempt" -eq 3 ]; then

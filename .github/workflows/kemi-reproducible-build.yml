@@ -66,7 +66,7 @@ jobs:
       - name: Build with repository bootstrap
         run: ./scripts/assemble-debug-local.sh
         env:
-          KEMI_GRADLE_COMMAND: gradle
+          KEMI_GRADLE_EXTRA_ARGS: --stacktrace --info
           KEMI_SUBMODULES_READY: "1"
 
       - name: Upload debug APK
