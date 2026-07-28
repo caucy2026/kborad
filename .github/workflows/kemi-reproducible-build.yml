@@ -38,6 +38,14 @@ jobs:
       - name: Setup Gradle cache
         uses: gradle/actions/setup-gradle@v5
 
+      - name: Verify pinned Android toolchain
+        run: |
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          test -f "$sdk/platforms/android-36/android.jar"
+          test -d "$sdk/build-tools/36.1.0"
+          test -f "$sdk/ndk/28.0.13004108/source.properties"
+          test -x "$sdk/cmake/3.31.6/bin/cmake"
+
       - name: Verify checked-out submodules
         run: |
           missing=$(git submodule status --recursive | grep '^[-U]' || true)
@@ -45,6 +53,13 @@ jobs:
             echo "::error title=Incomplete submodule checkout::$missing"
             exit 1
           fi
+
+      - name: Fetch pinned ECM source
+        uses: actions/checkout@v6
+        with:
+          repository: KDE/extra-cmake-modules
+          ref: v6.9.0
+          path: .local-deps/src/extra-cmake-modules-6.9.0
 
       - name: Build with repository bootstrap
         run: ./scripts/assemble-debug-local.sh
