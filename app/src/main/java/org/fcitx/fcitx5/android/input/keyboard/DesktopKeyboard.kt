@@ -27,6 +27,7 @@ class DesktopKeyboard(context: Context, theme: Theme) :
 
     init {
         setPadding(0, context.dp(4), 0, context.dp(12))
+        allViews.filterIsInstance<KeyView>().forEach { it.setPhysicalKeyStyle(true) }
     }
 
     companion object {

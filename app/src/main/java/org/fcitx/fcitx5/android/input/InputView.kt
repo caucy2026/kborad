@@ -475,6 +475,11 @@ class InputView(
         desktopOperationButtons.filter { it !== desktopVoiceButton }.forEach {
             it.visibility = if (enabled) VISIBLE else GONE
         }
+        desktopExitButton.setPhysicalKeyStyle(
+            enabled,
+            theme.altKeyBackgroundColor,
+            theme.keyPressHighlightColor
+        )
         if (enabled) {
             bringDesktopButtonsToFront()
             kawaiiBar.view.bringToFront()

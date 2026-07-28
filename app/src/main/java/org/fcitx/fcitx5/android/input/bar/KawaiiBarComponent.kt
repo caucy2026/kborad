@@ -37,6 +37,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CapabilityFlag
 import org.fcitx.fcitx5.android.core.CapabilityFlags
 import org.fcitx.fcitx5.android.core.FcitxEvent.CandidateListEvent
+import org.fcitx.fcitx5.android.data.InputFeedbacks
 import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
@@ -128,6 +129,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private var shouldShowVoiceInput: Boolean = false
     private var desktopKeyboardMode: Boolean = false
     private var desktopVoiceButton: ToolButton? = null
+    private var desktopVoiceReleasePending = false
 
     private val voiceNetworkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = refreshVoiceInputAvailability()
@@ -277,6 +279,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
 
     fun setDesktopKeyboardMode(enabled: Boolean) {
         desktopKeyboardMode = enabled
+        if (!enabled) {
+            desktopVoiceReleasePending = false
+            InputFeedbacks.setPhysicalKeyboardSoundSuppressed(false)
+        }
         view.visibility = if (enabled && view.displayedChild ==
             KawaiiBarStateMachine.State.Idle.ordinal
         ) View.INVISIBLE else View.VISIBLE
@@ -286,10 +292,24 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private fun updateDesktopVoiceButton(useVoiceInput: Boolean) {
         desktopVoiceButton?.apply {
             visibility = if (desktopKeyboardMode && useVoiceInput) View.VISIBLE else View.GONE
-            if (!desktopKeyboardMode || !useVoiceInput) return@apply
+            if (!desktopKeyboardMode || !useVoiceInput) {
+                setPhysicalKeyStyle(
+                    false,
+                    theme.altKeyBackgroundColor,
+                    theme.keyPressHighlightColor
+                )
+                physicalReleaseSoundEnabled = true
+                return@apply
+            }
             setIcon(R.drawable.ic_baseline_keyboard_voice_24)
             useFullSizeIcon()
             setPressHighlightColor(theme.keyPressHighlightColor)
+            setPhysicalKeyStyle(
+                true,
+                theme.altKeyBackgroundColor,
+                theme.keyPressHighlightColor
+            )
+            physicalReleaseSoundEnabled = false
             contentDescription = context.getString(R.string.start_voice_input)
             isEnabled = isNetworkAvailableForVoice()
             isClickable = true
@@ -386,6 +406,13 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         IflytekAsrClient(
             context,
             onStateChanged = { state ->
+                InputFeedbacks.setPhysicalKeyboardSoundSuppressed(
+                    desktopKeyboardMode && state != IflytekAsrClient.State.Idle
+                )
+                if (state == IflytekAsrClient.State.Idle && desktopVoiceReleasePending) {
+                    desktopVoiceReleasePending = false
+                    desktopVoiceButton?.playPhysicalReleaseSound()
+                }
                 idleUi.setVoiceInputActive(state != IflytekAsrClient.State.Idle)
                 if (desktopKeyboardMode && view.displayedChild ==
                     KawaiiBarStateMachine.State.Idle.ordinal
@@ -448,12 +475,14 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
 
     private var voicePressActive = false
 
-    private val voiceInputGestureCallback = CustomGestureView.OnGestureListener { _, event ->
+    private val voiceInputGestureCallback = CustomGestureView.OnGestureListener { source, event ->
+        val isDesktopVoice = source === desktopVoiceButton
         Timber.i(
             "iFlytek ASR gesture=${event.type} active=$voicePressActive state=${asrClient.state}"
         )
         when (event.type) {
             CustomGestureView.GestureType.Down -> {
+                if (isDesktopVoice) desktopVoiceReleasePending = true
                 if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
                     PackageManager.PERMISSION_GRANTED
                 ) {
@@ -490,9 +519,14 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 }
             }
             CustomGestureView.GestureType.Up -> {
-                if (voicePressActive) {
+                val wasVoicePressActive = voicePressActive
+                if (wasVoicePressActive) {
                     voicePressActive = false
                     asrClient.stop()
+                }
+                if (isDesktopVoice && !wasVoicePressActive && desktopVoiceReleasePending) {
+                    desktopVoiceReleasePending = false
+                    source.playPhysicalReleaseSound()
                 }
             }
             CustomGestureView.GestureType.Move -> {

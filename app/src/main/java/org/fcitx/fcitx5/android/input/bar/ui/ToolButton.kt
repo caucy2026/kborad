@@ -9,7 +9,9 @@ import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.ViewPropertyAnimator
+import android.view.animation.OvershootInterpolator
 import android.widget.ImageView
 import androidx.annotation.ColorInt
 import androidx.annotation.DrawableRes
@@ -31,6 +33,10 @@ class ToolButton(context: Context) : CustomGestureView(context) {
 
     companion object {
         val disableAnimation by AppPrefs.getInstance().advanced.disableAnimation
+        private const val PHYSICAL_KEY_TRAVEL_DP = 3
+        private const val PHYSICAL_KEY_DOWN_DURATION_MS = 50L
+        private const val PHYSICAL_KEY_UP_DURATION_MS = 110L
+        private val PHYSICAL_KEY_UP_INTERPOLATOR = OvershootInterpolator(0.35f)
     }
 
     private val image = imageView {
@@ -39,6 +45,10 @@ class ToolButton(context: Context) : CustomGestureView(context) {
         padding = dp(10)
         scaleType = ImageView.ScaleType.CENTER_INSIDE
     }
+
+    private var physicalKeyStyleEnabled = false
+    private var physicalPressedColor = 0
+    private var physicalRestHighlightColor = 0
 
     var iconRotation: Float
         get() = image.rotation
@@ -85,4 +95,48 @@ class ToolButton(context: Context) : CustomGestureView(context) {
             dp(6)
         )
     }
+
+    fun setPhysicalKeyStyle(
+        enabled: Boolean,
+        @ColorInt pressedColor: Int,
+        @ColorInt restHighlightColor: Int
+    ) {
+        physicalKeyStyleEnabled = enabled
+        physicalPressedColor = pressedColor
+        physicalRestHighlightColor = restHighlightColor
+        physicalKeySoundEnabled = enabled
+        animate().cancel()
+        translationY = 0f
+        translationZ = 0f
+        elevation = if (enabled) dp(PHYSICAL_KEY_TRAVEL_DP).toFloat() else 0f
+        if (!enabled) setPressHighlightColor(restHighlightColor)
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (physicalKeyStyleEnabled && isEnabled) {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    animate().cancel()
+                    setCircleBackgroundColor(physicalPressedColor)
+                    animate()
+                        .translationY(dp(PHYSICAL_KEY_TRAVEL_DP).toFloat())
+                        .translationZ(-dp(PHYSICAL_KEY_TRAVEL_DP).toFloat())
+                        .setDuration(PHYSICAL_KEY_DOWN_DURATION_MS)
+                        .start()
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    animate().cancel()
+                    setPressHighlightColor(physicalRestHighlightColor)
+                    animate()
+                        .translationY(0f)
+                        .translationZ(0f)
+                        .setInterpolator(PHYSICAL_KEY_UP_INTERPOLATOR)
+                        .setDuration(PHYSICAL_KEY_UP_DURATION_MS)
+                        .start()
+                }
+            }
+        }
+        return super.onTouchEvent(event)
+    }
+
 }

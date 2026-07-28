@@ -19,6 +19,7 @@ import android.graphics.drawable.StateListDrawable
 import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.OvershootInterpolator
 import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.annotation.ColorInt
@@ -187,17 +188,53 @@ abstract class KeyView(ctx: Context, val theme: Theme, val def: KeyDef.Appearanc
         appearanceView.alpha = if (enabled) 1f else styledFloat(android.R.attr.disabledAlpha)
     }
 
+    private var physicalKeyStyleEnabled = false
+
+    fun setPhysicalKeyStyle(enabled: Boolean) {
+        physicalKeyStyleEnabled = enabled
+        physicalKeySoundEnabled = enabled
+        appearanceView.animate().cancel()
+        appearanceView.translationY = 0f
+        appearanceView.translationZ = 0f
+        appearanceView.elevation = if (enabled) dp(PHYSICAL_KEY_TRAVEL_DP) else 0f
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 appearanceView.animate().cancel()
-                appearanceView.animate().translationY(dp(2).toFloat()).setDuration(35).start()
+                if (physicalKeyStyleEnabled) {
+                    appearanceView.animate()
+                        .translationY(dp(PHYSICAL_KEY_TRAVEL_DP))
+                        .translationZ(-dp(PHYSICAL_KEY_TRAVEL_DP))
+                        .setDuration(PHYSICAL_KEY_DOWN_DURATION_MS)
+                        .start()
+                } else {
+                    appearanceView.animate().translationY(dp(2).toFloat()).setDuration(35).start()
+                }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                appearanceView.animate().translationY(0f).setDuration(70).start()
+                if (physicalKeyStyleEnabled) {
+                    appearanceView.animate().cancel()
+                    appearanceView.animate()
+                        .translationY(0f)
+                        .translationZ(0f)
+                        .setInterpolator(PHYSICAL_KEY_UP_INTERPOLATOR)
+                        .setDuration(PHYSICAL_KEY_UP_DURATION_MS)
+                        .start()
+                } else {
+                    appearanceView.animate().translationY(0f).setDuration(70).start()
+                }
             }
         }
         return super.onTouchEvent(event)
+    }
+
+    private companion object {
+        const val PHYSICAL_KEY_TRAVEL_DP = 3f
+        const val PHYSICAL_KEY_DOWN_DURATION_MS = 50L
+        const val PHYSICAL_KEY_UP_DURATION_MS = 110L
+        val PHYSICAL_KEY_UP_INTERPOLATOR = OvershootInterpolator(0.35f)
     }
 
     fun updateBounds() {
