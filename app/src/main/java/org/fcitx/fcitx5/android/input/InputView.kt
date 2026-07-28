@@ -289,7 +289,7 @@ class InputView(
         desktopExitButton.bringToFront()
     }
 
-    private fun updateDesktopPreeditPosition() {
+    private fun updateDesktopCompositionPosition() {
         if (!desktopKeyboardMode) return
         windowManager.view.post {
             if (!desktopKeyboardMode) return@post
@@ -297,11 +297,19 @@ class InputView(
             val parent = preedit.ui.root.parent as? View ?: return@post
             val parentLocation = IntArray(2)
             parent.getLocationOnScreen(parentLocation)
+            val preeditTop = (firstRowTop - parentLocation[1] -
+                    preedit.ui.root.measuredHeight - dp(DESKTOP_PREEDIT_GAP_DP))
+                .coerceAtLeast(dp(KawaiiBarComponent.HEIGHT))
             preedit.ui.root.updateLayoutParams<LayoutParams> {
-                topMargin = (firstRowTop - parentLocation[1] -
-                        preedit.ui.root.measuredHeight - dp(DESKTOP_PREEDIT_GAP_DP))
-                    .coerceAtLeast(dp(KawaiiBarComponent.HEIGHT))
+                topMargin = preeditTop
             }
+            val barParent = kawaiiBar.view.parent as? View ?: return@post
+            val barParentLocation = IntArray(2)
+            barParent.getLocationOnScreen(barParentLocation)
+            kawaiiBar.view.translationY = (
+                    preeditTop + parentLocation[1] - barParentLocation[1] -
+                            kawaiiBar.view.top - kawaiiBar.view.height
+                    ).toFloat()
         }
     }
 
@@ -420,11 +428,11 @@ class InputView(
         updateKeyboardSize()
         kawaiiBar.setDesktopVoiceButton(desktopVoiceButton)
         windowManager.view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            updateDesktopPreeditPosition()
+            updateDesktopCompositionPosition()
             updateDesktopOperationButtonPositions()
         }
         preedit.ui.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            updateDesktopPreeditPosition()
+            updateDesktopCompositionPosition()
         }
 
         add(preedit.ui.root, lParams(matchParent, wrapContent) {
@@ -465,12 +473,14 @@ class InputView(
         }
         if (enabled) {
             bringDesktopButtonsToFront()
+            kawaiiBar.view.bringToFront()
             // Explicitly hide floating‑keyboard controls so they never appear
             // alongside the desktop operation bar.
             floatingHideKeyboardButton.visibility = GONE
             floatingWindowHandle.visibility = GONE
             floatingResizeButton.visibility = GONE
         } else {
+            kawaiiBar.view.translationY = 0f
             updateFloatingKeyboardLayout()
         }
         kawaiiBar.view.setBackgroundColor(
@@ -504,7 +514,7 @@ class InputView(
         }
         if (enabled) preedit.ui.root.bringToFront()
         updateKeyboardSize()
-        updateDesktopPreeditPosition()
+        updateDesktopCompositionPosition()
         updateDesktopOperationButtonPositions()
     }
 
