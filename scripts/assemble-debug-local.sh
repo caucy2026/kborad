@@ -12,4 +12,15 @@ fi
 eval "$(sed 's/^/export /' "$DEPS_ENV")"
 
 cd "$ROOT_DIR"
-PATH="$GETTEXT_BIN_DIR:$PATH" ECM_DIR="$ECM_DIR" ./gradlew :app:assembleDebug "$@"
+attempt=1
+while [ "$attempt" -le 3 ]; do
+	if PATH="$GETTEXT_BIN_DIR:$PATH" ECM_DIR="$ECM_DIR" ./gradlew :app:assembleDebug "$@"; then
+		exit 0
+	fi
+	if [ "$attempt" -eq 3 ]; then
+		echo "Gradle build failed after $attempt attempts." >&2
+		exit 1
+	fi
+	echo "Gradle build failed; retrying ($attempt/3)..." >&2
+	attempt=$((attempt + 1))
+done

@@ -26,17 +26,13 @@ jobs:
           java-version: "17"
 
       - name: Setup Android command-line tools
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Setup Gradle cache
         uses: gradle/actions/setup-gradle@v5
 
       - name: Build with repository bootstrap
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 45
-          max_attempts: 2
-          command: ./scripts/assemble-debug-local.sh
+        run: ./scripts/assemble-debug-local.sh
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v6
