@@ -103,5 +103,8 @@ lint/tmp/
 ### Kotlin ###
 .kotlin/
 
-# Local bootstrap cache for native build deps
-.local-deps/
+# Local bootstrap cache for native build deps (ECM source is checked in)
+.local-deps/ecm/
+.local-deps/gettext/
+.local-deps/src/*.tar.gz
+.local-deps/src/extra-cmake-modules-6.9.0/build/

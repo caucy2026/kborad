@@ -148,25 +148,10 @@ bootstrap_ecm() {
     exit 1
   fi
 
-  src_dir="$DEPS_DIR/src"
-  archive="$src_dir/ecm-${ECM_VERSION}.tar.gz"
-  unpack_dir="$src_dir/extra-cmake-modules-${ECM_VERSION}"
-  mkdir -p "$src_dir"
+  unpack_dir="$DEPS_DIR/src/extra-cmake-modules-${ECM_VERSION}"
   if [ ! -f "$unpack_dir/CMakeLists.txt" ]; then
-    if [ ! -f "$archive" ]; then
-      archive_tmp="${archive}.tmp"
-      rm -f "$archive_tmp"
-      if ! curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 \
-        "https://codeload.github.com/KDE/extra-cmake-modules/tar.gz/refs/tags/v${ECM_VERSION}" \
-        -o "$archive_tmp"; then
-        rm -f "$archive_tmp"
-        echo "Unable to download ECM ${ECM_VERSION}. Check network access and retry." >&2
-        exit 1
-      fi
-      mv "$archive_tmp" "$archive"
-    fi
-    rm -rf "$unpack_dir"
-    tar -xzf "$archive" -C "$src_dir"
+    echo "ECM ${ECM_VERSION} source not found at $unpack_dir. The repository may be incomplete." >&2
+    exit 1
   fi
   "$cmake_bin" -S "$unpack_dir" -B "$unpack_dir/build" -DCMAKE_INSTALL_PREFIX="$ECM_PREFIX" -DBUILD_TESTING=OFF >/dev/null
   "$cmake_bin" --build "$unpack_dir/build" -j4 >/dev/null
