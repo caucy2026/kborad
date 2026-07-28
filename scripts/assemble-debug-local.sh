@@ -29,6 +29,11 @@ while [ "$attempt" -le 3 ]; do
 	echo "::group::Gradle attempt $attempt output (last 80 lines)"
 	tail -n 80 "$GRADLE_LOG" || true
 	echo "::endgroup::"
+	echo "::group::Gradle attempt $attempt errors"
+	grep -iE 'error|FAILED|failure|What went wrong|BUILD FAILED|Execution failed|cause|stacktrace|Caused by' "$GRADLE_LOG" | while IFS= read -r errline; do
+		echo "::error::${errline}"
+	done || true
+	echo "::endgroup::"
 	if [ "$attempt" -eq 3 ]; then
 		echo "Gradle build failed after $attempt attempts." >&2
 		rm -f "$GRADLE_LOG"
