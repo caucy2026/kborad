@@ -21,8 +21,18 @@ bootstrap_submodules() {
   if git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "Initializing native source dependencies..." >&2
     git -C "$ROOT_DIR" submodule sync --recursive >&2
-    git -C "$ROOT_DIR" submodule update --init --recursive --jobs 8 >&2
-    return 0
+    attempt=1
+    while [ "$attempt" -le 3 ]; do
+      if git -C "$ROOT_DIR" submodule update --init --recursive --jobs 8 >&2; then
+        return 0
+      fi
+      if [ "$attempt" -eq 3 ]; then
+        echo "Unable to initialize Git submodules after $attempt attempts." >&2
+        exit 1
+      fi
+      echo "Submodule download failed; retrying ($attempt/3)..." >&2
+      attempt=$((attempt + 1))
+    done
   fi
 
   if [ ! -f "$ROOT_DIR/lib/fcitx5/src/main/cpp/fcitx5/CMakeLists.txt" ]; then
