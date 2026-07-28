@@ -297,9 +297,10 @@ class InputView(
             val parent = preedit.ui.root.parent as? View ?: return@post
             val parentLocation = IntArray(2)
             parent.getLocationOnScreen(parentLocation)
-            val preeditTop = (firstRowTop - parentLocation[1] -
+            val candidateTopOnScreen = firstRowTop - kawaiiBar.view.height
+            val preeditTop = (candidateTopOnScreen - parentLocation[1] -
                     preedit.ui.root.measuredHeight - dp(DESKTOP_PREEDIT_GAP_DP))
-                .coerceAtLeast(dp(KawaiiBarComponent.HEIGHT))
+                .coerceAtLeast(0)
             preedit.ui.root.updateLayoutParams<LayoutParams> {
                 topMargin = preeditTop
             }
@@ -307,8 +308,7 @@ class InputView(
             val barParentLocation = IntArray(2)
             barParent.getLocationOnScreen(barParentLocation)
             kawaiiBar.view.translationY = (
-                    preeditTop + parentLocation[1] - barParentLocation[1] -
-                            kawaiiBar.view.top - kawaiiBar.view.height
+                    candidateTopOnScreen - barParentLocation[1] - kawaiiBar.view.top
                     ).toFloat()
         }
     }
