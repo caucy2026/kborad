@@ -29,8 +29,13 @@ while [ "$attempt" -le 3 ]; do
 	echo "::group::Gradle attempt $attempt output (last 80 lines)"
 	tail -n 80 "$GRADLE_LOG" || true
 	echo "::endgroup::"
-	echo "::group::Gradle attempt $attempt errors"
-	grep -iE 'error|FAILED|failure|What went wrong|BUILD FAILED|Execution failed|cause|stacktrace|Caused by' "$GRADLE_LOG" | while IFS= read -r errline; do
+	echo "::group::Gradle attempt $attempt diagnostics"
+	# Capture the error message block (lines after 'What went wrong')
+	grep -A 10 'What went wrong:' "$GRADLE_LOG" | head -15 | while IFS= read -r errline; do
+		echo "::error::${errline}"
+	done || true
+	# Also capture key failure indicators
+	grep -iE 'Could not|Unable to|No such|not found|denied|refused|timeout|does not exist' "$GRADLE_LOG" | head -20 | while IFS= read -r errline; do
 		echo "::error::${errline}"
 	done || true
 	echo "::endgroup::"
