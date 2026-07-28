@@ -64,9 +64,13 @@ jobs:
           path: .local-deps/src/extra-cmake-modules-6.9.0
 
       - name: Build with repository bootstrap
-        run: ./scripts/assemble-debug-local.sh
+        run: |
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          echo "sdk.dir=$sdk" > local.properties
+          ./scripts/assemble-debug-local.sh
         env:
-          KEMI_GRADLE_EXTRA_ARGS: --stacktrace --info
+          KEMI_GRADLE_COMMAND: gradle
+          KEMI_GRADLE_EXTRA_ARGS: --no-daemon --stacktrace
           KEMI_SUBMODULES_READY: "1"
 
       - name: Upload debug APK
