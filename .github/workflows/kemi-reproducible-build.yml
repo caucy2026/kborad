@@ -38,8 +38,18 @@ jobs:
       - name: Setup Gradle cache
         uses: gradle/actions/setup-gradle@v5
 
+      - name: Verify checked-out submodules
+        run: |
+          missing=$(git submodule status --recursive | grep '^[-U]' || true)
+          if [ -n "$missing" ]; then
+            echo "::error title=Incomplete submodule checkout::$missing"
+            exit 1
+          fi
+
       - name: Build with repository bootstrap
         run: ./scripts/assemble-debug-local.sh
+        env:
+          KEMI_SUBMODULES_READY: "1"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v6

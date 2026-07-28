@@ -18,6 +18,9 @@ project_int_version() {
 }
 
 bootstrap_submodules() {
+  if [ "${KEMI_SUBMODULES_READY:-0}" = "1" ]; then
+    return 0
+  fi
   if git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     submodule_state=$(git -C "$ROOT_DIR" submodule status --recursive)
     if ! printf '%s\n' "$submodule_state" | grep -q '^[-U]'; then
