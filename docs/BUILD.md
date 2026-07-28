@@ -17,9 +17,9 @@ APK 输出路径: `app/build/outputs/apk/debug/*arm64-v8a-debug.apk`
 | Git | 必须，子模块需要 |
 | JDK 17 | `JAVA_HOME` 或 `PATH` 中有 `javac` |
 | Android SDK | `ANDROID_HOME` 指向 SDK 根目录 |
-| 网络 | 首次构建需要从 GitHub / Gradle / Maven 下载依赖 |
+| 网络 | Gradle 首次构建需下载依赖（后续有缓存则不需要） |
 
-> **你不需要手动安装**: NDK、CMake、ECM、gettext——脚本会自动处理所有这些。
+> **你不需要手动安装**: NDK、CMake、ECM、gettext——都已内置或脚本自动处理。
 >
 > **你可以安装 Android Studio**: 它会自动配好 JDK + SDK，脚本能自动发现。
 
@@ -27,10 +27,10 @@ APK 输出路径: `app/build/outputs/apk/debug/*arm64-v8a-debug.apk`
 
 `./scripts/assemble-debug-local.sh` 按顺序执行：
 
-1. **`setup-local-native-deps.sh`** — 准备原生依赖
+1. **`setup-local-native-deps.sh`** — 准备原生依赖（纯本地，不需网络）
    - 检测并自动初始化 22 个 Git 子模块（已锁定的跳过更新）
    - 检测 Android SDK，自动安装固定版本的 platform/build-tools/NDK/CMake
-   - 下载并构建 ECM 6.9.0
+   - 从仓库内置源码构建 ECM 6.9.0（无需下载）
    - 生成 gettext wrapper 脚本
 2. **Gradle 构建** — `./gradlew :app:assembleDebug`
    - 最多重试 3 次（网络波动容错）
@@ -53,7 +53,9 @@ APK 输出路径: `app/build/outputs/apk/debug/*arm64-v8a-debug.apk`
 
 ### ✅ 本地构建 (macOS / Linux) — 正常
 
-本地有完整网络访问时，一行命令即可构建成功。已验证：
+ECM 6.9.0 源码已内置在仓库中，构建过程无需额外下载。一行命令即可：
+
+已验证：
 
 ```
 BUILD SUCCESSFUL in ~5s (增量) / ~7-15min (全量首次)
