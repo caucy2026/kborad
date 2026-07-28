@@ -42,6 +42,7 @@ import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
+import org.fcitx.fcitx5.android.data.theme.ThemePreset
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.State.ClickToAttachWindow
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.State.ClickToDetachWindow
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.State.Hidden
@@ -288,8 +289,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             if (!desktopKeyboardMode || !useVoiceInput) return@apply
             setIcon(R.drawable.ic_baseline_keyboard_voice_24)
             useFullSizeIcon()
-            setCircleBackgroundColor(theme.altKeyBackgroundColor)
-            setIconTintColor(theme.altKeyTextColor)
+            setPressHighlightColor(theme.keyPressHighlightColor)
+            setIconTintColor(ThemePreset.AMOLEDBlack.keyTextColor)
             contentDescription = context.getString(R.string.start_voice_input)
             isEnabled = isNetworkAvailableForVoice()
             isClickable = true
@@ -301,6 +302,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     MotionEvent.ACTION_DOWN -> {
                         view.parent.requestDisallowInterceptTouchEvent(true)
                         view.isPressed = true
+                        setCircleBackgroundColor(theme.altKeyBackgroundColor)
+                        setIconTintColor(theme.altKeyTextColor)
                         voiceInputGestureCallback.onGesture(
                             this, CustomGestureView.Event(
                                 CustomGestureView.GestureType.Down,
@@ -319,6 +322,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                                 false, event.x, event.y, 0, 0, 0, 0
                             )
                         )
+                        setPressHighlightColor(theme.keyPressHighlightColor)
+                        setIconTintColor(ThemePreset.AMOLEDBlack.keyTextColor)
                         true
                     }
                     else -> false
@@ -398,14 +403,19 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             onStateChanged = { state ->
                 idleUi.setVoiceInputActive(state != IflytekAsrClient.State.Idle)
                 desktopVoiceButton?.let { button ->
-                    button.setIconTintColor(
-                        if (state != IflytekAsrClient.State.Idle) 0xff34a853.toInt()
-                        else theme.altKeyTextColor
-                    )
-                    button.setCircleBackgroundColor(
-                        if (state != IflytekAsrClient.State.Idle) theme.genericActiveBackgroundColor
-                        else theme.altKeyBackgroundColor
-                    )
+                    if (voicePressActive) {
+                        button.setIconTintColor(
+                            if (state != IflytekAsrClient.State.Idle) 0xff34a853.toInt()
+                            else theme.altKeyTextColor
+                        )
+                        button.setCircleBackgroundColor(
+                            if (state != IflytekAsrClient.State.Idle) theme.genericActiveBackgroundColor
+                            else theme.altKeyBackgroundColor
+                        )
+                    } else {
+                        button.setPressHighlightColor(theme.keyPressHighlightColor)
+                        button.setIconTintColor(ThemePreset.AMOLEDBlack.keyTextColor)
+                    }
                     button.contentDescription = context.getString(
                         if (state != IflytekAsrClient.State.Idle) R.string.stop_voice_input
                         else R.string.start_voice_input

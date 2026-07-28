@@ -31,10 +31,7 @@ class DesktopKeyboard(context: Context, theme: Theme) :
 
     companion object {
         const val Name = "Desktop"
-        const val RowHeightScale = 0.9f
-
-        fun compositionInset(availableHeight: Int) =
-            (availableHeight * (1f - RowHeightScale)).roundToInt()
+        private const val LayoutWidthInKeyUnits = 15f
 
         private fun Context.dp(value: Int) =
             (value * resources.displayMetrics.density).roundToInt()
@@ -75,6 +72,16 @@ class DesktopKeyboard(context: Context, theme: Theme) :
                 border = KeyDef.Appearance.Border.On
             ),
             setOf(KeyDef.Behavior.Press(KeyAction.FcitxKeyAction(primary)))
+        )
+
+        private fun languageKey(width: Float) = KeyDef(
+            KeyDef.Appearance.Image(
+                src = R.drawable.ic_baseline_language_24,
+                percentWidth = width,
+                variant = KeyDef.Appearance.Variant.Alternative,
+                border = KeyDef.Appearance.Border.On
+            ),
+            setOf(KeyDef.Behavior.Press(KeyAction.LangSwitchAction))
         )
 
         // ── Layout: 6 rows, weights match kemi-bt-board globalKeyboardOverlay ──
@@ -134,13 +141,13 @@ class DesktopKeyboard(context: Context, theme: Theme) :
                 shiftedSymbolKey("/", "?", 1f / 15f),
                 DesktopModifierKey("Shift", KeyState.Shift, 2.8f / 15f)
             ),
-            // Row 5: Ctrl Option ⌘ ──SPACE── Option ← [↑/↓] →
+            // Row 5: Ctrl Option 中/英 ──SPACE── ⌘ ← [↑/↓] →
             listOf(
                 DesktopModifierKey("Ctrl", KeyState.Ctrl, 2.2f / 18.3f),
                 DesktopModifierKey("Option", KeyState.Alt, 1.6f / 18.3f),
-                DesktopModifierKey("\u2318", KeyState.Meta, 1.6f / 18.3f),
+                languageKey(1.6f / 18.3f),
                 DesktopSpaceKey(8f / 18.3f),
-                DesktopModifierKey("Option", KeyState.Alt, 1.6f / 18.3f),
+                DesktopModifierKey("\u2318", KeyState.Meta, 1.6f / 18.3f),
                 DesktopSymKey("←", FcitxKeyMapping.FcitxKey_Left, 1f / 18.3f, repeat = true),
                 KeyDef(
                     KeyDef.Appearance.VerticalGroup(
@@ -257,20 +264,35 @@ class DesktopKeyboard(context: Context, theme: Theme) :
         return location[1] + getChildAt(1).top
     }
 
+    fun operationButtonCentersOnScreen(): Pair<Int, Int>? {
+        if (!isLaidOut) return null
+        val option = textKeys.firstOrNull { key ->
+            (key.def as? KeyDef.Appearance.Text)?.displayText == "Option"
+        } ?: return null
+        val command = textKeys.firstOrNull { key ->
+            (key.def as? KeyDef.Appearance.Text)?.displayText == "\u2318"
+        } ?: return null
+        fun View.centerXOnScreen(): Int {
+            val location = IntArray(2)
+            getLocationOnScreen(location)
+            return location[0] + width / 2
+        }
+        return option.centerXOnScreen() to command.centerXOnScreen()
+    }
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         val topPadding = context.dp(4)
         val bottomPadding = context.dp(12)
+        val horizontalPadding = context.dp(16)
         val availableHeight = h - topPadding - bottomPadding
-        val compositionHeight = compositionInset(availableHeight)
+        val rowHeight = (w - horizontalPadding * 2) / LayoutWidthInKeyUnits
+        val compositionHeight = (availableHeight - rowHeight * 6f)
+            .roundToInt()
+            .coerceAtLeast(0)
         getChildAt(0).updateLayoutParams<LayoutParams> {
             height = compositionHeight
         }
-        val rowHeight = availableHeight * RowHeightScale / 6f
-        val desiredKeyboardWidth = rowHeight * 15f
-        val horizontalPadding = ((w - desiredKeyboardWidth) / 2f)
-            .roundToInt()
-            .coerceAtLeast(context.dp(16))
         setPadding(horizontalPadding, topPadding, horizontalPadding, bottomPadding)
     }
 }

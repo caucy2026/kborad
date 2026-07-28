@@ -30,6 +30,7 @@ import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
+import org.fcitx.fcitx5.android.data.theme.ThemePreset
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
 import org.fcitx.fcitx5.android.input.bar.ui.ToolButton
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcaster
@@ -99,8 +100,7 @@ class InputView(
         visibility = GONE
         contentDescription = context.getString(R.string.exit_desktop_keyboard)
         useFullSizeIcon()
-        setCircleBackgroundColor(theme.altKeyBackgroundColor)
-        setIconTintColor(theme.altKeyTextColor)
+        setIconTintColor(ThemePreset.AMOLEDBlack.keyTextColor)
         setOnClickListener { keyboardWindow.toggleDesktopKeyboard() }
     }
 
@@ -305,6 +305,19 @@ class InputView(
         }
     }
 
+    private fun updateDesktopOperationButtonPositions() {
+        if (!desktopKeyboardMode) return
+        windowManager.view.post {
+            if (!desktopKeyboardMode) return@post
+            val centers = keyboardWindow.desktopOperationButtonCentersOnScreen() ?: return@post
+            val parent = desktopExitButton.parent as? View ?: return@post
+            val parentLocation = IntArray(2)
+            parent.getLocationOnScreen(parentLocation)
+            desktopExitButton.x = centers.first - parentLocation[0] - desktopExitButton.width / 2f
+            desktopVoiceButton.x = centers.second - parentLocation[0] - desktopVoiceButton.width / 2f
+        }
+    }
+
     init {
         // MUST call before any operation
         setupScope()
@@ -408,6 +421,7 @@ class InputView(
         kawaiiBar.setDesktopVoiceButton(desktopVoiceButton)
         windowManager.view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateDesktopPreeditPosition()
+            updateDesktopOperationButtonPositions()
         }
         preedit.ui.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateDesktopPreeditPosition()
@@ -491,6 +505,7 @@ class InputView(
         if (enabled) preedit.ui.root.bringToFront()
         updateKeyboardSize()
         updateDesktopPreeditPosition()
+        updateDesktopOperationButtonPositions()
     }
 
     private fun updateFloatingKeyboardLayout() {
@@ -810,7 +825,7 @@ class InputView(
         const val FLOATING_HIDE_BUTTON_OFFSET_DP = 12
         const val DESKTOP_OPERATION_HEIGHT_DP = 64
         const val DESKTOP_OPERATION_BUTTON_SIZE_DP = 56
-        const val DESKTOP_PREEDIT_GAP_DP = 4
+        const val DESKTOP_PREEDIT_GAP_DP = 0
         const val FLOATING_KEYBOARD_RADIUS_DP = 24
         const val FLOATING_RESIZE_CORNER_SIZE_DP = 24
         const val FLOATING_KEYBOARD_DOCK_THRESHOLD_DP = 28

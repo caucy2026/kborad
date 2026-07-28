@@ -186,6 +186,9 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     fun desktopFirstRowTopOnScreen(): Int? =
         (currentKeyboard as? DesktopKeyboard)?.firstRowTopOnScreen()
 
+    fun desktopOperationButtonCentersOnScreen(): Pair<Int, Int>? =
+        (currentKeyboard as? DesktopKeyboard)?.operationButtonCentersOnScreen()
+
     override fun onImeUpdate(ime: InputMethodEntry) {
         currentKeyboard?.onInputMethodUpdate(ime)
     }
