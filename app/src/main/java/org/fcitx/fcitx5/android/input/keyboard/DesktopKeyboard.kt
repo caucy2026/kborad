@@ -26,7 +26,7 @@ class DesktopKeyboard(context: Context, theme: Theme) :
     BaseKeyboard(context, theme, Layout, createHeader(context)) {
 
     init {
-        setPadding(context.dp(16), context.dp(4), context.dp(16), context.dp(12))
+        setPadding(0, context.dp(4), 0, context.dp(12))
     }
 
     companion object {
@@ -284,7 +284,7 @@ class DesktopKeyboard(context: Context, theme: Theme) :
         super.onSizeChanged(w, h, oldw, oldh)
         val topPadding = context.dp(4)
         val bottomPadding = context.dp(12)
-        val horizontalPadding = context.dp(16)
+        val horizontalPadding = 0
         val availableHeight = h - topPadding - bottomPadding
         val rowHeight = (w - horizontalPadding * 2) / LayoutWidthInKeyUnits
         val compositionHeight = (availableHeight - rowHeight * 6f)

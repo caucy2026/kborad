@@ -145,20 +145,24 @@ class InputView(
     private val floatingResizeCorners = listOf(
         imageView {
             setImageResource(R.drawable.ic_resize_corner_24)
+            setPadding(dp(FLOATING_RESIZE_CORNER_PADDING_DP), dp(FLOATING_RESIZE_CORNER_PADDING_DP), dp(FLOATING_RESIZE_CORNER_PADDING_DP), dp(FLOATING_RESIZE_CORNER_PADDING_DP))
             setOnTouchListener { _, event -> onFloatingResizeCornerTouch(event, -1, -1) }
         },
         imageView {
             setImageResource(R.drawable.ic_resize_corner_24)
+            setPadding(dp(FLOATING_RESIZE_CORNER_PADDING_DP), dp(FLOATING_RESIZE_CORNER_PADDING_DP), dp(FLOATING_RESIZE_CORNER_PADDING_DP), dp(FLOATING_RESIZE_CORNER_PADDING_DP))
             rotation = 90f
             setOnTouchListener { _, event -> onFloatingResizeCornerTouch(event, 1, -1) }
         },
         imageView {
             setImageResource(R.drawable.ic_resize_corner_24)
+            setPadding(dp(FLOATING_RESIZE_CORNER_PADDING_DP), dp(FLOATING_RESIZE_CORNER_PADDING_DP), dp(FLOATING_RESIZE_CORNER_PADDING_DP), dp(FLOATING_RESIZE_CORNER_PADDING_DP))
             rotation = 180f
             setOnTouchListener { _, event -> onFloatingResizeCornerTouch(event, 1, 1) }
         },
         imageView {
             setImageResource(R.drawable.ic_resize_corner_24)
+            setPadding(dp(FLOATING_RESIZE_CORNER_PADDING_DP), dp(FLOATING_RESIZE_CORNER_PADDING_DP), dp(FLOATING_RESIZE_CORNER_PADDING_DP), dp(FLOATING_RESIZE_CORNER_PADDING_DP))
             rotation = 270f
             setOnTouchListener { _, event -> onFloatingResizeCornerTouch(event, -1, 1) }
         }
@@ -718,7 +722,7 @@ class InputView(
                 above(bottomPaddingSpace)
             }
         }
-        val sidePadding = if (desktopKeyboardMode) dp(16) else keyboardSidePaddingPx
+        val sidePadding = if (desktopKeyboardMode) 0 else keyboardSidePaddingPx
         if (sidePadding == 0) {
             // hide side padding space views when unnecessary
             leftPaddingSpace.visibility = GONE
@@ -829,15 +833,16 @@ class InputView(
         const val FLOATING_POSITION_SCALE = 1000
         const val FLOATING_KEYBOARD_BOTTOM_OFFSET_DP = 0
         const val FLOATING_KEYBOARD_ELEVATION_DP = 8
-        const val FLOATING_HANDLE_SIZE_DP = 88
-        const val FLOATING_HANDLE_HEIGHT_DP = 32
+        const val FLOATING_HANDLE_SIZE_DP = 112
+        const val FLOATING_HANDLE_HEIGHT_DP = 48
         const val FLOATING_HIDE_BUTTON_SIZE_DP = 48
         const val FLOATING_HIDE_BUTTON_OFFSET_DP = 12
         const val DESKTOP_OPERATION_HEIGHT_DP = 64
         const val DESKTOP_OPERATION_BUTTON_SIZE_DP = 56
         const val DESKTOP_PREEDIT_GAP_DP = 0
         const val FLOATING_KEYBOARD_RADIUS_DP = 24
-        const val FLOATING_RESIZE_CORNER_SIZE_DP = 24
+        const val FLOATING_RESIZE_CORNER_SIZE_DP = 48
+        const val FLOATING_RESIZE_CORNER_PADDING_DP = 12
         const val FLOATING_KEYBOARD_DOCK_THRESHOLD_DP = 28
     }
 

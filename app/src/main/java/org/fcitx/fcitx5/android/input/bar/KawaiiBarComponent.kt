@@ -290,46 +290,31 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             setIcon(R.drawable.ic_baseline_keyboard_voice_24)
             useFullSizeIcon()
             setPressHighlightColor(theme.keyPressHighlightColor)
-            setIconTintColor(ThemePreset.AMOLEDBlack.keyTextColor)
             contentDescription = context.getString(R.string.start_voice_input)
             isEnabled = isNetworkAvailableForVoice()
             isClickable = true
             alpha = if (isEnabled) 1f else 0.38f
+            setIconTintColor(
+                if (isEnabled) ThemePreset.AMOLEDBlack.keyTextColor else 0xff777777.toInt()
+            )
             swipeEnabled = false
-            setOnTouchListener { view, event ->
-                if (!isEnabled) return@setOnTouchListener false
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
+            setOnTouchListener(null)
+            onGestureListener = CustomGestureView.OnGestureListener { view, event ->
+                when (event.type) {
+                    CustomGestureView.GestureType.Down -> {
                         view.parent.requestDisallowInterceptTouchEvent(true)
-                        view.isPressed = true
                         setCircleBackgroundColor(theme.altKeyBackgroundColor)
                         setIconTintColor(theme.altKeyTextColor)
-                        voiceInputGestureCallback.onGesture(
-                            this, CustomGestureView.Event(
-                                CustomGestureView.GestureType.Down,
-                                false, event.x, event.y, 0, 0, 0, 0
-                            )
-                        )
-                        true
                     }
-                    MotionEvent.ACTION_MOVE -> true
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    CustomGestureView.GestureType.Up -> {
                         view.parent.requestDisallowInterceptTouchEvent(false)
-                        view.isPressed = false
-                        voiceInputGestureCallback.onGesture(
-                            this, CustomGestureView.Event(
-                                CustomGestureView.GestureType.Up,
-                                false, event.x, event.y, 0, 0, 0, 0
-                            )
-                        )
                         setPressHighlightColor(theme.keyPressHighlightColor)
                         setIconTintColor(ThemePreset.AMOLEDBlack.keyTextColor)
-                        true
                     }
-                    else -> false
+                    CustomGestureView.GestureType.Move -> {}
                 }
+                voiceInputGestureCallback.onGesture(view, event)
             }
-            onGestureListener = null
             setOnClickListener(null)
         }
     }
@@ -402,6 +387,15 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             context,
             onStateChanged = { state ->
                 idleUi.setVoiceInputActive(state != IflytekAsrClient.State.Idle)
+                if (desktopKeyboardMode && view.displayedChild ==
+                    KawaiiBarStateMachine.State.Idle.ordinal
+                ) {
+                    view.visibility = if (state == IflytekAsrClient.State.Idle) {
+                        View.INVISIBLE
+                    } else {
+                        View.VISIBLE
+                    }
+                }
                 desktopVoiceButton?.let { button ->
                     if (voicePressActive) {
                         button.setIconTintColor(
@@ -539,6 +533,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             val network = manager.activeNetwork ?: return false
             val caps = manager.getNetworkCapabilities(network) ?: return false
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
                 (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
                     caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
                     caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
