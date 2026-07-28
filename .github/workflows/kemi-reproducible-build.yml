@@ -40,16 +40,15 @@ jobs:
         with:
           gradle-version: "9.4.1"
 
-      - name: Verify Gradle kotlin-dsl plugin integrity
+      - name: Package action-installed Gradle for wrapper
         run: |
           gradle_bin="$(which gradle)"
           gradle_home="$(dirname "$(dirname "$gradle_bin")")"
-          echo "Gradle home: $gradle_home"
-          echo "Gradle lib contents:"
-          ls -la "$gradle_home/lib/" | grep -i kotlin || echo "NO KOTLIN JARS FOUND!"
-          echo ""
-          echo "Gradle version check:"
-          gradle --version
+          echo "Gradle installed at: $gradle_home"
+          gradle_zip=/tmp/gradle-9.4.1-bin.zip
+          (cd "$(dirname "$gradle_home")" && zip -qr "$gradle_zip" "$(basename "$gradle_home")")
+          echo "GRADLE_ZIP=$gradle_zip" >> "$GITHUB_ENV"
+          ls -lh "$gradle_zip"
 
       - name: Verify pinned Android toolchain
         run: |
@@ -78,9 +77,13 @@ jobs:
         run: |
           sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           echo "sdk.dir=$sdk" > local.properties
+          # Point wrapper to the locally packaged Gradle distribution
+          sed -i "s#^distributionUrl=.*#distributionUrl=file\\\\:///tmp/gradle-9.4.1-bin.zip#" gradle/wrapper/gradle-wrapper.properties
+          echo "Updated wrapper properties:"
+          cat gradle/wrapper/gradle-wrapper.properties
           ./scripts/assemble-debug-local.sh
         env:
-          KEMI_GRADLE_COMMAND: gradle
+          KEMI_GRADLE_COMMAND: ./gradlew
           KEMI_GRADLE_EXTRA_ARGS: --stacktrace
           KEMI_SUBMODULES_READY: "1"
 
