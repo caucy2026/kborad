@@ -40,31 +40,16 @@ jobs:
         with:
           gradle-version: "9.4.1"
 
-      - name: Prepopulate Gradle wrapper distribution
-        env:
-          GRADLE_USER_HOME: /root/.gradle
+      - name: Verify Gradle kotlin-dsl plugin integrity
         run: |
-          gradle_zip="gradle-9.4.1-bin.zip"
-          dist_url="https://services.gradle.org/distributions/$gradle_zip"
-          hash=$(printf '%s' "$dist_url" | md5sum | cut -d' ' -f1)
-          dist_dir="$GRADLE_USER_HOME/wrapper/dists/gradle-9.4.1-bin/$hash"
-          if [ -d "$dist_dir/gradle-9.4.1" ]; then
-            echo "Wrapper distribution already present"
-            exit 0
-          fi
-          mkdir -p "$dist_dir"
-          echo "Downloading $gradle_zip..."
-          for i in 1 2 3 4 5; do
-            if curl --fail --location --retry 3 --connect-timeout 20 --max-time 300 \
-              "$dist_url" -o "$dist_dir/$gradle_zip"; then
-              break
-            fi
-            echo "Download attempt $i failed; retrying..."
-            sleep 10
-          done
-          unzip -q "$dist_dir/$gradle_zip" -d "$dist_dir"
-          touch "$dist_dir/$gradle_zip.ok"
-          echo "Gradle wrapper distribution ready"
+          gradle_bin="$(which gradle)"
+          gradle_home="$(dirname "$(dirname "$gradle_bin")")"
+          echo "Gradle home: $gradle_home"
+          echo "Gradle lib contents:"
+          ls -la "$gradle_home/lib/" | grep -i kotlin || echo "NO KOTLIN JARS FOUND!"
+          echo ""
+          echo "Gradle version check:"
+          gradle --version
 
       - name: Verify pinned Android toolchain
         run: |
@@ -95,7 +80,7 @@ jobs:
           echo "sdk.dir=$sdk" > local.properties
           ./scripts/assemble-debug-local.sh
         env:
-          KEMI_GRADLE_COMMAND: ./gradlew
+          KEMI_GRADLE_COMMAND: gradle
           KEMI_GRADLE_EXTRA_ARGS: --stacktrace
           KEMI_SUBMODULES_READY: "1"
 
