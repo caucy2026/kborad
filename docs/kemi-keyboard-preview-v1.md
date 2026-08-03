@@ -391,3 +391,84 @@ ABI: arm64-v8a
 ```
 
 Device validation on `192.168.1.6:5555` installed the release APK, enabled its IME ID `org.fcitx.fcitx5.android/.input.FcitxInputMethodService`, and selected it as the default input method. `InputMethodManager` reported the same ID as its current method and an active `FcitxInputMethodService` record in the release process.
+
+## Uncommitted Changes (2026-08-02/03): Home Return Key Styling And Desktop Command-Key Combos
+
+> Status: these changes are present in the local working tree on `kboard-preview-v1` but have **not** been committed or pushed. The sections below document what they change and why.
+
+### Background
+
+Two issues were reported on the AP device:
+
+1. The normal home-page Return/confirm key was hard to hit and looked out of proportion. It was rendered as a small 48 dp accent-colored circle, while the space key uses a wide rounded rectangle. The desired result is a Gboard-like full keycap: same size/shape as a normal physical Enter key, with a color that is clearly more visible than neighboring keys but not jarring, and with content that reads like a physical keyboard `Enter + ↵`.
+2. On the global desktop keyboard, Apple-style modifier combinations such as `⌘ + C` did not work; pressing them produced a plain `c` instead of copy.
+
+### Change 1: Home Return key styling and content
+
+#### `KeyDefPreset.kt` — new `MainReturnKey` preset
+
+- `ReturnKey` is now `open` and accepts a `variant: Variant = Variant.Accent` parameter, which is forwarded to its `Appearance.Image`.
+- A new `MainReturnKey(percentWidth)` subclass is added; it constructs `ReturnKey(percentWidth, Variant.Alternative)`.
+- This gives the home Return key a distinct, detectable variant without touching the shared `R.id.button_return` id or the number/floating keyboards that still use the plain `ReturnKey` (accent circular look).
+
+#### `TextKeyboard.kt` — home page uses `MainReturnKey`
+
+- The second-row `ReturnKey(0.151f)` in the docked `TextKeyboard.Layout` is replaced with `MainReturnKey(0.151f)`. This is the only place that changes: the floating layout's `ReturnKey(0.14f)`, `NumberKeyboard`, and picker/expanded layouts keep the original accent circular Return.
+
+#### `KeyView.kt` — full keycap rendering for the home Return key
+
+Previously both `R.id.button_punctuation` and `R.id.button_return` were drawn as a max-48 dp circle (`insetOvalDrawable`), with return using `accentKeyBackgroundColor`.
+
+Now `onSizeChanged` branches on `R.id.button_return`:
+
+- When `def.variant == Variant.Alternative` (i.e. the home `MainReturnKey`):
+  - draws a Gboard-style full keycap via `borderedKeyBackgroundDrawable` / `shadowedKeyBackgroundDrawable` with the standard `radius` (12 dp in Gboard theme), `dp(1)` border/shadow width, and the normal `hMargin`/`vMargin` — same geometry as the letter/space keycaps;
+  - background color is `ColorUtils.blendARGB(theme.altKeyBackgroundColor, Color.BLACK, 0.12f)` — the light-blue alternate key color darkened 12%, so it is clearly more prominent than the white space bar and the pale blue Tab/Shift/Backspace, but stays within the same low-saturation blue-grey family instead of jumping to a saturated accent;
+  - uses `setupPressHighlight()` (standard full-keycap press/ripple).
+- Otherwise (number/floating/etc.) it keeps the original 48 dp accent circle, and `R.id.button_punctuation` keeps its 48 dp circle with `altKeyBackgroundColor`.
+
+#### `KeyView.kt` — `ImageKeyView` content for the home Return key
+
+- A new drawable `app/src/main/res/drawable/ic_keyboard_return_long_30.xml` was added: the standard return arrow with a longer stem (30 dp wide) so the arrow is proportional to the `Enter` label instead of looking cramped.
+- In `ImageKeyView.init`, when `def.viewId == R.id.button_return && def.variant == Variant.Alternative`:
+  - the icon is swapped to the long arrow (`30 x 20 dp`);
+  - a bold 14 sp `Enter` label is added;
+  - label and arrow are laid out horizontally, centered, in a `LinearLayout` inside the keycap, mimicking a physical keyboard Enter key.
+- All other image keys (including return keys on number/floating keyboards) keep the plain centered icon path.
+
+#### `TextKeyboard.kt` — freeze the home Return icon
+
+- `onReturnDrawableUpdate(returnDrawable)` no longer overwrites the icon for the home `MainReturnKey` (`def.variant == Variant.Alternative`), so the `Enter + ↵` label is not replaced by the IME-action icon (Go/Search/Send/Done) when the focused editor declares such an action.
+- Number/floating keyboards still update their return icon dynamically as before.
+
+### Change 2: Desktop keyboard Apple modifier combinations
+
+#### `DesktopKeyboard.kt` — drop `Virtual` when a shortcut modifier is held
+
+Root cause: every key action (including letters) was dispatched with `KeyState.Virtual` appended, and the native layer treats a `Virtual + Unicode` key as direct text commit, discarding Meta/Ctrl/Alt — so `⌘ + C` became a literal `c`.
+
+The `onAction` state computation was changed:
+
+```kotlin
+val shortcutModifiers = setOf(KeyState.Ctrl, KeyState.Alt, KeyState.Meta)
+val states = if (modifierStates.any { it in shortcutModifiers }) {
+    KeyStates(*modifierStates.toTypedArray())
+} else {
+    KeyStates(*(modifierStates + KeyState.Virtual).toTypedArray())
+}
+```
+
+- When Ctrl, Option (Alt), or Command (Meta) is latched, `Virtual` is omitted so the combination is delivered as a real `KeyEvent` with modifier state (and can reach shortcuts such as `⌘+C`, `⌘+A`, `Ctrl+...`).
+- Plain typing (no shortcut modifier) keeps the previous `Virtual` behavior unchanged.
+- The existing Ctrl+Space language-switch shortcut and Shift handling are untouched.
+
+### Validation
+
+- `./gradlew :app:compileReleaseKotlin --offline` → `BUILD SUCCESSFUL`.
+- Signed release built via `scripts/assemble-release-local.sh` → `build/kboard.apk`.
+- Installed and validated on `192.168.3.46:5555`:
+  - home Return key renders as a full keycap with `Enter + long-arrow`, noticeably darker blue-grey than the space bar and other function keys;
+  - tapping it still submits and dismisses the keyboard; no `FATAL EXCEPTION`.
+- Installed on `192.168.43.11:5555` (this device ships a system-preinstalled `KBoard` under `/system/app/KBoard` with a different signature; after `adb root` + overlayfs remount the system copy was bypassed and the new release APK installed into `/data/app/...`, version `0.1.2-123-g9e33d2c2`).
+- `192.168.3.63:5555` could not be upgraded in place because it also carries the differently-signed preinstalled system `KBoard`; installing over it returns `INSTALL_FAILED_UPDATE_INCOMPATIBLE` until that device is handled with the same root/remount procedure or a matching signature.
+- The `⌘ + C` / `⌘ + A` behavior was verified on the AP device once the KBoard `Virtual` regression was removed; the remaining end-to-end behavior depends on the remote-desktop client forwarding `metaState` (tracked separately, outside this keyboard repo).

@@ -191,7 +191,12 @@ class DesktopKeyboard(context: Context, theme: Theme) :
             return
         }
 
-        val states = KeyStates(*(modifierStates + KeyState.Virtual).toTypedArray())
+        val shortcutModifiers = setOf(KeyState.Ctrl, KeyState.Alt, KeyState.Meta)
+        val states = if (modifierStates.any { it in shortcutModifiers }) {
+            KeyStates(*modifierStates.toTypedArray())
+        } else {
+            KeyStates(*(modifierStates + KeyState.Virtual).toTypedArray())
+        }
         val transformed = when (action) {
             is KeyAction.FcitxKeyAction -> {
                 val shifted = KeyState.Shift in modifierStates

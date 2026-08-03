@@ -61,7 +61,7 @@ class TextKeyboard(
                 PlainAlphabetKey("J", 0.081f),
                 PlainAlphabetKey("K", 0.081f),
                 PlainAlphabetKey("L", 0.081f),
-                ReturnKey(0.151f)
+                MainReturnKey(0.151f)
             ),
             listOf(
                 CapsKey(0.16f),
@@ -235,7 +235,9 @@ class TextKeyboard(
     }
 
     override fun onReturnDrawableUpdate(returnDrawable: Int) {
-        `return`.img.imageResource = returnDrawable
+        if (`return`.def.variant != KeyDef.Appearance.Variant.Alternative) {
+            `return`.img.imageResource = returnDrawable
+        }
     }
 
     override fun onPunctuationUpdate(mapping: Map<String, String>) {

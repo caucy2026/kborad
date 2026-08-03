@@ -361,11 +361,14 @@ class NumLockKey(percentWidth: Float) : KeyDef(
     )
 )
 
-class ReturnKey(percentWidth: Float = 0.15f) : KeyDef(
+open class ReturnKey(
+    percentWidth: Float = 0.15f,
+    variant: Variant = Variant.Accent
+) : KeyDef(
     Appearance.Image(
         src = R.drawable.ic_baseline_keyboard_return_24,
         percentWidth = percentWidth,
-        variant = Variant.Accent,
+        variant = variant,
         border = Border.Special,
         viewId = R.id.button_return,
         soundEffect = InputFeedbacks.SoundEffect.Return
@@ -383,6 +386,9 @@ class ReturnKey(percentWidth: Float = 0.15f) : KeyDef(
         )
     ),
 )
+
+class MainReturnKey(percentWidth: Float = 0.15f) :
+    ReturnKey(percentWidth, Variant.Alternative)
 
 class ImageLayoutSwitchKey(
     @DrawableRes

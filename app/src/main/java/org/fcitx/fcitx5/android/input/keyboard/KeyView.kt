@@ -26,6 +26,7 @@ import androidx.annotation.ColorInt
 import androidx.annotation.DrawableRes
 import androidx.annotation.FloatRange
 import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.graphics.ColorUtils
 import androidx.core.view.updateLayoutParams
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.theme.Theme
@@ -285,18 +286,41 @@ abstract class KeyView(ctx: Context, val theme: Theme, val def: KeyDef.Appearanc
                     )
                 )
             }
-            R.id.button_punctuation, R.id.button_return -> {
+            R.id.button_return -> if (def.variant == Variant.Alternative) {
+                val bkgColor = ColorUtils.blendARGB(
+                    theme.altKeyBackgroundColor, Color.BLACK, 0.12f
+                )
+                val borderOrShadowWidth = dp(1)
+                appearanceView.background = if (borderStroke) borderedKeyBackgroundDrawable(
+                    bkgColor, theme.keyShadowColor,
+                    radius, borderOrShadowWidth, hMargin, vMargin
+                ) else shadowedKeyBackgroundDrawable(
+                    bkgColor, theme.keyShadowColor,
+                    radius, borderOrShadowWidth, hMargin, vMargin
+                )
+                setupPressHighlight()
+            } else {
+                val drawableSize = min(min(w, h), dp(48))
+                val hInset = (w - drawableSize) / 2
+                val vInset = (h - drawableSize) / 2
+                appearanceView.background = insetOvalDrawable(
+                    hInset, vInset, theme.accentKeyBackgroundColor
+                )
+                appearanceView.padding = 0
+                setupPressHighlight(
+                    insetOvalDrawable(
+                        hInset, vInset, if (rippled) Color.WHITE else theme.keyPressHighlightColor
+                    )
+                )
+            }
+            R.id.button_punctuation -> {
                 val drawableSize = min(min(w, h), dp(48))
                 val hInset = (w - drawableSize) / 2
                 val vInset = (h - drawableSize) / 2
                 appearanceView.background = insetOvalDrawable(
                     hInset,
                     vInset,
-                    if (def.viewId == R.id.button_return) {
-                        theme.accentKeyBackgroundColor
-                    } else {
-                        theme.altKeyBackgroundColor
-                    }
+                    theme.altKeyBackgroundColor
                 )
                 appearanceView.padding = 0
                 setupPressHighlight(
@@ -442,10 +466,36 @@ class ImageKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.Image) :
     val img = imageView { configure(theme, def.src, def.variant) }
 
     init {
-        appearanceView.apply {
-            add(img, lParams(wrapContent, wrapContent) {
-                centerInParent()
-            })
+        if (def.viewId == R.id.button_return && def.variant == Variant.Alternative) {
+            img.imageResource = R.drawable.ic_keyboard_return_long_30
+            val label = view(::AutoScaleTextView) {
+                isClickable = false
+                isFocusable = false
+                background = null
+                text = "Enter"
+                setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f)
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(theme.altKeyTextColor)
+            }
+            val content = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER
+                addView(label, LinearLayout.LayoutParams(wrapContent, wrapContent).apply {
+                    marginEnd = dp(6)
+                })
+                addView(img, LinearLayout.LayoutParams(dp(30), dp(20)))
+            }
+            appearanceView.apply {
+                add(content, lParams(wrapContent, wrapContent) {
+                    centerInParent()
+                })
+            }
+        } else {
+            appearanceView.apply {
+                add(img, lParams(wrapContent, wrapContent) {
+                    centerInParent()
+                })
+            }
         }
     }
 }
