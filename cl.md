@@ -307,6 +307,35 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.11 - 2026-08-04
+
+### 主题
+统一 KBoard 为单一根仓库和单一 GitHub `main` 分支。
+
+### 过程
+- 原根项目与 `fcitx5-android` 各自拥有独立且无共同祖先的 Git 历史，普通快进无法同时保留完整文档/APK 与源码提交。
+- 将 `fcitx5-android` 提交树完整导入根仓库子目录，并使用一次无关历史合并把源码提交 `3c62d79d` 纳入 `main` 祖先，未使用强推。
+- 将旧快照中展开的上游源码规范化为 19 个 gitlink，并在根 `.gitmodules` 中配置带 `fcitx5-android/` 前缀的对应路径。
+- 将旧嵌套 `.git` 的 22 个顶层及递归子模块元数据迁移到根 `.git/modules/`；剩余旧仓库元数据移到项目外只读归档。
+
+### 修改
+- 根仓库成为唯一 Git 顶层，`fcitx5-android/` 不再作为独立仓库维护。
+- GitHub Actions workflow 移到根 `.github/workflows/`，构建与产物路径适配 `fcitx5-android/` 子目录。
+- `setup-local-native-deps.sh` 可从统一根仓库限定并初始化 `fcitx5-android/` 下的递归子模块。
+- README、BUILD 指南和两个 `AGENTS.md` 统一规定只使用根仓库 `main`，不再创建 preview、backup 或 release 分支。
+- 删除 GitHub 临时分支 `kemi-release-0.1.2-126`。
+
+### 验证
+- 本地从根目录和 `fcitx5-android/` 查询 Git 顶层均为 `/Volumes/ORICO/kemi/kboard`，本地分支只有 `main`。
+- `git submodule status --recursive` 无缺失、冲突或提交偏移，19 个根 gitlink 及其递归依赖可正常识别。
+- `./scripts/assemble-debug-local.sh` 成功生成 `org.fcitx.fcitx5.android-ef8b63f9-arm64-v8a-debug.apk`。
+- GitHub 远端分支检查仅返回 `refs/heads/main`。
+
+### 待办
+- 不再为发布创建独立分支；Release APK、校验文件、源码和文档均直接提交到根仓库 `main`。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。
