@@ -245,6 +245,9 @@ class InputView(
     private var floatingResizeDownY = 0f
     private var isFloatingResizeMode = false
 
+    val floatingResizeTouchInset: Int
+        get() = if (isFloatingResizeMode) dp(FLOATING_RESIZE_CORNER_OFFSET_DP) else 0
+
     @Keep
     private val onFloatingKeyboardChangeListener = ManagedPreferenceProvider.OnChangeListener { key ->
         if (key == floatingKeyboard.key) {
@@ -369,22 +372,6 @@ class InputView(
                 bottomOfParent()
                 startToEndOf(floatingWindowHandle)
             })
-            add(floatingResizeCorners[0], lParams(dp(FLOATING_RESIZE_CORNER_SIZE_DP), dp(FLOATING_RESIZE_CORNER_SIZE_DP)) {
-                topOfParent()
-                startOfParent()
-            })
-            add(floatingResizeCorners[1], lParams(dp(FLOATING_RESIZE_CORNER_SIZE_DP), dp(FLOATING_RESIZE_CORNER_SIZE_DP)) {
-                topOfParent()
-                endOfParent()
-            })
-            add(floatingResizeCorners[2], lParams(dp(FLOATING_RESIZE_CORNER_SIZE_DP), dp(FLOATING_RESIZE_CORNER_SIZE_DP)) {
-                bottomOfParent()
-                endOfParent()
-            })
-            add(floatingResizeCorners[3], lParams(dp(FLOATING_RESIZE_CORNER_SIZE_DP), dp(FLOATING_RESIZE_CORNER_SIZE_DP)) {
-                bottomOfParent()
-                startOfParent()
-            })
             add(kawaiiBar.view, lParams(matchParent, dp(KawaiiBarComponent.HEIGHT)) {
                 topOfParent()
                 centerHorizontally()
@@ -446,6 +433,30 @@ class InputView(
         add(keyboardView, lParams(matchParent, wrapContent) {
             centerHorizontally()
             bottomOfParent()
+        })
+        add(floatingResizeCorners[0], lParams(dp(FLOATING_RESIZE_CORNER_SIZE_DP), dp(FLOATING_RESIZE_CORNER_SIZE_DP)) {
+            startToStart = keyboardView.id
+            topToTop = keyboardView.id
+            marginStart = -dp(FLOATING_RESIZE_CORNER_OFFSET_DP)
+            topMargin = -dp(FLOATING_RESIZE_CORNER_OFFSET_DP)
+        })
+        add(floatingResizeCorners[1], lParams(dp(FLOATING_RESIZE_CORNER_SIZE_DP), dp(FLOATING_RESIZE_CORNER_SIZE_DP)) {
+            endToEnd = keyboardView.id
+            topToTop = keyboardView.id
+            marginEnd = -dp(FLOATING_RESIZE_CORNER_OFFSET_DP)
+            topMargin = -dp(FLOATING_RESIZE_CORNER_OFFSET_DP)
+        })
+        add(floatingResizeCorners[2], lParams(dp(FLOATING_RESIZE_CORNER_SIZE_DP), dp(FLOATING_RESIZE_CORNER_SIZE_DP)) {
+            endToEnd = keyboardView.id
+            bottomToBottom = keyboardView.id
+            marginEnd = -dp(FLOATING_RESIZE_CORNER_OFFSET_DP)
+            bottomMargin = -dp(FLOATING_RESIZE_CORNER_OFFSET_DP)
+        })
+        add(floatingResizeCorners[3], lParams(dp(FLOATING_RESIZE_CORNER_SIZE_DP), dp(FLOATING_RESIZE_CORNER_SIZE_DP)) {
+            startToStart = keyboardView.id
+            bottomToBottom = keyboardView.id
+            marginStart = -dp(FLOATING_RESIZE_CORNER_OFFSET_DP)
+            bottomMargin = -dp(FLOATING_RESIZE_CORNER_OFFSET_DP)
         })
         add(floatingHideKeyboardButton, lParams(dp(FLOATING_HIDE_BUTTON_SIZE_DP), dp(FLOATING_HIDE_BUTTON_SIZE_DP)) {
             startOfParent()
@@ -596,6 +607,11 @@ class InputView(
         isFloatingResizeMode = enabled
         val visibility = if (enabled && floatingKeyboard.getValue()) VISIBLE else GONE
         floatingResizeCorners.forEach { it.visibility = visibility }
+        if (enabled) {
+            keyboardView.post {
+                updateFloatingKeyboardPosition(keyboardView.translationX, keyboardView.translationY)
+            }
+        }
     }
 
     private fun onFloatingResizeCornerTouch(event: MotionEvent, horizontal: Int, vertical: Int): Boolean {
@@ -651,14 +667,19 @@ class InputView(
 
     private fun updateFloatingKeyboardPosition(x: Float, y: Float) {
         val panelLeft = (width - keyboardView.width) / 2f
-        val minX = -panelLeft
-        val maxX = width - panelLeft - keyboardView.width
-        val minY = -(height - keyboardView.height).toFloat()
-        val maxY = 0f
+        val resizeCornerInset = if (isFloatingResizeMode) dp(FLOATING_RESIZE_CORNER_OFFSET_DP).toFloat() else 0f
+        val minX = -panelLeft + resizeCornerInset
+        val maxX = width - panelLeft - keyboardView.width - resizeCornerInset
+        val minY = -(height - keyboardView.height).toFloat() + resizeCornerInset
+        val maxY = -resizeCornerInset
         keyboardView.translationX = x.coerceIn(minX, maxX)
         keyboardView.translationY = y.coerceIn(minY, maxY)
         preedit.ui.root.translationX = keyboardView.translationX
         preedit.ui.root.translationY = keyboardView.translationY
+        floatingResizeCorners.forEach {
+            it.translationX = keyboardView.translationX
+            it.translationY = keyboardView.translationY
+        }
         updateFloatingHideKeyboardButtonPosition()
     }
 
@@ -847,7 +868,8 @@ class InputView(
         const val DESKTOP_PREEDIT_GAP_DP = 0
         const val FLOATING_KEYBOARD_RADIUS_DP = 24
         const val FLOATING_RESIZE_CORNER_SIZE_DP = 48
-        const val FLOATING_RESIZE_CORNER_PADDING_DP = 12
+        const val FLOATING_RESIZE_CORNER_PADDING_DP = 8
+        const val FLOATING_RESIZE_CORNER_OFFSET_DP = 24
         const val FLOATING_KEYBOARD_DOCK_THRESHOLD_DP = 28
     }
 
