@@ -281,7 +281,7 @@ KEMI 设置页品牌化与动态名称中文化。
 ## V1.10 - 2026-08-04
 
 ### 主题
-发布可追溯的 KEMI arm64 Release APK，并完成正式包覆盖安装与 GitHub 备份准备。
+发布可追溯的 KEMI arm64 Release APK，并完成正式包覆盖安装与 GitHub 备份。
 
 ### 过程
 - 先提交已验证的悬浮键盘改动，再重新构建 Release，避免 APK 使用旧提交哈希标识脏工作区代码。
@@ -293,12 +293,14 @@ KEMI 设置页品牌化与动态名称中文化。
 - Release 产物为 `bin/KEMI-0.1.2-126-g3c62d79d-arm64-v8a-release.apk`。
 - 校验文件为 `bin/KEMI-0.1.2-126-g3c62d79d-SHA256SUMS.txt`。
 - APK 包名为 `org.fcitx.fcitx5.android`，仅包含 `arm64-v8a` ABI。
+- GitHub `main` 已更新到源码提交 `3c62d79d`；完整项目、文档和 APK 备份在 `kemi-release-0.1.2-126` 分支。
 
 ### 验证
 - Release 构建 `BUILD SUCCESSFUL`，APK 签名验证通过，SHA-256 校验返回 `OK`。
 - `adb -s 192.168.3.63:5555 install -r` 覆盖安装成功，设备版本为 `0.1.2-126-g3c62d79d`。
 - 正式输入法 `org.fcitx.fcitx5.android/.input.FcitxInputMethodService` 已设为默认。
 - Notes 真机输入框中 `mInputShown=true`、`mIsInputViewShown=true`，截图确认 KEMI 正常显示，过滤 logcat 无相关崩溃。
+- GitHub 源码主分支与完整 Release 备份分支均推送成功。
 
 ### 待办
 - 后续 Release 应继续遵循“先提交源码、再构建带提交哈希的 APK、最后生成校验文件”的顺序。
