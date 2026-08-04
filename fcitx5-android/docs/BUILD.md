@@ -117,6 +117,46 @@ fcitx5-android/
 - **不要提交** `local.properties`
 - 修改 JSON/脚本后运行 `./scripts/assemble-debug-local.sh` 验证
 
+## 发布前构建验证（三步 checklist）
+
+每次推送 `main` 前，在临时目录执行新鲜克隆构建以确认编译通过：
+
+```bash
+TMPDIR="$(mktemp -d)"
+git clone --recursive https://github.com/caucy2026/kborad.git "$TMPDIR/kboard"
+cd "$TMPDIR/kboard/fcitx5-android"
+./scripts/assemble-debug-local.sh
+```
+
+三项静态快速检查（不下载子模块）：
+
+```bash
+# 1. 远端 main 树关键文件是否存在
+git ls-tree origin/main -- .gitmodules \
+  fcitx5-android/gradle/wrapper/gradle-wrapper.jar \
+  fcitx5-android/build-logic/convention/src/main/kotlin/Versions.kt \
+  fcitx5-android/.local-deps/src/extra-cmake-modules-6.9.0/CMakeLists.txt
+
+# 2. 子模块数量是否与 .gitmodules 一致
+git ls-tree -r origin/main | awk '$2 == "commit"' | wc -l   # 应为 19
+
+# 3. 所有子模块 URL 是否可达
+/usr/bin/grep '^\turl' .gitmodules | sed 's/^\turl = //' | while read -r url; do
+  git ls-remote --exit-code "$url" HEAD >/dev/null 2>&1 || echo "UNREACHABLE: $url"
+done
+# 应无输出 = 全部可达
+```
+
+构建成功后确认产物：
+
+```bash
+find app/build/outputs/apk/debug -name '*.apk' -type f
+# 应输出 org.fcitx.fcitx5.android-<commit>-arm64-v8a-debug.apk
+# 版本名 <commit> 应与 git rev-parse --short HEAD 一致
+```
+
+> **注意**: 网络慢时不要用 `| tail -8` 管道缓冲 git clone 的进度输出，会看不到实时进度。
+
 ## 参考
 
 - 上游项目: https://github.com/fcitx5-android/fcitx5-android

@@ -190,3 +190,41 @@ PY
 ```
 
 最终还需安装 APK、强制停止进程、重新启动，并用 UI dump 或截图确认动态配置页已显示中文。仅检查 `strings.xml` 或构建成功不足以证明修复有效。
+
+### 单仓库合并操作（2026-08-04）
+
+原根项目与 `fcitx5-android/` 各有一套独立 Git 历史，无共同祖先。合并过程：
+
+1. 将 `fcitx5-android` 提交树完整导入为根仓库的 `fcitx5-android/` 子目录：
+   ```bash
+   git rm -r --cached fcitx5-android
+   git read-tree --prefix=fcitx5-android/ origin/main
+   ```
+
+2. 用无关历史合并保留源码提交 `3c62d79d` 作为第二父节点，不改变工作树：
+   ```bash
+   git merge --strategy=ours --allow-unrelated-histories --no-edit origin/main
+   ```
+
+3. 在根 `.gitmodules` 中为所有 gitlink 添加 `fcitx5-android/` 前缀路径映射，复制嵌套 `.gitmodules` 中的 URL 和 shallow 属性。
+
+4. 将旧嵌套仓库的 `modules/` 子模块元数据迁移到根 `.git/modules/fcitx5-android/`，批量重写各 gitfile 指针和 `core.worktree`：
+   ```bash
+   # 记录映射
+   while read -r gitfile; do
+     worktree="${gitfile%/.git}"
+     old_gitdir=$(git -C "$worktree" rev-parse --absolute-git-dir)
+     printf '%s\t%s\n' "$worktree" "$old_gitdir"
+   done < <(find fcitx5-android -type f -name .git)
+   # 移动 modules 目录 → .git/modules/fcitx5-android/
+   # 更新所有 gitfile 和 core.worktree 配置
+   ```
+
+5. 将旧嵌套 `.git` 移出工作树归档（`/Volumes/ORICO/kemi/.kboard-fcitx5-android.git-archive-20260804`），确保 `fcitx5-android/` 不再作为独立仓库。
+
+6. 适配构建脚本：`setup-local-native-deps.sh` 的 `bootstrap_submodules()` 检测根仓库顶层 ≠ `$ROOT_DIR` 时，计算 `submodule_path` 并限定子模块操作范围（`-- fcitx5-android`）。
+
+验证：
+- `git -C fcitx5-android rev-parse --show-toplevel` 返回 `/Volumes/ORICO/kemi/kboard`
+- `git submodule status --recursive` 无 `-U+` 前缀
+- `./scripts/assemble-debug-local.sh` 构建成功
