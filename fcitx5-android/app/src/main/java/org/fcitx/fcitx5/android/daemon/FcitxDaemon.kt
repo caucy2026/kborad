@@ -7,6 +7,8 @@ package org.fcitx.fcitx5.android.daemon
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -79,11 +81,21 @@ object FcitxDaemon {
     private val lock = ReentrantLock()
 
     private val clients = mutableMapOf<String, FcitxConnection>()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val stopIfUnused = Runnable {
+        lock.withLock {
+            if (clients.isEmpty() && realFcitx.lifecycle.currentState == FcitxLifecycle.State.READY) {
+                Timber.d("FcitxDaemon stop fcitx after disconnect grace period")
+                realFcitx.stop()
+            }
+        }
+    }
 
     /**
      * Create a connection
      */
     fun connect(name: String): FcitxConnection = lock.withLock {
+        mainHandler.removeCallbacks(stopIfUnused)
         if (name in clients)
             return@withLock clients.getValue(name)
         if (realFcitx.lifecycle.currentState == FcitxLifecycle.State.STOPPED) {
@@ -103,8 +115,8 @@ object FcitxDaemon {
             return
         clients -= name
         if (clients.isEmpty()) {
-            Timber.d("FcitxDaemon stop fcitx")
-            realFcitx.stop()
+            mainHandler.removeCallbacks(stopIfUnused)
+            mainHandler.postDelayed(stopIfUnused, DISCONNECT_GRACE_PERIOD_MS)
         }
     }
 
@@ -172,6 +184,7 @@ object FcitxDaemon {
 
 
     private const val CHANNEL_ID = "fcitx-daemon"
+    private const val DISCONNECT_GRACE_PERIOD_MS = 2_000L
     private var RESTART_ID = 0
 
 }

@@ -110,24 +110,54 @@ object InputFeedbacks {
 
     private val audioManager = appContext.audioManager
 
-    fun soundEffect(effect: SoundEffect) {
+    private fun soundEffectsEnabled(): Boolean {
         when (soundOnKeyPress) {
             InputFeedbackMode.Enabled -> {}
-            InputFeedbackMode.Disabled -> return
-            InputFeedbackMode.FollowingSystem -> if (!systemSoundEffects) return
+            InputFeedbackMode.Disabled -> return false
+            InputFeedbackMode.FollowingSystem -> if (!systemSoundEffects) return false
         }
-        val fx = when (effect) {
-            SoundEffect.Standard -> AudioManager.FX_KEYPRESS_STANDARD
-            SoundEffect.SpaceBar -> AudioManager.FX_KEYPRESS_SPACEBAR
-            SoundEffect.Delete -> AudioManager.FX_KEYPRESS_DELETE
-            SoundEffect.Return -> AudioManager.FX_KEYPRESS_RETURN
-        }
-        val volume = soundOnKeyPressVolume
-        if (volume == 0) {
-            audioManager.playSoundEffect(fx, -1f)
-        } else {
-            audioManager.playSoundEffect(fx, volume / 100f)
-        }
+        return true
     }
+
+    private fun audioEffect(effect: SoundEffect): Int = when (effect) {
+        SoundEffect.Standard -> AudioManager.FX_KEYPRESS_STANDARD
+        SoundEffect.SpaceBar -> AudioManager.FX_KEYPRESS_SPACEBAR
+        SoundEffect.Delete -> AudioManager.FX_KEYPRESS_DELETE
+        SoundEffect.Return -> AudioManager.FX_KEYPRESS_RETURN
+    }
+
+    private fun playSoundEffect(effect: SoundEffect, volumeScale: Float) {
+        if (!soundEffectsEnabled() || physicalKeyboardSoundSuppressed) return
+        val fx = audioEffect(effect)
+        val configuredVolume = soundOnKeyPressVolume
+        val volume = if (configuredVolume == 0) {
+            if (volumeScale == 1f) -1f else volumeScale
+        } else {
+            configuredVolume / 100f * volumeScale
+        }
+        audioManager.playSoundEffect(fx, volume)
+    }
+
+    fun soundEffect(effect: SoundEffect) {
+        playSoundEffect(effect, 1f)
+    }
+
+    @Volatile
+    private var physicalKeyboardSoundSuppressed = false
+
+    fun setPhysicalKeyboardSoundSuppressed(suppressed: Boolean) {
+        physicalKeyboardSoundSuppressed = suppressed
+    }
+
+    fun physicalKeyDown(effect: SoundEffect) {
+        playSoundEffect(effect, 1f)
+    }
+
+    fun physicalKeyUp() {
+        // The system standard sample is the tightest available top-out prototype.
+        playSoundEffect(SoundEffect.Standard, PHYSICAL_KEY_UP_VOLUME_SCALE)
+    }
+
+    private const val PHYSICAL_KEY_UP_VOLUME_SCALE = 0.38f
 
 }

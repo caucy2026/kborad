@@ -1,3 +1,2 @@
 .DS_Store
-# fcitx5-android/ was previously ignored; now included as part of monorepo
-# Inner .gitignore at fcitx5-android/.gitignore handles build exclusions
+fcitx5-android/

@@ -182,6 +182,129 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.7 - 2026-07-26
+
+### 主题
+输入法精简到仅中文拼音+英文，启动速度定量分析与反思。
+
+### 过程
+- 用户要求：默认只有中文拼音和英文，切换按钮只在这两者间循环；其他输入法（五笔/双拼/自然码/Rime）不编译进去，期望提速。
+- 资产盘点：`inputmethod/` 下 6 个 .conf（pinyin/db/wbx/wbpy/zrm/shuangpin），`table/` 下 4 个 .dict（合计 ~8.5MB），`addon/table.conf`，`:plugin:rime` Gradle 模块。
+- Fcitx5 引擎依赖链分析：pinyin → core + punctuation（pinyinhelper 为可选），table 依赖 pinyinhelper 而非反向；删除 table 不影响拼音。
+- 确认精简对启动速度的理论影响：`DataManager.sync()` 少拷贝词典文件约省 30-60ms，`startupFcitx` 少加载 libtable 约省 50-80ms，总计后台约 80-140ms。但主线程反射阻塞（~1000ms）和键盘视图构造（~290ms）与输入法数量无关，精简本身对首帧提升有限。
+- 启动瓶颈精确测量（分段耗时日志）：`setupScope` 中 `DynamicScope` 对首个 `Dependent` 触发 Kotlin `findSuperGenericTypeRecursively` 反射耗时 **817ms**（第一个），后续每个组件 11-46ms，是冷启动 2226ms 的头号瓶颈。
+- 验证了几个优化方向：
+  - 反射 type 覆盖（10 个类 `::class` + 3 个基类 `javaClass.kotlin`）：`setupScope` 1032ms → 31ms，`onWindowShown` 2226ms → 1139ms ✅ 安全
+  - NumberKeyboard 懒加载（split lazy HashMap）：省约 31ms ✅ 安全
+  - LinearLayout 行布局替代 ConstraintLayout：省约 60ms，但 margin 计算参数有误 ❌
+  - `onCreate` 预构造 InputView：阻塞 `onCreate` 导致总时间变差 ❌
+  - `placeholder.post` 异步占位：破坏输入视图替换流程 ❌
+- 最终决定：先做安全的精简（删资产文件+Rime编译停止），不动 Kotlin 布局和生命周期。后续单独实施反射修复。
+
+### 修改
+- `zh_CN` 默认配置改为 `DefaultInputMethod=pinyin` + `ExtraLayout=us`（移除 rime）。
+- 删除 `inputmethod/wbpy.conf`、`db.conf`、`wbx.conf`、`zrm.conf`、`shuangpin.conf`。
+- 删除 `table/wbpy.main.dict`（5.4MB）、`wbx.main.dict`（1.7MB）、`db.main.dict`（145KB）、`zrm.main.dict`（1.0MB）。
+- 删除 `addon/table.conf`。
+- `settings.gradle.kts` 注释 `include(":plugin:rime")`，不编译 Rime 插件（省 ~30MB APK 体积）。
+- 保留 `inputmethod/pinyin.conf`、`addon/pinyin.conf`、`addon/pinyinhelper.conf`——pinyin 依赖链完整。
+- 所有 Kotlin 层改动已通过 `git checkout` 完全还原，当前代码与 9767433 commit 一致（仅多 assets 精简 + Rime 注释 + zh_CN 修改）。
+
+### 验证
+- `:app:assembleDebug` BUILD SUCCESSFUL。
+- `adb shell pm clear` 清旧数据 + install + `ime set` + 启动 Notes 点击搜索框：键盘正常弹出，`mInputShown=true`。
+- logcat 确认 `Loaded addon pinyin`，无 table/rim/wubi/wbpy 加载日志。
+- 语言切换键应在拼音和英文之间循环（待用户真机确认）。
+
+### 待办
+- 反射 type 覆盖优化（安全、已验证有效、约节约 1000ms）：待单独实施。
+- APK 大小对比（精简前 vs 精简后）。
+- 拼音+英文双输入法切换的真机交互验收（确认循环行为正确、无残留输入法选项）。
+
+---
+
+## V1.8 - 2026-07-27
+
+### 主题
+降低 RustDesk 跨屏唤起 KBoard 时的输入法引擎停启延迟。
+
+### 过程
+- RustDesk 的目标屏 `KeyboardProxyActivity` 可在约 0.4-0.5 秒内启动，但首次 `showSoftInput()` 返回 `false`，整体显示需要约 2.8-3.7 秒。
+- 日志确认 Android 在 Display 0 与 Display 2 之间迁移 IME 时会短暂销毁并重建 `FcitxInputMethodService`。
+- 原有 `FcitxDaemon.disconnect()` 在最后一个客户端断开时同步执行 `realFcitx.stop()`；停止操作被正在加载的拼音任务阻塞约 2.3 秒，新 Service 随后只能重新启动 Fcitx。
+
+### 修改
+- `FcitxDaemon` 在最后一个客户端断开后增加 2 秒停止宽限期。
+- 新客户端在宽限期内连接时取消待执行的停止任务，跨屏 Service 重建可直接复用热态 Fcitx。
+- 显式重启、导入配置时的强制停止接口保持原有语义。
+
+### 验证
+- `:app:compileDebugKotlin` 通过。
+- `./gradlew clean` 后执行 `./scripts/assemble-debug-local.sh`，全量构建成功并安装到 `192.168.0.111:5555`。
+- 设备安装 APK 与本地产物 SHA-256 一致。
+- RustDesk 从 Display 0 连续 5 次在 Display 2 打开并收起键盘，状态均完成 `opening -> visible -> closing -> hidden`，无透明 Activity 残留或崩溃。
+- 点击到 `visible` 实测约 1.11-1.42 秒，未再出现跨屏期间的 Fcitx stop/start；修复前约为 2.8-3.7 秒。
+
+### 待办
+- 在 RustDesk 从 Display 2 启动、键盘目标为 Display 0 的方向执行同口径计时。
+- 剩余约 0.6-0.9 秒主要来自设备 ROM 的跨屏 IME token 迁移与绘制；继续优化前必须保留每次新建目标屏代理 Activity 的可靠路径。
+
+---
+
+## V1.9 - 2026-08-03
+
+### 主题
+悬浮键盘拖动条减薄，并将四角缩放指示改为圆角外侧的醒目可拖动控件。
+
+### 过程
+- 确认底部拖动条实际厚度由 48dp 触控区与 layer-list 上下留白共同决定，不能缩短整个触控区，否则会同时压缩右侧调整大小按钮。
+- 确认原四角指示位于 `keyboardView` 内部，会受悬浮窗圆角裁剪，无法形成 Gboard 式外侧指示。
+- 将角标移到输入视图外层后，真机发现顶部外露部分超出 IME 原可触摸上边界；同步扩展调整模式下的 `visibleTopInsets` 后恢复完整拖动能力。
+
+### 修改
+- `bkg_floating_keyboard_handle.xml` 保留 48dp 触控区，将灰色拖动条可见厚度从约 20dp 降为 8dp。
+- `ic_resize_corner_24.xml` 改为白色衬边加蓝色粗线的圆角 bracket，四个方向复用旋转。
+- `InputView.kt` 将四个 48dp 角标移到圆角裁剪层外，中心对齐四角并随悬浮窗同步平移；调整模式为外侧角标保留屏幕边距。
+- `FcitxInputMethodService.kt` 仅在调整模式将 IME 可触摸上边界向外扩展 24dp，使顶部外侧角标可直接拖动。
+
+### 验证
+- `:app:assembleDebug` 构建成功，APK 安装到 `192.168.3.63:5555` 成功。
+- Notes 真机截图确认底部拖动条明显变薄，四个蓝白圆角指示完整位于悬浮倒角外侧且无裁剪。
+- 分别从底部角标和顶部外侧角标执行拖动，键盘宽高均发生变化，松手后调整模式正常退出。
+- Android/Kotlin/XML 诊断无错误，过滤 logcat 无相关崩溃。
+
+### 待办
+- 在其他主题和更高屏幕密度设备上回归蓝白角标的对比度与外侧间距。
+
+---
+
+## V1.10 - 2026-08-04
+
+### 主题
+发布可追溯的 KEMI arm64 Release APK，并完成正式包覆盖安装与 GitHub 备份准备。
+
+### 过程
+- 先提交已验证的悬浮键盘改动，再重新构建 Release，避免 APK 使用旧提交哈希标识脏工作区代码。
+- 对比设备现有正式包与本机签名证书，确认标准 Android keystore 证书一致，可使用 `adb install -r` 无损覆盖安装。
+- 使用仓库 `assemble-release-local.sh` 构建签名 APK，并校验包名、版本、ABI、签名和 SHA-256。
+
+### 修改
+- 源码提交为 `3c62d79d`（`feat: refine floating keyboard resize controls`）。
+- Release 产物为 `bin/KEMI-0.1.2-126-g3c62d79d-arm64-v8a-release.apk`。
+- 校验文件为 `bin/KEMI-0.1.2-126-g3c62d79d-SHA256SUMS.txt`。
+- APK 包名为 `org.fcitx.fcitx5.android`，仅包含 `arm64-v8a` ABI。
+
+### 验证
+- Release 构建 `BUILD SUCCESSFUL`，APK 签名验证通过，SHA-256 校验返回 `OK`。
+- `adb -s 192.168.3.63:5555 install -r` 覆盖安装成功，设备版本为 `0.1.2-126-g3c62d79d`。
+- 正式输入法 `org.fcitx.fcitx5.android/.input.FcitxInputMethodService` 已设为默认。
+- Notes 真机输入框中 `mInputShown=true`、`mIsInputViewShown=true`，截图确认 KEMI 正常显示，过滤 logcat 无相关崩溃。
+
+### 待办
+- 后续 Release 应继续遵循“先提交源码、再构建带提交哈希的 APK、最后生成校验文件”的顺序。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

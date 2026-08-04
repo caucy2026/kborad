@@ -652,9 +652,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     override fun onComputeInsets(outInsets: Insets) {
         if (inputDeviceMgr.isVirtualKeyboard) {
             inputView?.keyboardView?.getLocationInWindow(inputViewLocation)
+            val touchableTop = inputViewLocation[1] - (inputView?.floatingResizeTouchInset ?: 0)
             outInsets.apply {
                 contentTopInsets = inputViewLocation[1]
-                visibleTopInsets = inputViewLocation[1]
+                visibleTopInsets = touchableTop
                 touchableInsets = Insets.TOUCHABLE_INSETS_VISIBLE
             }
         } else {
@@ -675,6 +676,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     fun superEvaluateInputViewShown() = super.onEvaluateInputViewShown()
 
     override fun onEvaluateFullscreenMode() = false
+
+    fun toggleFloatingKeyboard(): Boolean = inputView?.toggleFloatingKeyboard() ?: false
 
     private fun forwardKeyEvent(event: KeyEvent): Boolean {
         // reason to use a self increment index rather than timestamp:

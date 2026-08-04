@@ -124,6 +124,13 @@
     <string name="punctuation_pos_top_right">Top Right</string>
     <string name="punctuation_pos_none">None</string>
     <string name="expand_toolbar_by_default">Expand toolbar by default</string>
+    <string name="floating_keyboard">Floating keyboard</string>
+    <string name="dock_keyboard">Dock keyboard</string>
+    <string name="desktop_keyboard">Desktop keyboard</string>
+    <string name="exit_desktop_keyboard">Exit desktop keyboard</string>
+    <string name="return_previous_input_method">Return to previous input method</string>
+    <string name="move_floating_keyboard">Move floating keyboard</string>
+    <string name="resize_floating_keyboard">Resize floating keyboard</string>
     <string name="popup_on_key_press">Popup on key press</string>
     <string name="disable_animation">Disable animation</string>
     <string name="import_from_file">Import from file…</string>

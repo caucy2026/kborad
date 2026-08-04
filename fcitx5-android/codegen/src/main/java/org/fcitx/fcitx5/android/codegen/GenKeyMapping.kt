@@ -138,6 +138,12 @@ internal class GenKeyMappingProcessor(private val environment: SymbolProcessorEn
         "F11" to 0xffc8 to "KEYCODE_F11",
         "F12" to 0xffc9 to "KEYCODE_F12",
 
+        "Pause" to 0xff13 to "KEYCODE_BREAK",
+        "Scroll_Lock" to 0xff14 to "KEYCODE_SCROLL_LOCK",
+        "Print" to 0xff61 to "KEYCODE_SYSRQ",
+        "Menu" to 0xff67 to "KEYCODE_MENU",
+        "Num_Lock" to 0xff7f to "KEYCODE_NUM_LOCK",
+
         "Shift_L" to 0xffe1 to "KEYCODE_SHIFT_LEFT",
         "Shift_R" to 0xffe2 to "KEYCODE_SHIFT_RIGHT",
         "Control_L" to 0xffe3 to "KEYCODE_CTRL_LEFT",

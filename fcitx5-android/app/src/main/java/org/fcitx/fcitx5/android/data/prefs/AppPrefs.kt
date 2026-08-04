@@ -132,6 +132,19 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             switch(R.string.reset_keyboard_on_focus_change, "reset_keyboard_on_focus_change", true)
         val expandToolbarByDefault =
             switch(R.string.expand_toolbar_by_default, "expand_toolbar_by_default", true)
+        val floatingKeyboard = switch(R.string.floating_keyboard, "floating_keyboard", false)
+        val floatingKeyboardWidthPercent = ManagedPreference.PInt(
+            sharedPreferences, "floating_keyboard_width_percent", 42
+        )
+        val floatingKeyboardHeightPercent = ManagedPreference.PInt(
+            sharedPreferences, "floating_keyboard_height_percent", 92
+        )
+        val floatingKeyboardPositionX = ManagedPreference.PInt(
+            sharedPreferences, "floating_keyboard_position_x", 500
+        )
+        val floatingKeyboardPositionY = ManagedPreference.PInt(
+            sharedPreferences, "floating_keyboard_position_y", 500
+        )
         val inlineSuggestions = switch(R.string.inline_suggestions, "inline_suggestions", true)
         val toolbarNumRowOnPassword =
             switch(R.string.toolbar_num_row_on_password, "toolbar_num_row_on_password", true)
@@ -399,25 +412,24 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
     fun syncToDeviceEncryptedStorage() {
         val ctx = appContext.createDeviceProtectedStorageContext()
         val sp = PreferenceManager.getDefaultSharedPreferences(ctx)
+        val preferences = buildList<ManagedPreference<*>> {
+            addAll(
+                listOf(
+                    internal.verboseLog,
+                    internal.editorInfoInspector,
+                    advanced.ignoreSystemCursor,
+                    advanced.disableAnimation,
+                    advanced.vivoKeypressWorkaround
+                )
+            )
+            listOf(keyboard, candidates, clipboard).forEach { category ->
+                addAll(category.managedPreferences.map { it.value })
+            }
+        }
+        val unsyncedPreferences = preferences.filterNot { it.isValueSyncedTo(sp) }
+        if (unsyncedPreferences.isEmpty()) return
         sp.edit {
-            listOf(
-                internal.verboseLog,
-                internal.editorInfoInspector,
-                advanced.ignoreSystemCursor,
-                advanced.disableAnimation,
-                advanced.vivoKeypressWorkaround
-            ).forEach {
-                it.putValueTo(this@edit)
-            }
-            listOf(
-                keyboard,
-                candidates,
-                clipboard
-            ).forEach { category ->
-                category.managedPreferences.forEach {
-                    it.value.putValueTo(this@edit)
-                }
-            }
+            unsyncedPreferences.forEach { it.putValueTo(this@edit) }
         }
     }
 

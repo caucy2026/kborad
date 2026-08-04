@@ -1,6 +1,5 @@
 /*
  * SPDX-License-Identifier: LGPL-2.1-or-later
- * SPDX-FileCopyrightText: Copyright 2021-2025 Fcitx5 for Android Contributors
  */
 package org.fcitx.fcitx5.android.input.bar
 
@@ -9,11 +8,13 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.SystemClock
 import android.util.Size
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -36,11 +37,13 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CapabilityFlag
 import org.fcitx.fcitx5.android.core.CapabilityFlags
 import org.fcitx.fcitx5.android.core.FcitxEvent.CandidateListEvent
+import org.fcitx.fcitx5.android.data.InputFeedbacks
 import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
+import org.fcitx.fcitx5.android.data.theme.ThemePreset
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.State.ClickToAttachWindow
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.State.ClickToDetachWindow
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.State.Hidden
@@ -111,6 +114,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private val expandedCandidateStyle by prefs.keyboard.expandedCandidateStyle
     private val expandToolbarByDefault by prefs.keyboard.expandToolbarByDefault
     private val toolbarNumRowOnPassword by prefs.keyboard.toolbarNumRowOnPassword
+    private val floatingKeyboard = prefs.keyboard.floatingKeyboard
 
     private var clipboardTimeoutJob: Job? = null
     private var voiceCommitJob: Job? = null
@@ -122,10 +126,30 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private var isCapabilityFlagsPassword: Boolean = false
     private var isKeyboardLayoutNumber: Boolean = false
     private var isToolbarManuallyToggled: Boolean = false
+    private var shouldShowVoiceInput: Boolean = false
+    private var desktopKeyboardMode: Boolean = false
+    private var desktopVoiceButton: ToolButton? = null
+    private var desktopVoiceReleasePending = false
+
+    private val voiceNetworkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) = refreshVoiceInputAvailability()
+
+        override fun onLost(network: Network) = refreshVoiceInputAvailability()
+
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) =
+            refreshVoiceInputAvailability()
+    }
 
     private enum class NumberRowState { Auto, ForceShow, ForceHide }
 
     private var numberRowState = NumberRowState.Auto
+
+    @Keep
+    private val onFloatingKeyboardUpdateListener =
+        ManagedPreference.OnChangeListener<Boolean> { _, isFloating ->
+            idleUi.buttonsUi.updateFloatingKeyboardState(isFloating)
+            updateHideKeyboardButton()
+        }
 
     @Keep
     private val onClipboardUpdateListener =
@@ -206,6 +230,121 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         service.requestHideSelf(0)
     }
 
+    private val toggleToolbarCallback = View.OnClickListener {
+        when (idleUi.currentState) {
+            IdleUi.State.Empty -> {
+                isToolbarManuallyToggled = !expandToolbarByDefault
+                evalIdleUiState(fromUser = true)
+            }
+            IdleUi.State.Toolbar -> {
+                isToolbarManuallyToggled = expandToolbarByDefault
+                evalIdleUiState(fromUser = true)
+            }
+            else -> {
+                isToolbarManuallyToggled = !expandToolbarByDefault
+                idleUi.updateState(IdleUi.State.Toolbar, fromUser = true)
+            }
+        }
+        if (clipboardTimeoutJob != null) {
+            launchClipboardTimeoutJob()
+        }
+    }
+
+    private fun updateHideKeyboardButton() {
+        val useVoiceInput = shouldShowVoiceInput
+        idleUi.menuButton.apply {
+            setOnClickListener(toggleToolbarCallback)
+            swipeEnabled = false
+            onGestureListener = null
+        }
+        idleUi.setHideKeyboardIsVoiceInput(useVoiceInput)
+        idleUi.hideKeyboardButton.apply {
+            setOnClickListener(if (useVoiceInput) null else hideKeyboardCallback)
+            swipeEnabled = !useVoiceInput
+            onGestureListener = if (useVoiceInput) {
+                voiceInputGestureCallback
+            } else {
+                swipeHideKeyboardCallback
+            }
+        }
+        idleUi.setVoiceInputAvailable(!useVoiceInput || isNetworkAvailableForVoice())
+        idleUi.setHideKeyboardButtonVisible(!(desktopKeyboardMode && useVoiceInput))
+        updateDesktopVoiceButton(useVoiceInput)
+    }
+
+    fun setDesktopVoiceButton(button: ToolButton?) {
+        desktopVoiceButton = button
+        updateHideKeyboardButton()
+    }
+
+    fun setDesktopKeyboardMode(enabled: Boolean) {
+        desktopKeyboardMode = enabled
+        if (!enabled) {
+            desktopVoiceReleasePending = false
+            InputFeedbacks.setPhysicalKeyboardSoundSuppressed(false)
+        }
+        view.visibility = if (enabled && view.displayedChild ==
+            KawaiiBarStateMachine.State.Idle.ordinal
+        ) View.INVISIBLE else View.VISIBLE
+        updateHideKeyboardButton()
+    }
+
+    private fun updateDesktopVoiceButton(useVoiceInput: Boolean) {
+        desktopVoiceButton?.apply {
+            visibility = if (desktopKeyboardMode && useVoiceInput) View.VISIBLE else View.GONE
+            if (!desktopKeyboardMode || !useVoiceInput) {
+                setPhysicalKeyStyle(
+                    false,
+                    theme.altKeyBackgroundColor,
+                    theme.keyPressHighlightColor
+                )
+                physicalReleaseSoundEnabled = true
+                return@apply
+            }
+            setIcon(R.drawable.ic_baseline_keyboard_voice_24)
+            useFullSizeIcon()
+            setPressHighlightColor(theme.keyPressHighlightColor)
+            setPhysicalKeyStyle(
+                true,
+                theme.altKeyBackgroundColor,
+                theme.keyPressHighlightColor
+            )
+            physicalReleaseSoundEnabled = false
+            contentDescription = context.getString(R.string.start_voice_input)
+            isEnabled = isNetworkAvailableForVoice()
+            isClickable = true
+            alpha = if (isEnabled) 1f else 0.38f
+            setIconTintColor(
+                if (isEnabled) ThemePreset.AMOLEDBlack.keyTextColor else 0xff777777.toInt()
+            )
+            swipeEnabled = false
+            setOnTouchListener(null)
+            onGestureListener = CustomGestureView.OnGestureListener { view, event ->
+                when (event.type) {
+                    CustomGestureView.GestureType.Down -> {
+                        view.parent.requestDisallowInterceptTouchEvent(true)
+                        setCircleBackgroundColor(theme.altKeyBackgroundColor)
+                        setIconTintColor(theme.altKeyTextColor)
+                    }
+                    CustomGestureView.GestureType.Up -> {
+                        view.parent.requestDisallowInterceptTouchEvent(false)
+                        setPressHighlightColor(theme.keyPressHighlightColor)
+                        setIconTintColor(ThemePreset.AMOLEDBlack.keyTextColor)
+                    }
+                    CustomGestureView.GestureType.Move -> {}
+                }
+                voiceInputGestureCallback.onGesture(view, event)
+            }
+            setOnClickListener(null)
+        }
+    }
+
+    private fun refreshVoiceInputAvailability() {
+        view.post {
+            if (shouldShowVoiceInput) updateHideKeyboardButton()
+        }
+    }
+
     private val swipeDownExpandCallback = CustomGestureView.OnGestureListener { _, e ->
         if (e.type == CustomGestureView.GestureType.Up && e.totalY > 0) {
             service.requestHideSelf(0)
@@ -267,7 +406,42 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         IflytekAsrClient(
             context,
             onStateChanged = { state ->
+                InputFeedbacks.setPhysicalKeyboardSoundSuppressed(
+                    desktopKeyboardMode && state != IflytekAsrClient.State.Idle
+                )
+                if (state == IflytekAsrClient.State.Idle && desktopVoiceReleasePending) {
+                    desktopVoiceReleasePending = false
+                    desktopVoiceButton?.playPhysicalReleaseSound()
+                }
                 idleUi.setVoiceInputActive(state != IflytekAsrClient.State.Idle)
+                if (desktopKeyboardMode && view.displayedChild ==
+                    KawaiiBarStateMachine.State.Idle.ordinal
+                ) {
+                    view.visibility = if (state == IflytekAsrClient.State.Idle) {
+                        View.INVISIBLE
+                    } else {
+                        View.VISIBLE
+                    }
+                }
+                desktopVoiceButton?.let { button ->
+                    if (voicePressActive) {
+                        button.setIconTintColor(
+                            if (state != IflytekAsrClient.State.Idle) 0xff34a853.toInt()
+                            else theme.altKeyTextColor
+                        )
+                        button.setCircleBackgroundColor(
+                            if (state != IflytekAsrClient.State.Idle) theme.genericActiveBackgroundColor
+                            else theme.altKeyBackgroundColor
+                        )
+                    } else {
+                        button.setPressHighlightColor(theme.keyPressHighlightColor)
+                        button.setIconTintColor(ThemePreset.AMOLEDBlack.keyTextColor)
+                    }
+                    button.contentDescription = context.getString(
+                        if (state != IflytekAsrClient.State.Idle) R.string.stop_voice_input
+                        else R.string.start_voice_input
+                    )
+                }
                 when (state) {
                     IflytekAsrClient.State.Starting ->
                         idleUi.showVoiceTranscript(context.getString(R.string.voice_input_connecting))
@@ -301,12 +475,14 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
 
     private var voicePressActive = false
 
-    private val voiceInputGestureCallback = CustomGestureView.OnGestureListener { _, event ->
+    private val voiceInputGestureCallback = CustomGestureView.OnGestureListener { source, event ->
+        val isDesktopVoice = source === desktopVoiceButton
         Timber.i(
             "iFlytek ASR gesture=${event.type} active=$voicePressActive state=${asrClient.state}"
         )
         when (event.type) {
             CustomGestureView.GestureType.Down -> {
+                if (isDesktopVoice) desktopVoiceReleasePending = true
                 if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
                     PackageManager.PERMISSION_GRANTED
                 ) {
@@ -335,30 +511,22 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     voiceCommitJob?.cancel()
                     voiceCommitJob = null
                     voiceStartJob?.cancel()
+                    voiceStartJob = null
                     asrClient.cancel()
                     idleUi.hideVoiceTranscript()
-                    voicePressActive = false
-                    voiceStartJob = service.lifecycleScope.launch {
-                        delay(VOICE_PRESS_TO_START_MS)
-                        voicePressActive = true
-                        asrClient.start()
-                    }
+                    voicePressActive = true
+                    asrClient.start()
                 }
             }
             CustomGestureView.GestureType.Up -> {
-                if (voiceStartJob?.isActive == true) {
-                    voiceStartJob?.cancel()
-                    voiceStartJob = null
-                    idleUi.hideVoiceTranscript()
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.voice_input_hold_to_talk),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-                if (voicePressActive) {
+                val wasVoicePressActive = voicePressActive
+                if (wasVoicePressActive) {
                     voicePressActive = false
                     asrClient.stop()
+                }
+                if (isDesktopVoice && !wasVoicePressActive && desktopVoiceReleasePending) {
+                    desktopVoiceReleasePending = false
+                    source.playPhysicalReleaseSound()
                 }
             }
             CustomGestureView.GestureType.Move -> {
@@ -399,6 +567,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             val network = manager.activeNetwork ?: return false
             val caps = manager.getNetworkCapabilities(network) ?: return false
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
                 (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
                     caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
                     caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
@@ -411,26 +580,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
 
     private val idleUi: IdleUi by lazy {
         IdleUi(context, theme, popup, commonKeyActionListener).apply {
-            menuButton.setOnClickListener {
-                when (idleUi.currentState) {
-                    IdleUi.State.Empty -> {
-                        isToolbarManuallyToggled = !expandToolbarByDefault
-                        evalIdleUiState(fromUser = true)
-                    }
-                    IdleUi.State.Toolbar -> {
-                        isToolbarManuallyToggled = expandToolbarByDefault
-                        evalIdleUiState(fromUser = true)
-                    }
-                    else -> {
-                        isToolbarManuallyToggled = !expandToolbarByDefault
-                        idleUi.updateState(IdleUi.State.Toolbar, fromUser = true)
-                    }
-                }
-                // reset timeout timer (if present) when user switch layout
-                if (clipboardTimeoutJob != null) {
-                    launchClipboardTimeoutJob()
-                }
-            }
+            menuButton.setOnClickListener(toggleToolbarCallback)
             hideKeyboardButton.apply {
                 setOnClickListener(hideKeyboardCallback)
                 swipeEnabled = true
@@ -451,6 +601,16 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 clipboardButton.setOnClickListener {
                     windowManager.attachWindow(ClipboardWindow())
                 }
+                floatingKeyboardButton.setOnClickListener {
+                    updateFloatingKeyboardState(service.toggleFloatingKeyboard())
+                }
+                desktopKeyboardButton.setOnClickListener {
+                    Timber.d("Desktop keyboard button clicked")
+                    windowManager.attachWindow(KeyboardWindow)
+                    (windowManager.getEssentialWindow(KeyboardWindow) as KeyboardWindow)
+                        .toggleDesktopKeyboard()
+                }
+                updateFloatingKeyboardState(prefs.keyboard.floatingKeyboard.getValue())
                 moreButton.setOnClickListener {
                     windowManager.attachWindow(StatusAreaWindow())
                 }
@@ -544,6 +704,11 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     }
 
     private fun switchUiByState(state: KawaiiBarStateMachine.State) {
+        view.visibility = if (desktopKeyboardMode && state == KawaiiBarStateMachine.State.Idle) {
+            View.INVISIBLE
+        } else {
+            View.VISIBLE
+        }
         val index = state.ordinal
         if (view.displayedChild == index) return
         val new = view.getChildAt(index)
@@ -577,6 +742,15 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         ClipboardManager.addOnUpdateListener(onClipboardUpdateListener)
         clipboardSuggestion.registerOnChangeListener(onClipboardSuggestionUpdateListener)
         clipboardItemTimeout.registerOnChangeListener(onClipboardTimeoutUpdateListener)
+        floatingKeyboard.registerOnChangeListener(onFloatingKeyboardUpdateListener)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            runCatching {
+                context.getSystemService(ConnectivityManager::class.java)
+                    ?.registerDefaultNetworkCallback(voiceNetworkCallback)
+            }.onFailure {
+                Timber.w(it, "Unable to observe voice network state")
+            }
+        }
     }
 
     override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
@@ -596,17 +770,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         voiceStartJob = null
         idleUi.hideVoiceTranscript()
         voicePressActive = false
-        val shouldShowVoiceInput = !capFlags.has(CapabilityFlag.Password)
-        idleUi.setHideKeyboardIsVoiceInput(shouldShowVoiceInput)
-        idleUi.hideKeyboardButton.apply {
-            setOnClickListener(if (shouldShowVoiceInput) null else hideKeyboardCallback)
-            swipeEnabled = !shouldShowVoiceInput
-            onGestureListener = if (shouldShowVoiceInput) {
-                voiceInputGestureCallback
-            } else {
-                swipeHideKeyboardCallback
-            }
-        }
+        shouldShowVoiceInput = !capFlags.has(CapabilityFlag.Password)
+        updateHideKeyboardButton()
         evalIdleUiState()
     }
 
@@ -698,7 +863,6 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     companion object {
         const val HEIGHT = 48
         const val VOICE_FINAL_PREVIEW_MS = 300L
-        const val VOICE_PRESS_TO_START_MS = 180L
         const val VOICE_PERMISSION_REQUEST_COOLDOWN_MS = 2_000L
         const val VOICE_CANCEL_MOVE_THRESHOLD = 24f
     }

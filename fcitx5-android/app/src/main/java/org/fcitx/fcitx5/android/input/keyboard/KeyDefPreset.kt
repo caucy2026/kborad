@@ -44,12 +44,13 @@ class AlphabetKey(
     val punctuation: String,
     percentWidth: Float = 0.1f,
     variant: Variant = Variant.Normal,
+    textSize: Float = 28f,
     popup: Array<Popup>? = null
 ) : KeyDef(
     Appearance.AltText(
         displayText = character,
         altText = punctuation,
-        textSize = 28f,
+        textSize = textSize,
         percentWidth = percentWidth,
         variant = variant
     ),
@@ -60,6 +61,23 @@ class AlphabetKey(
     popup ?: arrayOf(
         Popup.AltPreview(character, punctuation),
         Popup.Keyboard.Preset(character)
+    )
+)
+
+class PlainAlphabetKey(
+    val character: String,
+    percentWidth: Float = 0.1f,
+    variant: Variant = Variant.Normal,
+    textSize: Float = 28f
+) : KeyDef(
+    Appearance.Text(
+        displayText = character,
+        textSize = textSize,
+        percentWidth = percentWidth,
+        variant = variant
+    ),
+    setOf(
+        Behavior.Press(KeyAction.FcitxKeyAction(character))
     )
 )
 
@@ -147,18 +165,62 @@ class CursorKey(
     )
 )
 
+class DesktopModifierKey(
+    displayText: String,
+    state: KeyState,
+    percentWidth: Float,
+    border: Border = Border.On
+) : KeyDef(
+    Appearance.Text(
+        displayText = displayText,
+        textSize = 14f,
+        textStyle = Typeface.BOLD,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative,
+        border = border
+    ),
+    setOf(Behavior.Press(KeyAction.ModifierAction(state)))
+)
+
+class DesktopSymKey(
+    displayText: String,
+    sym: Int,
+    percentWidth: Float,
+    repeat: Boolean = false,
+    border: Border = Border.On,
+    soundEffect: InputFeedbacks.SoundEffect = InputFeedbacks.SoundEffect.Standard
+) : KeyDef(
+    Appearance.Text(
+        displayText = displayText,
+        textSize = 14f,
+        textStyle = Typeface.BOLD,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative,
+        border = border,
+        soundEffect = soundEffect
+    ),
+    buildSet {
+        add(Behavior.Press(KeyAction.SymAction(KeySym(sym))))
+        if (repeat) add(Behavior.Repeat(KeyAction.SymAction(KeySym(sym))))
+    }
+)
+
 class LayoutSwitchKey(
     displayText: String,
     val to: String = "",
     percentWidth: Float = 0.15f,
-    variant: Variant = Variant.Alternative
+    variant: Variant = Variant.Alternative,
+    border: Border = Border.Default,
+    viewId: Int = -1
 ) : KeyDef(
     Appearance.Text(
         displayText,
         textSize = 16f,
         textStyle = Typeface.BOLD,
         percentWidth = percentWidth,
-        variant = variant
+        variant = variant,
+        border = border,
+        viewId = viewId
     ),
     setOf(
         Behavior.Press(KeyAction.LayoutSwitchAction(to))
@@ -256,11 +318,11 @@ class SpacerKey(percentWidth: Float) : KeyDef(
     emptySet()
 )
 
-class SpaceKey : KeyDef(
+open class SpaceKey(percentWidth: Float = 0f) : KeyDef(
     Appearance.Text(
         displayText = " ",
         textSize = 15f,
-        percentWidth = 0f,
+        percentWidth = percentWidth,
         border = Border.Special,
         viewId = R.id.button_space,
         soundEffect = InputFeedbacks.SoundEffect.SpaceBar
@@ -271,11 +333,42 @@ class SpaceKey : KeyDef(
     )
 )
 
-class ReturnKey(percentWidth: Float = 0.15f) : KeyDef(
+class DesktopSpaceKey(percentWidth: Float) : KeyDef(
+    Appearance.Text(
+        displayText = " ",
+        textSize = 15f,
+        percentWidth = percentWidth,
+        border = Border.On,
+        viewId = R.id.button_space,
+        soundEffect = InputFeedbacks.SoundEffect.SpaceBar
+    ),
+    setOf(
+        Behavior.Press(KeyAction.SymAction(KeySym(FcitxKeyMapping.FcitxKey_space))),
+        Behavior.LongPress(KeyAction.SpaceLongPressAction)
+    )
+)
+
+class NumLockKey(percentWidth: Float) : KeyDef(
+    Appearance.StackedText(
+        topText = "NUM",
+        bottomText = "LOCK",
+        textSize = 8f,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative
+    ),
+    setOf(
+        Behavior.Press(KeyAction.SymAction(KeySym(FcitxKeyMapping.FcitxKey_Num_Lock)))
+    )
+)
+
+open class ReturnKey(
+    percentWidth: Float = 0.15f,
+    variant: Variant = Variant.Accent
+) : KeyDef(
     Appearance.Image(
         src = R.drawable.ic_baseline_keyboard_return_24,
         percentWidth = percentWidth,
-        variant = Variant.Accent,
+        variant = variant,
         border = Border.Special,
         viewId = R.id.button_return,
         soundEffect = InputFeedbacks.SoundEffect.Return
@@ -293,6 +386,9 @@ class ReturnKey(percentWidth: Float = 0.15f) : KeyDef(
         )
     ),
 )
+
+class MainReturnKey(percentWidth: Float = 0.15f) :
+    ReturnKey(percentWidth, Variant.Alternative)
 
 class ImageLayoutSwitchKey(
     @DrawableRes

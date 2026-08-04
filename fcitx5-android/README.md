@@ -69,6 +69,30 @@ This repository currently carries KEMI-specific requirements for local preview b
 - Debug launcher icon: blue background, `KEMI` text, microphone glyph below.
 - Do NOT rename to `KEMI远程桌面`, `Fcitx5`, or `小企鹅输入法`.
 - Local build entry: `./scripts/assemble-debug-local.sh`
+- Keyboard preview change record: [docs/kemi-keyboard-preview-v1.md](docs/kemi-keyboard-preview-v1.md).
+
+### KEMI reproducible build
+
+Install JDK 17 and Android Studio, or JDK 17 plus Android SDK Command-line Tools.
+Set `ANDROID_HOME` when the SDK is not in Android Studio's default location.
+Then use a normal Git clone and one build command:
+
+```shell
+git clone --branch kboard-preview-v1 https://github.com/caucy2026/kborad.git
+cd kborad
+./scripts/assemble-debug-local.sh
+```
+
+The build script initializes every pinned Git submodule recursively, downloads
+the pinned ECM release, creates the required gettext tools, and uses the checked-in
+Gradle Wrapper. It reads the required Platform, Build-Tools, NDK, and CMake versions
+from the repository and installs missing components with `sdkmanager`. Project
+dependencies do not need to be found or installed manually. The first build needs
+network access and may ask for Android SDK license acceptance. The APK is written
+to `app/build/outputs/apk/debug/`.
+
+Do not download GitHub's source archive: native dependencies are pinned Git
+submodules and therefore require a Git clone.
 
 ## Screenshots
 

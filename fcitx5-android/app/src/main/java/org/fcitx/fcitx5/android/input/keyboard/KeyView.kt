@@ -17,12 +17,16 @@ import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.RippleDrawable
 import android.graphics.drawable.StateListDrawable
 import android.util.TypedValue
+import android.view.MotionEvent
 import android.view.View
+import android.view.animation.OvershootInterpolator
 import android.widget.ImageView
+import android.widget.LinearLayout
 import androidx.annotation.ColorInt
 import androidx.annotation.DrawableRes
 import androidx.annotation.FloatRange
 import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.graphics.ColorUtils
 import androidx.core.view.updateLayoutParams
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.theme.Theme
@@ -185,6 +189,55 @@ abstract class KeyView(ctx: Context, val theme: Theme, val def: KeyDef.Appearanc
         appearanceView.alpha = if (enabled) 1f else styledFloat(android.R.attr.disabledAlpha)
     }
 
+    private var physicalKeyStyleEnabled = false
+
+    fun setPhysicalKeyStyle(enabled: Boolean) {
+        physicalKeyStyleEnabled = enabled
+        physicalKeySoundEnabled = enabled
+        appearanceView.animate().cancel()
+        appearanceView.translationY = 0f
+        appearanceView.translationZ = 0f
+        appearanceView.elevation = if (enabled) dp(PHYSICAL_KEY_TRAVEL_DP) else 0f
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                appearanceView.animate().cancel()
+                if (physicalKeyStyleEnabled) {
+                    appearanceView.animate()
+                        .translationY(dp(PHYSICAL_KEY_TRAVEL_DP))
+                        .translationZ(-dp(PHYSICAL_KEY_TRAVEL_DP))
+                        .setDuration(PHYSICAL_KEY_DOWN_DURATION_MS)
+                        .start()
+                } else {
+                    appearanceView.animate().translationY(dp(2).toFloat()).setDuration(35).start()
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (physicalKeyStyleEnabled) {
+                    appearanceView.animate().cancel()
+                    appearanceView.animate()
+                        .translationY(0f)
+                        .translationZ(0f)
+                        .setInterpolator(PHYSICAL_KEY_UP_INTERPOLATOR)
+                        .setDuration(PHYSICAL_KEY_UP_DURATION_MS)
+                        .start()
+                } else {
+                    appearanceView.animate().translationY(0f).setDuration(70).start()
+                }
+            }
+        }
+        return super.onTouchEvent(event)
+    }
+
+    private companion object {
+        const val PHYSICAL_KEY_TRAVEL_DP = 3f
+        const val PHYSICAL_KEY_DOWN_DURATION_MS = 50L
+        const val PHYSICAL_KEY_UP_DURATION_MS = 110L
+        val PHYSICAL_KEY_UP_INTERPOLATOR = OvershootInterpolator(0.35f)
+    }
+
     fun updateBounds() {
         val (x, y) = cachedLocation.also { appearanceView.getLocationInWindow(it) }
         cachedBounds.set(x, y, x + appearanceView.width, y + appearanceView.height)
@@ -212,7 +265,8 @@ abstract class KeyView(ctx: Context, val theme: Theme, val def: KeyDef.Appearanc
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        if (bordered) return
+        val circularKey = def.viewId == R.id.button_punctuation || def.viewId == R.id.button_return
+        if (bordered && !circularKey) return
         when (def.viewId) {
             R.id.button_space -> {
                 val bkgRadius = dp(3f)
@@ -232,12 +286,41 @@ abstract class KeyView(ctx: Context, val theme: Theme, val def: KeyDef.Appearanc
                     )
                 )
             }
-            R.id.button_return -> {
-                val drawableSize = min(min(w, h), dp(35))
+            R.id.button_return -> if (def.variant == Variant.Alternative) {
+                val bkgColor = ColorUtils.blendARGB(
+                    theme.altKeyBackgroundColor, Color.BLACK, 0.12f
+                )
+                val borderOrShadowWidth = dp(1)
+                appearanceView.background = if (borderStroke) borderedKeyBackgroundDrawable(
+                    bkgColor, theme.keyShadowColor,
+                    radius, borderOrShadowWidth, hMargin, vMargin
+                ) else shadowedKeyBackgroundDrawable(
+                    bkgColor, theme.keyShadowColor,
+                    radius, borderOrShadowWidth, hMargin, vMargin
+                )
+                setupPressHighlight()
+            } else {
+                val drawableSize = min(min(w, h), dp(48))
                 val hInset = (w - drawableSize) / 2
                 val vInset = (h - drawableSize) / 2
                 appearanceView.background = insetOvalDrawable(
                     hInset, vInset, theme.accentKeyBackgroundColor
+                )
+                appearanceView.padding = 0
+                setupPressHighlight(
+                    insetOvalDrawable(
+                        hInset, vInset, if (rippled) Color.WHITE else theme.keyPressHighlightColor
+                    )
+                )
+            }
+            R.id.button_punctuation -> {
+                val drawableSize = min(min(w, h), dp(48))
+                val hInset = (w - drawableSize) / 2
+                val vInset = (h - drawableSize) / 2
+                appearanceView.background = insetOvalDrawable(
+                    hInset,
+                    vInset,
+                    theme.altKeyBackgroundColor
                 )
                 appearanceView.padding = 0
                 setupPressHighlight(
@@ -383,11 +466,71 @@ class ImageKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.Image) :
     val img = imageView { configure(theme, def.src, def.variant) }
 
     init {
-        appearanceView.apply {
-            add(img, lParams(wrapContent, wrapContent) {
-                centerInParent()
-            })
+        if (def.viewId == R.id.button_return && def.variant == Variant.Alternative) {
+            img.imageResource = R.drawable.ic_keyboard_return_long_30
+            val label = view(::AutoScaleTextView) {
+                isClickable = false
+                isFocusable = false
+                background = null
+                text = "Enter"
+                setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f)
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(theme.altKeyTextColor)
+            }
+            val content = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER
+                addView(label, LinearLayout.LayoutParams(wrapContent, wrapContent).apply {
+                    marginEnd = dp(6)
+                })
+                addView(img, LinearLayout.LayoutParams(dp(30), dp(20)))
+            }
+            appearanceView.apply {
+                add(content, lParams(wrapContent, wrapContent) {
+                    centerInParent()
+                })
+            }
+        } else {
+            appearanceView.apply {
+                add(img, lParams(wrapContent, wrapContent) {
+                    centerInParent()
+                })
+            }
         }
+    }
+}
+
+@SuppressLint("ViewConstructor")
+class StackedTextKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.StackedText) :
+    KeyView(ctx, theme, def) {
+    val topText = view(::AutoScaleTextView) {
+        isClickable = false
+        isFocusable = false
+        background = null
+        text = def.topText
+        setTextSize(TypedValue.COMPLEX_UNIT_DIP, def.textSize)
+        setTypeface(typeface, Typeface.BOLD)
+        setTextColor(theme.altKeyTextColor)
+        gravity = android.view.Gravity.CENTER
+    }
+    val bottomText = view(::AutoScaleTextView) {
+        isClickable = false
+        isFocusable = false
+        background = null
+        text = def.bottomText
+        setTextSize(TypedValue.COMPLEX_UNIT_DIP, def.textSize)
+        setTypeface(typeface, Typeface.BOLD)
+        setTextColor(theme.altKeyTextColor)
+        gravity = android.view.Gravity.CENTER
+    }
+
+    init {
+        val stack = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(topText, LinearLayout.LayoutParams(matchParent, 0, 1f))
+            addView(bottomText, LinearLayout.LayoutParams(matchParent, 0, 1f))
+        }
+        appearanceView.addView(stack, ConstraintLayout.LayoutParams(matchParent, matchParent))
     }
 }
 

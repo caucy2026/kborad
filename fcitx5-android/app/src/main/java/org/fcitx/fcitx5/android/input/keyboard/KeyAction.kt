@@ -4,6 +4,7 @@
  */
 package org.fcitx.fcitx5.android.input.keyboard
 
+import org.fcitx.fcitx5.android.core.KeyState
 import org.fcitx.fcitx5.android.core.KeyStates
 import org.fcitx.fcitx5.android.core.KeySym
 import org.fcitx.fcitx5.android.core.ScancodeMapping
@@ -22,6 +23,8 @@ sealed class KeyAction {
     data class CommitAction(val text: String) : KeyAction()
 
     data class CapsAction(val lock: Boolean) : KeyAction()
+
+    data class ModifierAction(val state: KeyState) : KeyAction()
 
     data object QuickPhraseAction : KeyAction()
 

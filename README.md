@@ -4,7 +4,7 @@ KEMI 是基于 [fcitx5-android](https://github.com/fcitx5-android/fcitx5-android
 
 ## 主要功能
 
-- Fcitx5 拼音、五笔拼音等输入法支持。
+- Fcitx5 中文拼音与英文输入支持。
 - 按住说话的讯飞流式语音输入，实时显示识别结果，松手后提交最终文本。
 - 语音权限、断网预检、鉴权失败、网络策略和麦克风异常的中文提示。
 - KEMI 品牌化设置页，全局选项、输入法、附加组件及 Fcitx 动态配置中文化。
@@ -20,6 +20,7 @@ kborad/
 │   ├── lib/                     # Fcitx5、libime 和中文扩展
 │   ├── plugin/                  # 可选输入法插件
 │   └── scripts/                 # 本地依赖与构建工具
+├── bin/                         # 已验证的版本化 Release APK 与 SHA-256
 ├── cl.md                        # 唯一变更日志
 ├── fcitx5-android-port-plan.md  # 移植、构建、部署与 gettext 调试
 ├── iflytek_asr_interface_doc.md # 讯飞 ASR 协议与真机排错
@@ -70,6 +71,23 @@ adb shell am start -n \
   org.fcitx.fcitx5.android.debug/org.fcitx.fcitx5.android.ui.main.MainActivity
 ```
 
+## Release 产物
+
+当前已验证的 arm64 正式包：
+
+```text
+bin/KEMI-0.1.2-126-g3c62d79d-arm64-v8a-release.apk
+bin/KEMI-0.1.2-126-g3c62d79d-SHA256SUMS.txt
+```
+
+安装并启用正式输入法：
+
+```bash
+adb install -r bin/KEMI-0.1.2-126-g3c62d79d-arm64-v8a-release.apk
+adb shell ime enable org.fcitx.fcitx5.android/.input.FcitxInputMethodService
+adb shell ime set org.fcitx.fcitx5.android/.input.FcitxInputMethodService
+```
+
 ## 验证要求
 
 运行时改动不能只验证编译成功。标准闭环为：
@@ -99,8 +117,9 @@ adb shell am start -n \
 
 ## 当前状态
 
-- Debug APK 构建通过。
-- APK 可安装并启用为系统输入法。
+- Debug 与签名 Release APK 构建通过。
+- Release `0.1.2-126-g3c62d79d` 已在 `192.168.3.63:5555` 覆盖安装并启用为默认输入法。
+- 悬浮键盘拖动条与外侧四角缩放控件已完成真机交互验证。
 - Fcitx 运行 Locale 验证为 `zh_CN:zh`。
 - Android 静态文本和 Fcitx 动态配置均已验证中文显示。
 - ASR 权限、联网判断、明文网络白名单及主要崩溃路径已完成真机修复。

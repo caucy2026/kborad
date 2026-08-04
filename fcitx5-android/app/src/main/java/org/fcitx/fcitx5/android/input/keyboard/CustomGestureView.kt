@@ -90,6 +90,13 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
 
     var soundEffect: InputFeedbacks.SoundEffect = InputFeedbacks.SoundEffect.Standard
 
+    var physicalKeySoundEnabled = false
+    var physicalReleaseSoundEnabled = true
+
+    fun playPhysicalReleaseSound() {
+        if (physicalKeySoundEnabled) InputFeedbacks.physicalKeyUp()
+    }
+
     private val touchSlop: Float = ViewConfiguration.get(ctx).scaledTouchSlop.toFloat()
 
     init {
@@ -147,7 +154,11 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                 drawableHotspotChanged(x, y)
                 isPressed = true
                 InputFeedbacks.hapticFeedback(this)
-                InputFeedbacks.soundEffect(soundEffect)
+                if (physicalKeySoundEnabled) {
+                    InputFeedbacks.physicalKeyDown(soundEffect)
+                } else {
+                    InputFeedbacks.soundEffect(soundEffect)
+                }
                 dispatchGestureEvent(GestureType.Down, x, y)
                 if (longPressEnabled) {
                     longPressJob?.cancel()
@@ -182,6 +193,9 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                 isPressed = false
                 InputFeedbacks.hapticFeedback(this, longPress = true, keyUp = true)
                 dispatchGestureEvent(GestureType.Up, event.x, event.y)
+                if (physicalKeySoundEnabled && physicalReleaseSoundEnabled) {
+                    InputFeedbacks.physicalKeyUp()
+                }
                 val shouldPerformClick = !(touchMovedOutside ||
                         longPressTriggered ||
                         repeatStarted ||
@@ -233,6 +247,9 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
             MotionEvent.ACTION_CANCEL -> {
                 isPressed = false
                 dispatchGestureEvent(GestureType.Up, event.x, event.y)
+                if (physicalKeySoundEnabled && physicalReleaseSoundEnabled) {
+                    InputFeedbacks.physicalKeyUp()
+                }
                 resetState()
                 // reset double tap state on cancel
                 if (doubleTapEnabled) {

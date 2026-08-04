@@ -31,6 +31,8 @@ abstract class ManagedPreference<T : Any>(
 
     abstract fun putValueTo(editor: SharedPreferences.Editor)
 
+    abstract fun isValueSyncedTo(sharedPreferences: SharedPreferences): Boolean
+
     override fun getValue(thisRef: Any?, property: KProperty<*>): T = getValue()
 
     override fun setValue(thisRef: Any?, property: KProperty<*>, value: T) = setValue(value)
@@ -81,6 +83,13 @@ abstract class ManagedPreference<T : Any>(
         override fun putValueTo(editor: SharedPreferences.Editor) {
             editor.putBoolean(key, getValue())
         }
+
+        override fun isValueSyncedTo(sharedPreferences: SharedPreferences): Boolean =
+            runCatching {
+                sharedPreferences.contains(key) &&
+                    sharedPreferences.getBoolean(key, defaultValue) == getValue()
+            }
+                .getOrDefault(false)
     }
 
     class PString(sharedPreferences: SharedPreferences, key: String, defaultValue: String) :
@@ -102,6 +111,13 @@ abstract class ManagedPreference<T : Any>(
         override fun putValueTo(editor: SharedPreferences.Editor) {
             editor.putString(key, getValue())
         }
+
+        override fun isValueSyncedTo(sharedPreferences: SharedPreferences): Boolean =
+            runCatching {
+                sharedPreferences.contains(key) &&
+                    sharedPreferences.getString(key, defaultValue) == getValue()
+            }
+                .getOrDefault(false)
     }
 
     class PStringLike<T : Any>(
@@ -129,6 +145,12 @@ abstract class ManagedPreference<T : Any>(
         override fun putValueTo(editor: SharedPreferences.Editor) {
             editor.putString(key, codec.encode(getValue()))
         }
+
+        override fun isValueSyncedTo(sharedPreferences: SharedPreferences): Boolean =
+            runCatching {
+                sharedPreferences.contains(key) &&
+                    sharedPreferences.getString(key, codec.encode(defaultValue)) == codec.encode(getValue())
+            }.getOrDefault(false)
     }
 
 
@@ -151,6 +173,13 @@ abstract class ManagedPreference<T : Any>(
         override fun putValueTo(editor: SharedPreferences.Editor) {
             editor.putInt(key, getValue())
         }
+
+        override fun isValueSyncedTo(sharedPreferences: SharedPreferences): Boolean =
+            runCatching {
+                sharedPreferences.contains(key) &&
+                    sharedPreferences.getInt(key, defaultValue) == getValue()
+            }
+                .getOrDefault(false)
     }
 
     class PFloat(sharedPreferences: SharedPreferences, key: String, defaultValue: Float) :
@@ -171,6 +200,13 @@ abstract class ManagedPreference<T : Any>(
         override fun putValueTo(editor: SharedPreferences.Editor) {
             editor.putFloat(key, getValue())
         }
+
+        override fun isValueSyncedTo(sharedPreferences: SharedPreferences): Boolean =
+            runCatching {
+                sharedPreferences.contains(key) &&
+                    sharedPreferences.getFloat(key, defaultValue) == getValue()
+            }
+                .getOrDefault(false)
     }
 
 }
