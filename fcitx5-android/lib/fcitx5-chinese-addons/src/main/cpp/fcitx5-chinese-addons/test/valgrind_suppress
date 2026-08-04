@@ -1,6 +1,0 @@
-{
-   ignore_libcrypto_conditional_jump_errors
-   Memcheck:Leak
-   ...
-   obj:*/libcrypto.so.*
-}

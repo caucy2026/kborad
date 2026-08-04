@@ -1,0 +1,93 @@
+name: KEMI Reproducible Build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clean-build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Fetch source and pinned submodules
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android command-line tools
+        uses: android-actions/setup-android@v4
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-36
+            build-tools;36.1.0
+            ndk;28.0.13004108
+            cmake;3.31.6
+
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "9.4.1"
+
+      - name: Package action-installed Gradle for wrapper
+        run: |
+          gradle_bin="$(which gradle)"
+          gradle_home="$(dirname "$(dirname "$gradle_bin")")"
+          echo "Gradle installed at: $gradle_home"
+          gradle_zip=/tmp/gradle-9.4.1-bin.zip
+          (cd "$(dirname "$gradle_home")" && zip -qr "$gradle_zip" "$(basename "$gradle_home")")
+          echo "GRADLE_ZIP=$gradle_zip" >> "$GITHUB_ENV"
+          ls -lh "$gradle_zip"
+
+      - name: Verify pinned Android toolchain
+        run: |
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          test -f "$sdk/platforms/android-36/android.jar"
+          test -d "$sdk/build-tools/36.1.0"
+          test -f "$sdk/ndk/28.0.13004108/source.properties"
+          test -x "$sdk/cmake/3.31.6/bin/cmake"
+
+      - name: Verify checked-out submodules
+        run: |
+          missing=$(git submodule status --recursive | grep '^[-U]' || true)
+          if [ -n "$missing" ]; then
+            echo "::error title=Incomplete submodule checkout::$missing"
+            exit 1
+          fi
+
+      - name: Fetch pinned ECM source
+        uses: actions/checkout@v6
+        with:
+          repository: KDE/extra-cmake-modules
+          ref: v6.9.0
+          path: fcitx5-android/.local-deps/src/extra-cmake-modules-6.9.0
+
+      - name: Build with repository bootstrap
+        working-directory: fcitx5-android
+        run: |
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          echo "sdk.dir=$sdk" > local.properties
+          sed -i "s#^distributionUrl=.*#distributionUrl=file\\:///tmp/gradle-9.4.1-bin.zip#" gradle/wrapper/gradle-wrapper.properties
+          ./scripts/assemble-debug-local.sh
+        env:
+          KEMI_GRADLE_COMMAND: ./gradlew
+          KEMI_GRADLE_EXTRA_ARGS: --stacktrace
+          KEMI_SUBMODULES_READY: "1"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: kemi-arm64-debug-${{ github.sha }}
+          path: fcitx5-android/app/build/outputs/apk/debug/*arm64-v8a-debug.apk
+          if-no-files-found: error

@@ -22,15 +22,21 @@ bootstrap_submodules() {
     return 0
   fi
   if git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    submodule_state=$(git -C "$ROOT_DIR" submodule status --recursive)
+    git_toplevel=$(git -C "$ROOT_DIR" rev-parse --show-toplevel)
+    if [ "$git_toplevel" = "$ROOT_DIR" ]; then
+      submodule_path=.
+    else
+      submodule_path=${ROOT_DIR#"$git_toplevel"/}
+    fi
+    submodule_state=$(git -C "$git_toplevel" submodule status --recursive -- "$submodule_path")
     if ! printf '%s\n' "$submodule_state" | grep -q '^[-U]'; then
       return 0
     fi
     echo "Initializing native source dependencies..." >&2
-    git -C "$ROOT_DIR" submodule sync --recursive >&2
+    git -C "$git_toplevel" submodule sync --recursive -- "$submodule_path" >&2
     attempt=1
     while [ "$attempt" -le 3 ]; do
-      if git -C "$ROOT_DIR" submodule update --init --recursive --jobs 2 >&2; then
+      if git -C "$git_toplevel" submodule update --init --recursive --jobs 2 -- "$submodule_path" >&2; then
         return 0
       fi
       if [ "$attempt" -eq 3 ]; then

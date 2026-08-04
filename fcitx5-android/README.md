@@ -78,8 +78,9 @@ Set `ANDROID_HOME` when the SDK is not in Android Studio's default location.
 Then use a normal Git clone and one build command:
 
 ```shell
-git clone --branch kboard-preview-v1 https://github.com/caucy2026/kborad.git
+git clone --branch main --single-branch https://github.com/caucy2026/kborad.git
 cd kborad
+cd fcitx5-android
 ./scripts/assemble-debug-local.sh
 ```
 
