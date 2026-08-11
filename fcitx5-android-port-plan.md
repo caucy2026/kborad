@@ -191,6 +191,152 @@ PY
 
 最终还需安装 APK、强制停止进程、重新启动，并用 UI dump 或截图确认动态配置页已显示中文。仅检查 `strings.xml` 或构建成功不足以证明修复有效。
 
+### 5.9 中文快速输入响应优化（2026-08-11）
+
+#### 目标与基线
+
+目标设备为 `192.168.3.62:5555`（Android 12、arm64-v8a、Display 0 + HDMI Display 2）。基线在拼音模式连续输入：
+
+```text
+zhonghuarenmingongheguo
+```
+
+共注入 23 键。按键注入结束后，最终首选“中华人民共和国”仍滞后约 2.04 秒；该轮产生 23 次 InputPanel 和 23 次 CandidateList 热事件。短前缀的候选规模尤其异常：
+
+| 输入 | native 候选总量 | Android 首次消费量 |
+|------|----------------:|-------------------:|
+| `z` | 2638 | 最多 16 |
+| `zh` | 1858 | 最多 16 |
+| 完整测试串 | 94 | 最多 16 |
+
+因此，卡顿不是 RecyclerView 单点问题，而是每次按键都在串行 `fcitx-main` 线程完成大候选集合的生成、排序、去重、C++ 对象包装、JNI 事件构造和 Kotlin 分发。
+
+#### 热路径
+
+```text
+CommonKeyActionListener
+  -> FcitxInputMethodService.postFcitxJob()
+  -> FcitxDispatcher（单线程 fcitx-main）
+  -> sendKeyToFcitxString()
+  -> PinyinEngine::keyEvent()
+  -> PinyinContext::update()
+  -> PinyinEngine::updateUI()
+  -> AndroidFrontend::updateInputPanel()/getCandidates()
+  -> Fcitx.JNI.handleFcitxEvent()
+  -> SharedFlow / Candidate RecyclerView
+```
+
+关键源码：
+
+- Kotlin/JNI 事件入口：`fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/core/Fcitx.kt`
+- Android native frontend：`fcitx5-android/app/src/main/cpp/androidfrontend/androidfrontend.cpp`
+- Fcitx Pinyin UI 包装：`fcitx5-android/lib/fcitx5-chinese-addons/src/main/cpp/fcitx5-chinese-addons/im/pinyin/pinyin.cpp`
+- libime 候选生成与排序：`fcitx5-android/lib/libime/src/main/cpp/libime/src/libime/pinyin/pinyincontext.cpp`
+- 可复现的 libime 补丁：`fcitx5-android/patches/libime-android-candidate-top256.patch`
+
+#### 第一阶段：移除默认热事件字符串格式化
+
+原 JNI 回调无条件执行：
+
+```kotlin
+Timber.d("Handling $event")
+```
+
+字符串模板会立即调用 `FcitxEvent.toString()`。CandidateList/InputPanel 事件包含预编辑文本、动作和候选内容，该工作发生在 `fcitx-main`，会直接阻塞后续按键。
+
+修复方法：
+
+1. 增加 `@Volatile verboseEventLog`，保证设置线程和 native 回调线程之间可见。
+2. `start()` 和 `setLogRule()` 统一通过 `configureLogging(verbose)` 同步 Java 事件日志与 native log stream。
+3. 默认不构造事件字符串；只有开发者明确开启详细日志时才执行完整 `Timber.d`。
+
+该修改不改变候选生成、排序、学习或提交行为。实测默认模式下同一轮输入的 `fcitx-main Handling ...` 日志由 46 条降为 0；开启详细日志后仍可恢复诊断能力。
+
+#### 第二阶段：Android 候选 top-256 部分排序
+
+仅优化日志仍不能解决 native 大候选集合。`PinyinContext::update()` 原来对 `beginSize` 之后的全部 `SentenceResult` 执行：
+
+```cpp
+std::sort(candidateBegin, candidates.end(), std::greater<>());
+```
+
+随后 Fcitx Pinyin 层会遍历全部结果，生成 `PinyinCandidateWord`、去重表、注释和符号候选；但 Android frontend 初次最多只封送 16 项。
+
+Android 专用策略：
+
+1. 保留 decoder 产生的 n-best 前缀（`[0, beginSize)`），不改变首选句来源。
+2. 候选后缀不超过 256 项时继续使用原全量排序。
+3. 超过 256 项时使用 `std::partial_sort` 选出分数最高的 256 项，并删除尾部低分项。
+4. 后续原有去重、`wordCandidateLimit`、候选包装和分页逻辑保持不变。
+5. 代码受 `#if defined(__ANDROID__)` 限定，桌面和其他平台仍使用原算法。
+
+伪代码：
+
+```cpp
+if (candidateCount > 256) {
+    partial_sort(candidateBegin, candidateBegin + 256, candidateEnd, greater);
+    erase(candidateBegin + 256, candidateEnd);
+} else {
+    sort(candidateBegin, candidateEnd, greater);
+}
+```
+
+选择 256 而不是直接截成 16 的原因：
+
+- 首屏仍只消费 16 项，能覆盖实际可见候选。
+- 保留足够的展开和分页候选，降低罕见字被过早丢弃的风险。
+- `partial_sort` 按原分数选 top-N，不是按生成顺序粗暴截断。
+- 完整测试串只有 94 项，不触发裁剪，因此“中华人民共和国”等长句候选集合保持原样。
+
+该阶段减少的是数千候选的全量排序以及后续大部分去重/包装开销。候选 lattice 枚举目前仍会访问完整匹配集合；如果 top-256 仍不能达到响应目标，下一步应把 lattice 结果收集改为固定容量最小堆，在生成阶段只保留 top-N，从源头限制 `SentenceResult` 构造数量。
+
+#### 构建、部署与验证口径
+
+从 `fcitx5-android/` 执行：
+
+```bash
+./scripts/assemble-debug-local.sh
+```
+
+不要假定 APK 含固定 Git 哈希，应从 `app/build/outputs/apk/debug/` 查找实际 arm64-v8a 产物。验证必须包含：
+
+1. `adb install -r` 安装新 APK，并确认目标包进程已重启。
+2. 主屏输入完整测试串，确认首选仍为“中华人民共和国”。
+3. 输入 `z`、`zh` 和完整测试串，记录 CandidateList 总量与最后一次候选事件时间。
+4. Display 2 聚焦真实输入框，确认 `mCurTokenDisplayId=2`、`mInputShown=true`。
+5. 使用真实副屏触控执行快速连打；该 ROM 的 `adb shell input -d 2 tap` 对 IME 键位只产生按压视觉态，不能代替整句触控计时。
+6. 过滤 `FATAL EXCEPTION`、`AndroidRuntime` 及 Fcitx native 错误。
+
+当前验证状态：第一阶段已在 `192.168.3.62` 完成主屏整句与 Display 2 显示归属验证；第二阶段已通过 NDK 编译和完整 APK 构建，但设备安装与量化复测因 ADB 操作审批服务中断而尚未完成。因此不能仅凭构建成功宣称响应已达标。
+
+#### 签名核验
+
+本轮 debug APK 与仓库现有 Release APK 的实际证书相同：
+
+```text
+DN: CN=Android Debug, O=Android, C=US
+SHA-256: fc84f538928007fb20d1ee43b8fb6bde465708c694b86fdd6a012fef19e2d5aa
+```
+
+该证书不是 AOSP platform 证书。签名应以 `apksigner verify --print-certs <apk>` 的实际输出为准，不应依据旧文档名称推断。
+
+#### 子模块集成注意事项
+
+`libime` 指向无写权限的上游 `fcitx/libime`，不能把只存在本机的子模块提交写入根仓库 gitlink，否则 GitHub 上的项目无法克隆该提交。项目采用根仓库跟踪补丁的方式交付：
+
+- 补丁保存在 `patches/libime-android-candidate-top256.patch`。
+- `scripts/setup-local-native-deps.sh` 在子模块初始化后执行 `git apply --check` 并应用补丁。
+- 脚本用反向检查识别“已经应用”，重复执行不会二次修改。
+- 新机器仍从官方 libime gitlink 获取源码，再自动应用 KBoard 补丁，发布构建可复现。
+
+执行本地构建后工作树会显示：
+
+```text
+m fcitx5-android/lib/libime/src/main/cpp/libime
+```
+
+这是补丁已应用到子模块工作树的预期状态，不应暂存 gitlink。正式提交只包含根仓库中的补丁、应用脚本、Kotlin 修改与文档；生成目录 `lib/fcitx5/src/main/cpp/prebuilt` 同样不能纳入版本控制。
+
 ### 单仓库合并操作（2026-08-04）
 
 原根项目与 `fcitx5-android/` 各有一套独立 Git 历史，无共同祖先。合并过程：

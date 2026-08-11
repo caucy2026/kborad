@@ -52,6 +52,11 @@ class Fcitx(private val context: Context) : FcitxAPI, FcitxLifecycleOwner {
 
     // TODO: custom log rule
     override fun setLogRule(verbose: Boolean) {
+        configureLogging(verbose)
+    }
+
+    private fun configureLogging(verbose: Boolean) {
+        verboseEventLog = verbose
         setupLogStream(verbose)
     }
 
@@ -206,6 +211,8 @@ class Fcitx(private val context: Context) : FcitxAPI, FcitxLifecycleOwner {
         get() = lifecycleRegistry
 
     private companion object JNI {
+        @Volatile
+        private var verboseEventLog = false
 
         /**
          * called from native-lib
@@ -396,7 +403,11 @@ class Fcitx(private val context: Context) : FcitxAPI, FcitxLifecycleOwner {
         @JvmStatic
         fun handleFcitxEvent(type: Int, params: Array<Any>) {
             val event = FcitxEvent.create(type, params)
-            Timber.d("Handling $event")
+            // This callback runs on fcitx-main. Event toString() can include preedit text,
+            // actions and candidates, so only format it when verbose diagnostics are enabled.
+            if (verboseEventLog) {
+                Timber.d("Handling $event")
+            }
             fcitxEventHandlers.forEach { it.invoke(event) }
             eventFlow_.tryEmit(event)
         }
@@ -543,7 +554,7 @@ class Fcitx(private val context: Context) : FcitxAPI, FcitxLifecycleOwner {
         DataManager.addOnNextSyncedCallback {
             FcitxPluginServices.connectAll()
         }
-        setupLogStream(AppPrefs.getInstance().internal.verboseLog.getValue())
+        configureLogging(AppPrefs.getInstance().internal.verboseLog.getValue())
         dispatcher.start()
     }
 

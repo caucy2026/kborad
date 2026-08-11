@@ -54,6 +54,24 @@ bootstrap_submodules() {
   fi
 }
 
+apply_kemi_native_patches() {
+  libime_dir="$ROOT_DIR/lib/libime/src/main/cpp/libime"
+  patch_file="$ROOT_DIR/patches/libime-android-candidate-top256.patch"
+  if [ ! -f "$patch_file" ]; then
+    echo "Required native patch is missing: $patch_file" >&2
+    exit 1
+  fi
+  if git -C "$libime_dir" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! git -C "$libime_dir" apply --check "$patch_file" >/dev/null 2>&1; then
+    echo "Unable to apply KBoard libime candidate optimization." >&2
+    exit 1
+  fi
+  echo "Applying KBoard libime candidate optimization..." >&2
+  git -C "$libime_dir" apply "$patch_file"
+}
+
 find_sdk_dir() {
   if [ -n "${ANDROID_SDK_ROOT:-}" ] && [ -d "$ANDROID_SDK_ROOT" ]; then
     printf '%s\n' "$ANDROID_SDK_ROOT"
@@ -247,6 +265,7 @@ EOF
 }
 
 bootstrap_submodules
+apply_kemi_native_patches
 bootstrap_android_sdk
 bootstrap_ecm
 bootstrap_gettext_wrappers
