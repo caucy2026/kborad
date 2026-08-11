@@ -356,7 +356,7 @@ adb -s 192.168.3.62:5555 shell am instrument -w -r \
   org.fcitx.fcitx5.android.debug.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-当前验证状态：第三阶段已完成 arm64 NDK/Debug 构建、`192.168.3.62` 覆盖安装和设备端七组候选回归；测试返回 `OK (1 test)`，过滤日志无输入法相关崩溃。Display 2 浏览器输入框确认 `mCurTokenDisplayId=2`、`mInputShown=true`、`mIsInputViewShown=true`。正式包尚未用第三阶段源码重新发布到 `192.168.3.63`；该设备启动定制双屏浏览器会清理用户侧载正式包，发布时仍需遵循“归档后最终重装”的顺序。
+当前验证状态：第三阶段已完成 arm64 NDK/Debug 构建、`192.168.3.62` 覆盖安装和设备端七组候选回归；测试返回 `OK (1 test)`，过滤日志无输入法相关崩溃。Display 2 浏览器输入框确认 `mCurTokenDisplayId=2`、`mInputShown=true`、`mIsInputViewShown=true`。正式 Release `b97ee4b1` 已安装到 `192.168.3.63`，正式服务已启用并设为默认。为避免触发该 ROM 已确认的侧载包清理，本轮正式安装后不再启动定制双屏浏览器。
 
 #### 签名核验
 

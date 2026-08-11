@@ -431,6 +431,37 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.15 - 2026-08-11
+
+### 主题
+发布第三阶段中文响应优化正式版，并部署到 V900 `.63` 设备及备份 GitHub。
+
+### 过程
+- 以已验证源码提交 `b97ee4b1` 构建 Release，确保 APK `versionName` 可追溯到对应源码。
+- 沿用项目上一正式版证书，构建后重新核验包名、版本、ABI、签名方案和证书指纹。
+- 正式产物归档到根仓库 `bin/`，生成独立 SHA-256 文件后再提交和推送。
+
+### 修改
+- Release APK：`bin/KEMI-b97ee4b1-arm64-v8a-release.apk`。
+- SHA-256 文件：`bin/KEMI-b97ee4b1-SHA256SUMS.txt`。
+- 包名：`org.fcitx.fcitx5.android`；版本名：`b97ee4b1`；版本码：`102`；ABI：仅 `arm64-v8a`。
+- APK SHA-256：`5be1afbd21dc5a02122a095dd3b354a4e5df92dc59ffc34c795670b2c4091d23`。
+- 签名证书 SHA-256：`fc84f538928007fb20d1ee43b8fb6bde465708c694b86fdd6a012fef19e2d5aa`。
+
+### 验证
+- `./scripts/assemble-release-local.sh` 构建成功。
+- `apksigner verify --verbose --print-certs`：v1/v2 验证通过，单签名者证书与上一正式版一致。
+- `aapt dump badging`：包名、`versionCode=102`、`versionName=b97ee4b1`、`targetSdkVersion=36` 正确。
+- `unzip -l`：APK native 库仅包含 `arm64-v8a`；归档文件 SHA-256 与构建产物一致。
+- `adb install -r` 在 `192.168.3.63:5555` 返回 `Success`，设备报告 `versionName=b97ee4b1`、用户 0 `installed=true`。
+- 正式服务已在系统 `ime list` 中登记、启用并设为默认；`default_input_method` 与 `mCurMethodId` 均为 `org.fcitx.fcitx5.android/.input.FcitxInputMethodService`，进程已启动。
+- 安装后过滤日志未发现 KBoard 相关 `FATAL EXCEPTION`；未启动会触发 ROM 侧载包清理的定制双屏浏览器。
+
+### 待办
+- GitHub `main` 推送结果在远端实际完成后更新。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。
