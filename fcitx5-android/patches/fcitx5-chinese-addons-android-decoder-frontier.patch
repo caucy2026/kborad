@@ -1,0 +1,16 @@
+diff --git a/im/pinyin/pinyin.cpp b/im/pinyin/pinyin.cpp
+index da92061..ce4679a 100644
+--- a/im/pinyin/pinyin.cpp
++++ b/im/pinyin/pinyin.cpp
+@@ -765,3 +765,10 @@ PinyinEngine::PinyinEngine(Instance *instance)
+                 .languageModelFileForLanguage("zh_CN")));
+-
++#if defined(__ANDROID__)
++    // The Android IME updates candidates after every touch key. A smaller
++    // decoder frontier prevents long input from building a multi-second queue
++    // while retaining the configured n-best sentence count.
++    ime_->setBeamSize(8);
++    ime_->setFrameSize(16);
++#endif
++
+     const auto &standardPath = StandardPaths::global();

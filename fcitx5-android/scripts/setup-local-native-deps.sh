@@ -55,21 +55,33 @@ bootstrap_submodules() {
 }
 
 apply_kemi_native_patches() {
-  libime_dir="$ROOT_DIR/lib/libime/src/main/cpp/libime"
-  patch_file="$ROOT_DIR/patches/libime-android-candidate-top256.patch"
-  if [ ! -f "$patch_file" ]; then
-    echo "Required native patch is missing: $patch_file" >&2
-    exit 1
-  fi
-  if git -C "$libime_dir" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
-    return 0
-  fi
-  if ! git -C "$libime_dir" apply --check "$patch_file" >/dev/null 2>&1; then
-    echo "Unable to apply KBoard libime candidate optimization." >&2
-    exit 1
-  fi
-  echo "Applying KBoard libime candidate optimization..." >&2
-  git -C "$libime_dir" apply "$patch_file"
+  apply_native_patch() {
+    source_dir=$1
+    patch_file=$2
+    description=$3
+    if [ ! -f "$patch_file" ]; then
+      echo "Required native patch is missing: $patch_file" >&2
+      exit 1
+    fi
+    if git -C "$source_dir" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
+      return 0
+    fi
+    if ! git -C "$source_dir" apply --check "$patch_file" >/dev/null 2>&1; then
+      echo "Unable to apply KBoard $description optimization." >&2
+      exit 1
+    fi
+    echo "Applying KBoard $description optimization..." >&2
+    git -C "$source_dir" apply "$patch_file"
+  }
+
+  apply_native_patch \
+    "$ROOT_DIR/lib/libime/src/main/cpp/libime" \
+    "$ROOT_DIR/patches/libime-android-pinyin-fastpath.patch" \
+    "libime candidate"
+  apply_native_patch \
+    "$ROOT_DIR/lib/fcitx5-chinese-addons/src/main/cpp/fcitx5-chinese-addons" \
+    "$ROOT_DIR/patches/fcitx5-chinese-addons-android-decoder-frontier.patch" \
+    "Pinyin decoder frontier"
 }
 
 find_sdk_dir() {

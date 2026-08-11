@@ -232,7 +232,8 @@ CommonKeyActionListener
 - Android native frontend：`fcitx5-android/app/src/main/cpp/androidfrontend/androidfrontend.cpp`
 - Fcitx Pinyin UI 包装：`fcitx5-android/lib/fcitx5-chinese-addons/src/main/cpp/fcitx5-chinese-addons/im/pinyin/pinyin.cpp`
 - libime 候选生成与排序：`fcitx5-android/lib/libime/src/main/cpp/libime/src/libime/pinyin/pinyincontext.cpp`
-- 可复现的 libime 补丁：`fcitx5-android/patches/libime-android-candidate-top256.patch`
+- libime Android 候选补丁：`fcitx5-android/patches/libime-android-pinyin-fastpath.patch`
+- Fcitx Pinyin Android decoder 补丁：`fcitx5-android/patches/fcitx5-chinese-addons-android-decoder-frontier.patch`
 
 #### 第一阶段：移除默认热事件字符串格式化
 
@@ -288,7 +289,44 @@ if (candidateCount > 256) {
 - `partial_sort` 按原分数选 top-N，不是按生成顺序粗暴截断。
 - 完整测试串只有 94 项，不触发裁剪，因此“中华人民共和国”等长句候选集合保持原样。
 
-该阶段减少的是数千候选的全量排序以及后续大部分去重/包装开销。候选 lattice 枚举目前仍会访问完整匹配集合；如果 top-256 仍不能达到响应目标，下一步应把 lattice 结果收集改为固定容量最小堆，在生成阶段只保留 top-N，从源头限制 `SentenceResult` 构造数量。
+该阶段减少的是数千候选的全量排序以及后续大部分去重/包装开销，但仍会先构造全部 `SentenceResult`，因此只是中间版本。
+
+#### 第三阶段：生成期有界堆与移动端 decoder frontier
+
+再次逐键计时后确认，top-256 部分排序仍有两个问题：
+
+1. `latticeNode.toSentenceResult()` 会沿完整 lattice 路径创建数组，旧实现仍对数千节点全部执行，再在排序后丢弃。
+2. decoder 默认使用桌面参数 `beamSize=20`、`frameSize=40`；长拼音后半段单键可达到 137–359 ms，连续触控会在 `fcitx-main` 形成明显积压。
+
+最终 Android 专用策略如下：
+
+1. 候选枚举阶段维护容量 256 的最小堆，先用 `latticeNode.score() + adjust` 与堆顶比较。
+2. 分数无法进入 top-256 的节点不调用 `toSentenceResult()`，从源头避免路径遍历和对象分配。
+3. 保留 decoder 产生的 n-best 句子前缀，256 项排序、原去重、学习、分页及提交逻辑继续使用原实现。
+4. Fcitx Pinyin 在 Android 构造时将 decoder frontier 设为 `beamSize=8`、`frameSize=16`；`nbest`、词频模型和分数公式不变。
+5. 两项修改均受 `#if defined(__ANDROID__)` 约束，桌面及其他平台保持上游默认行为。
+6. 两个上游 gitlink 的修改分别保存为根仓库 patch，由 `setup-local-native-deps.sh` 逐项幂等校验和应用。
+
+固定容量堆的核心判断为：
+
+```cpp
+const auto score = latticeNode.score() + adjust;
+if (heap.size() == 256 && score <= heap.front().score()) {
+    return; // 不构造 SentenceResult
+}
+```
+
+设备端回归测试 `FcitxTest.testPinyinFastPathCandidateQuality` 显式创建并聚焦 Android input context、激活拼音、预热一次模型，然后同步走 `Fcitx.sendKey -> native Pinyin -> getCandidates`。这避免 Display 2 上 ADB 合成触控不能可靠点击 IME 键位的问题，同时仍覆盖实际 native/JNI 候选热路径。
+
+`192.168.3.62` 的同口径结果：
+
+| 版本 | `zhonghuarenmingongheguo` 23 键 |
+|------|-----------------------------------------:|
+| 生成期有界堆，decoder 20/40 | 2312.87 ms |
+| 有界堆，decoder 10/20 | 1219.89 ms |
+| 有界堆，decoder 8/16 | 1087.12–1106.88 ms |
+
+8/16 相比 20/40 缩短约 52%。扩展回归集覆盖“你好世界、中华人民共和国、北京、上海、中国、我爱北京、今天天气很好”；期望词均在前 16 项，其中“中华人民共和国”以及后五组实际首选保持正确。冷进程第一次访问某些首字母仍可能触发约 1 秒的字典/模型缓存成本，该成本不应与稳定连续输入耗时混为一谈，后续可单独评估后台预热，避免把卡顿简单转移到键盘启动阶段。
 
 #### 构建、部署与验证口径
 
@@ -307,7 +345,18 @@ if (candidateCount > 256) {
 5. 使用真实副屏触控执行快速连打；该 ROM 的 `adb shell input -d 2 tap` 对 IME 键位只产生按压视觉态，不能代替整句触控计时。
 6. 过滤 `FATAL EXCEPTION`、`AndroidRuntime` 及 Fcitx native 错误。
 
-当前验证状态：第一阶段已在 `192.168.3.62` 完成主屏整句与 Display 2 显示归属验证；第二阶段通过 NDK 编译和完整 Release 构建。正式包在 `192.168.3.63` 安装成功，正式 IME 被系统识别、设为默认并启动进程，过滤日志无相关崩溃。该设备启动定制双屏浏览器后会清理用户侧载的正式包并回退到 LatinIME，因此最终交付采用“完成 GitHub 备份后重新安装并设为默认”的顺序；第二阶段整句响应的人工触控验收仍需在不会触发 ROM 清理策略的输入场景完成。
+可重复的设备端热路径测试：
+
+```bash
+./scripts/assemble-debug-local.sh :app:assembleDebugAndroidTest
+adb -s 192.168.3.62:5555 install -r app/build/outputs/apk/debug/*arm64-v8a-debug.apk
+adb -s 192.168.3.62:5555 install -r app/build/outputs/apk/androidTest/debug/*debug-androidTest.apk
+adb -s 192.168.3.62:5555 shell am instrument -w -r \
+  -e class 'org.fcitx.fcitx5.android.FcitxTest#testPinyinFastPathCandidateQuality' \
+  org.fcitx.fcitx5.android.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+当前验证状态：第三阶段已完成 arm64 NDK/Debug 构建、`192.168.3.62` 覆盖安装和设备端七组候选回归；测试返回 `OK (1 test)`，过滤日志无输入法相关崩溃。Display 2 浏览器输入框确认 `mCurTokenDisplayId=2`、`mInputShown=true`、`mIsInputViewShown=true`。正式包尚未用第三阶段源码重新发布到 `192.168.3.63`；该设备启动定制双屏浏览器会清理用户侧载正式包，发布时仍需遵循“归档后最终重装”的顺序。
 
 #### 签名核验
 
@@ -322,10 +371,11 @@ SHA-256: fc84f538928007fb20d1ee43b8fb6bde465708c694b86fdd6a012fef19e2d5aa
 
 #### 子模块集成注意事项
 
-`libime` 指向无写权限的上游 `fcitx/libime`，不能把只存在本机的子模块提交写入根仓库 gitlink，否则 GitHub 上的项目无法克隆该提交。项目采用根仓库跟踪补丁的方式交付：
+`libime` 与 `fcitx5-chinese-addons` 指向上游 gitlink，不能把只存在本机的子模块提交写入根仓库 gitlink，否则 GitHub 上的项目无法克隆该提交。项目采用根仓库跟踪补丁的方式交付：
 
-- 补丁保存在 `patches/libime-android-candidate-top256.patch`。
-- `scripts/setup-local-native-deps.sh` 在子模块初始化后执行 `git apply --check` 并应用补丁。
+- 候选有界堆保存在 `patches/libime-android-pinyin-fastpath.patch`。
+- decoder frontier 保存在 `patches/fcitx5-chinese-addons-android-decoder-frontier.patch`。
+- `scripts/setup-local-native-deps.sh` 在子模块初始化后逐项执行 `git apply --check` 并应用补丁。
 - 脚本用反向检查识别“已经应用”，重复执行不会二次修改。
 - 新机器仍从官方 libime gitlink 获取源码，再自动应用 KBoard 补丁，发布构建可复现。
 
@@ -333,6 +383,7 @@ SHA-256: fc84f538928007fb20d1ee43b8fb6bde465708c694b86fdd6a012fef19e2d5aa
 
 ```text
 m fcitx5-android/lib/libime/src/main/cpp/libime
+m fcitx5-android/lib/fcitx5-chinese-addons/src/main/cpp/fcitx5-chinese-addons
 ```
 
 这是补丁已应用到子模块工作树的预期状态，不应暂存 gitlink。正式提交只包含根仓库中的补丁、应用脚本、Kotlin 修改与文档；生成目录 `lib/fcitx5/src/main/cpp/prebuilt` 同样不能纳入版本控制。

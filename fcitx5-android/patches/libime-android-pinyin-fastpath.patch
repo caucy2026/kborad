@@ -1,0 +1,66 @@
+diff --git a/src/libime/pinyin/pinyincontext.cpp b/src/libime/pinyin/pinyincontext.cpp
+index b9b333f..f0269e8 100644
+--- a/src/libime/pinyin/pinyincontext.cpp
++++ b/src/libime/pinyin/pinyincontext.cpp
+@@ -649,2 +649,35 @@ void PinyinContext::update() {
+         auto beginSize = d->candidates_.size();
++#if defined(__ANDROID__)
++        // Building a SentenceResult walks and allocates the entire lattice path.
++        // Short prefixes may enumerate thousands of nodes, while Android only
++        // exposes a bounded candidate window. Keep the best nodes in a min-heap
++        // and avoid constructing paths that cannot enter that window.
++        constexpr size_t androidCandidateLimit = 256;
++        std::vector<SentenceResult> androidCandidates;
++        androidCandidates.reserve(androidCandidateLimit);
++        auto appendCandidate = [&androidCandidates](const auto &latticeNode,
++                                                    float adjust) {
++            const auto score = latticeNode.score() + adjust;
++            if (androidCandidates.size() == androidCandidateLimit &&
++                score <= androidCandidates.front().score()) {
++                return;
++            }
++
++            if (androidCandidates.size() == androidCandidateLimit) {
++                std::pop_heap(androidCandidates.begin(), androidCandidates.end(),
++                              std::greater<>());
++                androidCandidates.back() =
++                    latticeNode.toSentenceResult(adjust);
++            } else {
++                androidCandidates.push_back(
++                    latticeNode.toSentenceResult(adjust));
++            }
++            std::push_heap(androidCandidates.begin(), androidCandidates.end(),
++                           std::greater<>());
++        };
++#else
++        auto appendCandidate = [&d](const auto &latticeNode, float adjust) {
++            d->candidates_.push_back(latticeNode.toSentenceResult(adjust));
++        };
++#endif
+         for (size_t i = graph.size(); i > 0; i--) {
+@@ -669,4 +702,3 @@ void PinyinContext::update() {
+                         }
+-                        d->candidates_.push_back(
+-                            latticeNode.toSentenceResult(adjust));
++                        appendCandidate(latticeNode, adjust);
+                     }
+@@ -689,4 +721,3 @@ void PinyinContext::update() {
+                                     .size() <= 2) {
+-                            d->candidates_.push_back(
+-                                latticeNode.toSentenceResult(adjust));
++                            appendCandidate(latticeNode, adjust);
+                         }
+@@ -706,4 +737,3 @@ void PinyinContext::update() {
+                              .anyCorrectionOnPath()) {
+-                        d->candidates_.push_back(
+-                            latticeNode.toSentenceResult(adjust));
++                        appendCandidate(latticeNode, adjust);
+                     }
+@@ -712,2 +742,7 @@ void PinyinContext::update() {
+         }
++#if defined(__ANDROID__)
++        for (auto &candidate : androidCandidates) {
++            d->candidates_.push_back(std::move(candidate));
++        }
++#endif
+         std::sort(d->candidates_.begin() + beginSize, d->candidates_.end(),
