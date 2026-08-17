@@ -489,7 +489,7 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - 不假定 APK 文件名。构建后从 `app/build/outputs/apk/release/` 读取实际的 `org.fcitx.fcitx5.android-<git>-arm64-v8a-release.apk`。
 - 发布前必须用 `aapt dump badging` 核对包名、`versionCode`、`versionName` 和 ABI，再用 `apksigner verify --verbose --print-certs` 核对 v1/v2 签名。
 - 当前正式签名为 AOSP Android 平台证书，SHA-256：`c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。早期文档中的 `fc84f5...` 是另一把 Android Debug 证书，只适用于对应历史产物，不能再用于当前设备覆盖安装。
-- 2026-08-17 当前安装到 `.62` 的正式版本为 `ad8046a4`；安装后应重新选择主 `FcitxInputMethodService`，并确认默认输入法未切换到同包屏幕中继或系统 LatinIME。
+- 2026-08-17 当前安装到 `.63` 的正式版本为 `f6b7271c`；安装后首次启动或首次唤起 KBoard 会自动启用同包中继，默认输入法仍必须保持主 `FcitxInputMethodService`。
 
 #### RustDesk/KEMI 远程回车
 
@@ -497,3 +497,9 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - 仅当 `EditorInfo.packageName` 精确匹配该包时，KBoard 将回车作为一次完整的 `KEYCODE_ENTER` 按下/释放发送，使远端映射为 `VK_ENTER`；不再同时发送 `performEditorAction()`，避免 Mac 端重复提交。
 - 普通 Android 应用继续遵循 `IME_ACTION_GO/SEARCH/SEND/NEXT/DONE`；目标编辑器拒绝标准动作时再兜底实体 Enter。中文仍保持两阶段确认：存在预编辑时先确认候选，预编辑为空时再提交表单或发送 Enter。
 - 远程回车必须分别连接 Windows 和 Mac 做真实交互复测。Windows 无效而 Mac 有效通常表示远端特殊键路由问题，不能通过对所有应用同时发送“编辑器动作 + 实体键”解决，否则会产生双回车风险。
+
+#### 中继自动启用与全键盘单音效
+
+- `DisplaySwitchInputMethodService` 与主服务位于同一 APK，不是需要用户另行安装的输入法。平台签名 V900 包通过 `WRITE_SECURE_SETTINGS` 调用系统 `ime enable` 接口，仅启用这个固定同包组件；不得直接改写 enabled IME 字符串，也不得修改默认输入法或关闭其他输入法。
+- Android 安装后在应用进程首次启动前不会执行代码；主 KBoard 首次被系统唤起时自动完成中继启用，用户无需进入输入法列表单独授权。非平台签名设备无法获得该签名权限，必须保持失败可见，不得绕过系统安全模型。
+- 全键盘机械视觉仍保留按下位移和释放回弹，但声音只在 `ACTION_DOWN` 播放一次。桌面字符键、功能键、退出键和语音键的 `physicalReleaseSoundEnabled` 均关闭，语音完成后也不再补播释放音。
