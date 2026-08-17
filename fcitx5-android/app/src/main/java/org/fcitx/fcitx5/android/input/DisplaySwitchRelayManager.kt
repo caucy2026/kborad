@@ -31,20 +31,37 @@ object DisplaySwitchRelayManager {
             return false
         }
 
-        // Preserve every existing IME and subtype entry; only append our own relay.
-        val updated = if (current.isBlank()) relayId else "$current:$relayId"
-        val written = Settings.Secure.putString(
-            context.contentResolver,
-            Settings.Secure.ENABLED_INPUT_METHODS,
-            updated
-        )
-        if (written) {
-            Timber.i("Enabled same-package display-switch IME relay")
-        } else {
-            Timber.e("Failed to enable same-package display-switch IME relay")
+        return runCatching {
+            // InputMethodManagerService validates and persists this list; writing the secure
+            // setting directly is not enough because Android 12 sanitizes unregistered changes.
+            // Arguments are fixed application constants and never contain external input.
+            val process = ProcessBuilder("/system/bin/ime", "enable", relayId)
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+            val exitCode = process.waitFor()
+            val enabled = exitCode == 0 && containsIme(readEnabledImes(context), relayId)
+            if (enabled) {
+                Timber.i("Enabled same-package display-switch IME relay")
+            } else {
+                Timber.e(
+                    "Failed to enable same-package display-switch IME relay: exit=%d output=%s",
+                    exitCode,
+                    output
+                )
+            }
+            enabled
+        }.getOrElse {
+            Timber.e(it, "Failed to invoke InputMethodManager for display-switch relay")
+            false
         }
-        return written
     }
+
+    private fun readEnabledImes(context: Context): String =
+        Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.ENABLED_INPUT_METHODS
+        ).orEmpty()
 
     internal fun containsIme(enabledInputMethods: String, imeId: String): Boolean =
         enabledInputMethods.split(':').any { it.substringBefore(';') == imeId }
