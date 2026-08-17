@@ -670,6 +670,8 @@ KEMI 设置页品牌化与动态名称中文化。
 - D2 输入框的单次 D2→D0 和 D0→D2 都成功，`mCurClient.displayId` 始终为 2，`mCurTokenDisplayId` 按预期在 2 和 0 之间变化。
 - 对同一 D2 输入框连续切换 12 次，12/12 成功，未发现中继竞态或按钮事件丢失。
 - D0 输入框发出 D0→D2 请求后，请求日志和窗口重建存在，但最终客户与 IME token 仍为 D0，复现了用户所述的“有时不能跨屏”。
+- 完整 `./scripts/assemble-release-local.sh` 构建通过，未构建或安装 Debug APK；正式包为 `versionName=473941fc`、`versionCode=102`、仅 `arm64-v8a`，v1/v2 签名有效，平台证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 发布产物已归档为 `bin/KEMI-473941fc-arm64-v8a-release.apk`，APK SHA-256 为 `b98c834c5a71aa9d36be480e6f9cdc8481bed4d242fe0e3e498c73cf3234576c`。
 
 ### 待办
 - 当前跨屏能力的可靠范围是“D2 输入客户的键盘在 D0/D2 显示”；D0 输入客户不能仅靠 Android 显示策略迁移到 D2。
