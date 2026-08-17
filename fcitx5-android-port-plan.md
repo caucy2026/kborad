@@ -328,7 +328,9 @@ if (heap.size() == 256 && score <= heap.front().score()) {
 
 8/16 相比 20/40 缩短约 52%。扩展回归集覆盖“你好世界、中华人民共和国、北京、上海、中国、我爱北京、今天天气很好”；期望词均在前 16 项，其中“中华人民共和国”以及后五组实际首选保持正确。冷进程第一次访问某些首字母仍可能触发约 1 秒的字典/模型缓存成本，该成本不应与稳定连续输入耗时混为一谈，后续可单独评估后台预热，避免把卡顿简单转移到键盘启动阶段。
 
-#### 构建、部署与验证口径
+#### 历史性能测试口径（Debug，仅供早期基准）
+
+> 本节保留第三阶段性能基准的复现方法，不是当前交付流程。自 2026-08-17 起，设备安装、正式验收和用户交付只允许 Release；不得把 Debug APK 安装到 `.62`、`.63` 或用户手机。
 
 从 `fcitx5-android/` 执行：
 
@@ -477,3 +479,21 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - 六行桌面键盘不能使用不受限制的整屏 `matchParent`。高度以可用宽度、15 键单位和 6 行主键为基础计算，并限制在屏高 35%–72%，当前 V900 左右各保留 12dp；全键盘键帽使用 3dp 间距与 10dp 圆角，不能沿用普通三行键盘的 6dp 间距。
 - 颜色职责保持一致：`keyboardColor` 为面板底色，`keyBackgroundColor` 为字符键，`altKeyBackgroundColor` 为功能键，`accentKeyBackgroundColor` 为激活态；候选直命中仍独立使用 `#4285F4`，不受本次视觉改版影响。
 - 验收时必须同时观察空闲态、拼音候选态和修饰键选中态，并确认退出全键盘、语音、Ctrl+Space、方向键、D0/D2 切屏入口行为未改变。
+
+### Release-only 发布、平台签名与远程回车（2026-08-17）
+
+#### 当前发布口径
+
+- 所有设备安装、交互验收和交付只使用 `org.fcitx.fcitx5.android` Release；Debug 包不得作为设备验证或交付产物。
+- 从 `fcitx5-android/` 执行 `./scripts/assemble-release-local.sh`。签名参数通过本机环境变量注入，不把口令写入源码、脚本或文档。
+- 不假定 APK 文件名。构建后从 `app/build/outputs/apk/release/` 读取实际的 `org.fcitx.fcitx5.android-<git>-arm64-v8a-release.apk`。
+- 发布前必须用 `aapt dump badging` 核对包名、`versionCode`、`versionName` 和 ABI，再用 `apksigner verify --verbose --print-certs` 核对 v1/v2 签名。
+- 当前正式签名为 AOSP Android 平台证书，SHA-256：`c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。早期文档中的 `fc84f5...` 是另一把 Android Debug 证书，只适用于对应历史产物，不能再用于当前设备覆盖安装。
+- 2026-08-17 当前安装到 `.62` 的正式版本为 `ad8046a4`；安装后应重新选择主 `FcitxInputMethodService`，并确认默认输入法未切换到同包屏幕中继或系统 LatinIME。
+
+#### RustDesk/KEMI 远程回车
+
+- KEMI 远程客户端包名为 `com.newlinksz.kemi.remote`。它的 Flutter/RustDesk 输入代理把组合文本、Android 编辑器动作和特殊键分成不同通路；编辑器动作可能返回成功，但 Windows 主机仍未收到 Enter。
+- 仅当 `EditorInfo.packageName` 精确匹配该包时，KBoard 将回车作为一次完整的 `KEYCODE_ENTER` 按下/释放发送，使远端映射为 `VK_ENTER`；不再同时发送 `performEditorAction()`，避免 Mac 端重复提交。
+- 普通 Android 应用继续遵循 `IME_ACTION_GO/SEARCH/SEND/NEXT/DONE`；目标编辑器拒绝标准动作时再兜底实体 Enter。中文仍保持两阶段确认：存在预编辑时先确认候选，预编辑为空时再提交表单或发送 Enter。
+- 远程回车必须分别连接 Windows 和 Mac 做真实交互复测。Windows 无效而 Mac 有效通常表示远端特殊键路由问题，不能通过对所有应用同时发送“编辑器动作 + 实体键”解决，否则会产生双回车风险。
