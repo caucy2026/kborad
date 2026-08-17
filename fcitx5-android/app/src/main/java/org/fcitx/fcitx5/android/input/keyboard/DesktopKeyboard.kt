@@ -23,7 +23,13 @@ import kotlin.math.roundToInt
 
 @SuppressLint("ViewConstructor")
 class DesktopKeyboard(context: Context, theme: Theme) :
-    BaseKeyboard(context, theme, Layout, createHeader(context)) {
+    BaseKeyboard(
+        context,
+        theme,
+        Layout,
+        createHeader(context),
+        KeyVisualMetrics(horizontalMarginDp = 3, verticalMarginDp = 3, radiusDp = 10f)
+    ) {
 
     init {
         setPadding(0, context.dp(4), 0, context.dp(10))
