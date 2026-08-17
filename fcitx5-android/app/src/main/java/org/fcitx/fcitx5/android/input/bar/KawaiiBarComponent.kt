@@ -43,7 +43,6 @@ import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
-import org.fcitx.fcitx5.android.data.theme.ThemePreset
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.State.ClickToAttachWindow
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.State.ClickToDetachWindow
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.State.Hidden
@@ -315,7 +314,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             isClickable = true
             alpha = if (isEnabled) 1f else 0.38f
             setIconTintColor(
-                if (isEnabled) ThemePreset.AMOLEDBlack.keyTextColor else 0xff777777.toInt()
+                if (isEnabled) theme.altKeyTextColor else theme.candidateCommentColor
             )
             swipeEnabled = false
             setOnTouchListener(null)
@@ -329,7 +328,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     CustomGestureView.GestureType.Up -> {
                         view.parent.requestDisallowInterceptTouchEvent(false)
                         setPressHighlightColor(theme.keyPressHighlightColor)
-                        setIconTintColor(ThemePreset.AMOLEDBlack.keyTextColor)
+                        setIconTintColor(theme.altKeyTextColor)
                     }
                     CustomGestureView.GestureType.Move -> {}
                 }
@@ -435,7 +434,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                         )
                     } else {
                         button.setPressHighlightColor(theme.keyPressHighlightColor)
-                        button.setIconTintColor(ThemePreset.AMOLEDBlack.keyTextColor)
+                        button.setIconTintColor(theme.altKeyTextColor)
                     }
                     button.contentDescription = context.getString(
                         if (state != IflytekAsrClient.State.Idle) R.string.stop_voice_input

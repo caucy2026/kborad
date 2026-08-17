@@ -15,7 +15,6 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CapabilityFlags
 import org.fcitx.fcitx5.android.core.InputMethodEntry
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
-import org.fcitx.fcitx5.android.data.theme.ThemePreset
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
@@ -77,7 +76,9 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
                 TextKeyboard.FloatingLayout,
                 alwaysShowLanguageKey = true
             ),
-            DesktopKeyboard.Name to DesktopKeyboard(context, ThemePreset.AMOLEDBlack),
+            // The desktop layout is part of the same keyboard surface. Reusing the active
+            // theme keeps candidates, toolbar and keys in one coherent palette.
+            DesktopKeyboard.Name to DesktopKeyboard(context, theme),
             NumberKeyboard.Name to NumberKeyboard(context, theme)
         )
     }

@@ -470,3 +470,10 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - `git -C fcitx5-android rev-parse --show-toplevel` 返回 `/Volumes/ORICO/kemi/kboard`
 - `git submodule status --recursive` 无 `-U+` 前缀
 - `./scripts/assemble-debug-local.sh` 构建成功
+
+### V900 全键盘视觉比例（2026-08-17）
+
+- 全键盘必须使用 `KeyboardWindow` 注入的活动主题，不得固定传入 `AMOLEDBlack`；`InputView.setDesktopKeyboardMode()` 中也不得再覆盖为纯黑背景。
+- 六行桌面键盘不能使用不受限制的整屏 `matchParent`。高度以可用宽度、15 键单位和 6 行主键为基础计算，并限制在屏高 35%–72%，当前 V900 左右各保留 12dp；全键盘键帽使用 3dp 间距与 10dp 圆角，不能沿用普通三行键盘的 6dp 间距。
+- 颜色职责保持一致：`keyboardColor` 为面板底色，`keyBackgroundColor` 为字符键，`altKeyBackgroundColor` 为功能键，`accentKeyBackgroundColor` 为激活态；候选直命中仍独立使用 `#4285F4`，不受本次视觉改版影响。
+- 验收时必须同时观察空闲态、拼音候选态和修饰键选中态，并确认退出全键盘、语音、Ctrl+Space、方向键、D0/D2 切屏入口行为未改变。

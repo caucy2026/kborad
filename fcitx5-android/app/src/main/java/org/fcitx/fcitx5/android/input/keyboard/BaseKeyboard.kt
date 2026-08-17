@@ -49,7 +49,8 @@ abstract class BaseKeyboard(
     context: Context,
     protected val theme: Theme,
     private val keyLayout: List<List<KeyDef>>,
-    private val headerView: View? = null
+    private val headerView: View? = null,
+    private val keyVisualMetrics: KeyVisualMetrics? = null
 ) : ConstraintLayout(context) {
 
     var keyActionListener: KeyActionListener? = null
@@ -168,12 +169,12 @@ abstract class BaseKeyboard(
             }
         }
         return when (def.appearance) {
-            is KeyDef.Appearance.AltText -> AltTextKeyView(context, theme, def.appearance)
-            is KeyDef.Appearance.ImageText -> ImageTextKeyView(context, theme, def.appearance)
-            is KeyDef.Appearance.Text -> TextKeyView(context, theme, def.appearance)
-            is KeyDef.Appearance.Image -> ImageKeyView(context, theme, def.appearance)
+            is KeyDef.Appearance.AltText -> AltTextKeyView(context, theme, def.appearance, keyVisualMetrics)
+            is KeyDef.Appearance.ImageText -> ImageTextKeyView(context, theme, def.appearance, keyVisualMetrics)
+            is KeyDef.Appearance.Text -> TextKeyView(context, theme, def.appearance, keyVisualMetrics)
+            is KeyDef.Appearance.Image -> ImageKeyView(context, theme, def.appearance, keyVisualMetrics)
             is KeyDef.Appearance.VerticalGroup -> error("VerticalGroup is handled above")
-            is KeyDef.Appearance.StackedText -> StackedTextKeyView(context, theme, def.appearance)
+            is KeyDef.Appearance.StackedText -> StackedTextKeyView(context, theme, def.appearance, keyVisualMetrics)
         }.apply {
             soundEffect = def.appearance.soundEffect
             if (def is SpaceKey) {

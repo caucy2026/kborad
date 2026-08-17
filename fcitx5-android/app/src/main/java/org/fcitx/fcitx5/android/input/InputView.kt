@@ -30,7 +30,6 @@ import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
-import org.fcitx.fcitx5.android.data.theme.ThemePreset
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
 import org.fcitx.fcitx5.android.input.bar.ui.ToolButton
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcaster
@@ -93,14 +92,14 @@ class InputView(
 
     private val desktopOperationArea = view(::View) {
         visibility = GONE
-        setBackgroundColor(Color.BLACK)
+        setBackgroundColor(theme.barColor)
     }
 
     private val desktopExitButton = ToolButton(context, R.drawable.ic_dock_keyboard_24, theme).apply {
         visibility = GONE
         contentDescription = context.getString(R.string.exit_desktop_keyboard)
         useFullSizeIcon()
-        setIconTintColor(ThemePreset.AMOLEDBlack.keyTextColor)
+        setIconTintColor(theme.altKeyTextColor)
         setOnClickListener { keyboardWindow.toggleDesktopKeyboard() }
     }
 
@@ -280,6 +279,25 @@ class InputView(
                 else -> keyboardBottomPadding
             }.getValue()
             return dp(value)
+        }
+
+    /**
+     * Keep the six-row desktop layout compact enough not to become a full-screen sheet,
+     * while leaving enough height for near-square primary keys on wide displays.
+     */
+    private val desktopKeyboardHeightPx: Int
+        get() {
+            val displayWidth = resources.displayMetrics.widthPixels
+            val displayHeight = resources.displayMetrics.heightPixels
+            val contentWidth = displayWidth - dp(DESKTOP_SIDE_PADDING_DP * 2)
+            val rowsHeight = contentWidth * DESKTOP_ROW_COUNT / DESKTOP_LAYOUT_WIDTH_UNITS
+            val chromeHeight = dp(
+                KawaiiBarComponent.HEIGHT + DESKTOP_OPERATION_HEIGHT_DP +
+                        DESKTOP_VERTICAL_INSET_DP
+            )
+            val minimum = displayHeight * DESKTOP_MIN_HEIGHT_PERCENT / 100
+            val maximum = displayHeight * DESKTOP_MAX_HEIGHT_PERCENT / 100
+            return (rowsHeight + chromeHeight).roundToInt().coerceIn(minimum, maximum)
         }
 
     @Keep
@@ -491,6 +509,7 @@ class InputView(
             theme.altKeyBackgroundColor,
             theme.keyPressHighlightColor
         )
+        desktopExitButton.setIconTintColor(theme.altKeyTextColor)
         if (enabled) {
             bringDesktopButtonsToFront()
             kawaiiBar.view.bringToFront()
@@ -507,14 +526,14 @@ class InputView(
             if (enabled) theme.barColor
             else if (keyBorder) Color.TRANSPARENT else theme.barColor
         )
-        keyboardView.setBackgroundColor(if (enabled) Color.BLACK else Color.TRANSPARENT)
+        keyboardView.setBackgroundColor(if (enabled) theme.keyboardColor else Color.TRANSPARENT)
         customBackground.imageDrawable = if (enabled) {
-            ColorDrawable(Color.BLACK)
+            ColorDrawable(theme.keyboardColor)
         } else {
             theme.backgroundDrawable(keyBorder)
         }
         keyboardView.updateLayoutParams<LayoutParams> {
-            height = if (enabled) matchParent else wrapContent
+            height = if (enabled) desktopKeyboardHeightPx else wrapContent
             if (enabled) {
                 topToBottom = unset
             } else {
@@ -748,7 +767,11 @@ class InputView(
                 above(bottomPaddingSpace)
             }
         }
-        val sidePadding = if (desktopKeyboardMode) 0 else keyboardSidePaddingPx
+        val sidePadding = if (desktopKeyboardMode) {
+            dp(DESKTOP_SIDE_PADDING_DP)
+        } else {
+            keyboardSidePaddingPx
+        }
         if (sidePadding == 0) {
             // hide side padding space views when unnecessary
             leftPaddingSpace.visibility = GONE
@@ -866,6 +889,12 @@ class InputView(
         const val DESKTOP_OPERATION_HEIGHT_DP = 64
         const val DESKTOP_OPERATION_BUTTON_SIZE_DP = 56
         const val DESKTOP_PREEDIT_GAP_DP = 0
+        const val DESKTOP_SIDE_PADDING_DP = 12
+        const val DESKTOP_VERTICAL_INSET_DP = 20
+        const val DESKTOP_ROW_COUNT = 6f
+        const val DESKTOP_LAYOUT_WIDTH_UNITS = 15f
+        const val DESKTOP_MIN_HEIGHT_PERCENT = 35
+        const val DESKTOP_MAX_HEIGHT_PERCENT = 72
         const val FLOATING_KEYBOARD_RADIUS_DP = 24
         const val FLOATING_RESIZE_CORNER_SIZE_DP = 48
         const val FLOATING_RESIZE_CORNER_PADDING_DP = 8

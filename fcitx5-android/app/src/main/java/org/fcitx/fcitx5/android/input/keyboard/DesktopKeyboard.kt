@@ -26,7 +26,7 @@ class DesktopKeyboard(context: Context, theme: Theme) :
     BaseKeyboard(context, theme, Layout, createHeader(context)) {
 
     init {
-        setPadding(0, context.dp(4), 0, context.dp(12))
+        setPadding(0, context.dp(4), 0, context.dp(10))
         allViews.filterIsInstance<KeyView>().forEach { it.setPhysicalKeyStyle(true) }
     }
 
@@ -52,7 +52,7 @@ class DesktopKeyboard(context: Context, theme: Theme) :
         private fun characterKey(label: String, width: Float) = KeyDef(
             KeyDef.Appearance.Text(
                 displayText = label,
-                textSize = 16f,
+                textSize = 18f,
                 percentWidth = width,
                 border = KeyDef.Appearance.Border.On
             ),
@@ -67,7 +67,7 @@ class DesktopKeyboard(context: Context, theme: Theme) :
             KeyDef.Appearance.AltText(
                 displayText = primary,
                 altText = secondary,
-                textSize = 16f,
+                textSize = 17f,
                 percentWidth = width,
                 variant = KeyDef.Appearance.Variant.Normal,
                 border = KeyDef.Appearance.Border.On
@@ -289,7 +289,7 @@ class DesktopKeyboard(context: Context, theme: Theme) :
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         val topPadding = context.dp(4)
-        val bottomPadding = context.dp(12)
+        val bottomPadding = context.dp(10)
         val horizontalPadding = 0
         val availableHeight = h - topPadding - bottomPadding
         val rowHeight = (w - horizontalPadding * 2) / LayoutWidthInKeyUnits

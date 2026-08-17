@@ -56,7 +56,18 @@ import splitties.views.padding
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-abstract class KeyView(ctx: Context, val theme: Theme, val def: KeyDef.Appearance) :
+data class KeyVisualMetrics(
+    val horizontalMarginDp: Int,
+    val verticalMarginDp: Int,
+    val radiusDp: Float
+)
+
+abstract class KeyView(
+    ctx: Context,
+    val theme: Theme,
+    val def: KeyDef.Appearance,
+    metrics: KeyVisualMetrics? = null
+) :
     CustomGestureView(ctx) {
 
     val bordered: Boolean
@@ -72,14 +83,18 @@ abstract class KeyView(ctx: Context, val theme: Theme, val def: KeyDef.Appearanc
         bordered = gboardTheme || prefs.keyBorder.getValue()
         borderStroke = !gboardTheme && prefs.keyBorderStroke.getValue()
         rippled = gboardTheme || prefs.keyRippleEffect.getValue()
-        radius = dp(if (gboardTheme) 12f else prefs.keyRadius.getValue().toFloat())
+        radius = dp(metrics?.radiusDp ?: if (gboardTheme) 12f else prefs.keyRadius.getValue().toFloat())
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         val hMarginPref =
             if (landscape) prefs.keyHorizontalMarginLandscape else prefs.keyHorizontalMargin
         val vMarginPref =
             if (landscape) prefs.keyVerticalMarginLandscape else prefs.keyVerticalMargin
-        hMargin = if (def.margin) dp(if (gboardTheme) 6 else hMarginPref.getValue()) else 0
-        vMargin = if (def.margin) dp(if (gboardTheme) 6 else vMarginPref.getValue()) else 0
+        hMargin = if (def.margin) {
+            dp(metrics?.horizontalMarginDp ?: if (gboardTheme) 6 else hMarginPref.getValue())
+        } else 0
+        vMargin = if (def.margin) {
+            dp(metrics?.verticalMarginDp ?: if (gboardTheme) 6 else vMarginPref.getValue())
+        } else 0
     }
 
     private val cachedLocation = intArrayOf(0, 0)
@@ -334,8 +349,12 @@ abstract class KeyView(ctx: Context, val theme: Theme, val def: KeyDef.Appearanc
 }
 
 @SuppressLint("ViewConstructor")
-open class TextKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.Text) :
-    KeyView(ctx, theme, def) {
+open class TextKeyView(
+    ctx: Context,
+    theme: Theme,
+    def: KeyDef.Appearance.Text,
+    metrics: KeyVisualMetrics? = null
+) : KeyView(ctx, theme, def, metrics) {
     val mainText = view(::AutoScaleTextView) {
         isClickable = false
         isFocusable = false
@@ -364,8 +383,12 @@ open class TextKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.Text) 
 }
 
 @SuppressLint("ViewConstructor")
-class AltTextKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.AltText) :
-    TextKeyView(ctx, theme, def) {
+class AltTextKeyView(
+    ctx: Context,
+    theme: Theme,
+    def: KeyDef.Appearance.AltText,
+    metrics: KeyVisualMetrics? = null
+) : TextKeyView(ctx, theme, def, metrics) {
     val altText = view(::AutoScaleTextView) {
         isClickable = false
         isFocusable = false
@@ -461,8 +484,12 @@ class AltTextKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.AltText)
 }
 
 @SuppressLint("ViewConstructor")
-class ImageKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.Image) :
-    KeyView(ctx, theme, def) {
+class ImageKeyView(
+    ctx: Context,
+    theme: Theme,
+    def: KeyDef.Appearance.Image,
+    metrics: KeyVisualMetrics? = null
+) : KeyView(ctx, theme, def, metrics) {
     val img = imageView { configure(theme, def.src, def.variant) }
 
     init {
@@ -501,8 +528,12 @@ class ImageKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.Image) :
 }
 
 @SuppressLint("ViewConstructor")
-class StackedTextKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.StackedText) :
-    KeyView(ctx, theme, def) {
+class StackedTextKeyView(
+    ctx: Context,
+    theme: Theme,
+    def: KeyDef.Appearance.StackedText,
+    metrics: KeyVisualMetrics? = null
+) : KeyView(ctx, theme, def, metrics) {
     val topText = view(::AutoScaleTextView) {
         isClickable = false
         isFocusable = false
@@ -548,8 +579,12 @@ private fun ImageView.configure(theme: Theme, @DrawableRes src: Int, variant: Va
 }
 
 @SuppressLint("ViewConstructor")
-class ImageTextKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.ImageText) :
-    TextKeyView(ctx, theme, def) {
+class ImageTextKeyView(
+    ctx: Context,
+    theme: Theme,
+    def: KeyDef.Appearance.ImageText,
+    metrics: KeyVisualMetrics? = null
+) : TextKeyView(ctx, theme, def, metrics) {
     val img = imageView {
         configure(theme, def.src, def.variant)
     }
