@@ -430,14 +430,24 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 return
             }
             if (actionLabel?.isNotEmpty() == true && actionId != EditorInfo.IME_ACTION_UNSPECIFIED) {
-                currentInputConnection.performEditorAction(actionId)
+                performEditorActionOrEnter(actionId)
                 return
             }
             when (val action = imeOptions and EditorInfo.IME_MASK_ACTION) {
                 EditorInfo.IME_ACTION_UNSPECIFIED,
                 EditorInfo.IME_ACTION_NONE -> sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
-                else -> currentInputConnection.performEditorAction(action)
+                else -> performEditorActionOrEnter(action)
             }
+        }
+    }
+
+    /**
+     * Some editors advertise an IME action but reject it at runtime. In that case the return
+     * key must still behave like a physical Enter instead of becoming a silent no-op.
+     */
+    private fun performEditorActionOrEnter(action: Int) {
+        if (!currentInputConnection.performEditorAction(action)) {
+            sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
         }
     }
 
