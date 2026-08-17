@@ -15,11 +15,14 @@ class CandidateViewHolder(val ui: CandidateItemUi) : RecyclerView.ViewHolder(ui.
     var candidate: CandidateWord = CandidateWord.Empty
         private set
 
-    fun update(newIndex: Int, newCandidate: CandidateWord) {
+    private var directHit = false
+
+    fun update(newIndex: Int, newCandidate: CandidateWord, newDirectHit: Boolean = false) {
         idx = newIndex
-        if (candidate != newCandidate) {
+        if (candidate != newCandidate || directHit != newDirectHit) {
             candidate = newCandidate
-            ui.updateCandidate(newCandidate)
+            directHit = newDirectHit
+            ui.updateCandidate(newCandidate, newDirectHit)
         }
     }
 

@@ -37,6 +37,7 @@ class PagedCandidatesUi(
     private var data = FcitxEvent.PagedCandidateEvent.Data.Empty
 
     private var isVertical = false
+    private var highlightFirstCandidate = false
 
     sealed class UiHolder(open val ui: Ui) : RecyclerView.ViewHolder(ui.root) {
         class Candidate(override val ui: LabeledCandidateItemUi) : UiHolder(ui)
@@ -77,7 +78,11 @@ class PagedCandidatesUi(
             when (holder) {
                 is UiHolder.Candidate -> {
                     val candidate = data.candidates[position]
-                    holder.ui.update(candidate, active = position == data.cursorIndex)
+                    holder.ui.update(
+                        candidate,
+                        active = position == data.cursorIndex,
+                        directHit = highlightFirstCandidate && position == 0
+                    )
                     holder.ui.root.setOnClickListener {
                         onCandidateClick.invoke(position)
                     }
@@ -123,9 +128,11 @@ class PagedCandidatesUi(
     @SuppressLint("NotifyDataSetChanged")
     fun update(
         data: FcitxEvent.PagedCandidateEvent.Data,
-        orientation: FloatingCandidatesOrientation
+        orientation: FloatingCandidatesOrientation,
+        highlightFirstCandidate: Boolean
     ) {
         this.data = data
+        this.highlightFirstCandidate = highlightFirstCandidate
         this.isVertical = when (orientation) {
             FloatingCandidatesOrientation.Automatic -> data.layoutHint == LayoutHint.Vertical
             else -> orientation == FloatingCandidatesOrientation.Vertical

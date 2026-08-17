@@ -388,6 +388,51 @@ m fcitx5-android/lib/fcitx5-chinese-addons/src/main/cpp/fcitx5-chinese-addons
 
 这是补丁已应用到子模块工作树的预期状态，不应暂存 gitlink。正式提交只包含根仓库中的补丁、应用脚本、Kotlin 修改与文档；生成目录 `lib/fcitx5/src/main/cpp/prebuilt` 同样不能纳入版本控制。
 
+### V900 Android 12 候选标识、异常连键与 D0/D2 切屏（2026-08-17）
+
+#### 候选视觉状态
+
+- “直命中”不是简单的 `position == 0`，还必须存在活动组合态。软键盘同时跟踪 `ClientPreeditEvent` 与 `InputPanelEvent` 的 `preedit`、`auxUp`、`auxDown`；组合态结束后仍保留的候选属于联想，不着色。
+- 软件候选栏使用 `AutoScaleTextView`。该控件的 `onDraw()` 调用 `drawText(text.toString(), ...)`，颜色 Span 不参与绘制；改变候选颜色必须调用 `setTextColor()` 更新 `currentTextColor`。
+- 硬件键盘浮动候选使用普通 `TextView`，可通过 Span 单独设置候选正文颜色。两条 UI 路径必须一起验证。
+
+#### 物理键盘去毛刺
+
+- 过滤维度为 `(deviceId, keyCode)`，只处理真实物理设备的可打印键；虚拟键、`FLAG_VIRTUAL_HARD_KEY`、修饰键和控制键不进入过滤。
+- 当上一可打印键已经释放、另一可打印键在 `[0, 12ms)` 内按下时，丢弃该按下以及同键对应的释放。负间隔表示真实按键重叠，不能丢弃；`repeatCount > 0` 也必须保留。
+- 每次 `onStartInput()` 清空状态，避免跨编辑器残留。日志只记录实际被丢弃的异常按下，不在正常按键热路径输出。
+
+#### 厂商双屏协议与 token 中继
+
+V900 系统包 `com.newlink.device.ime` 暴露受控广播：
+
+```text
+action: com.newlink.action.SET_DISPLAY_IME_POLICY
+package: com.newlink.device.ime
+extras: display_id=2, mode=local|fallback
+```
+
+- `local` 对应 Display 2 本地 IME（D2），`fallback` 对应回退到默认显示屏（D0）。
+- Android 12 仅在创建新 IME token 时应用该策略；`requestHideSelf()`/`forceShowSelf()` 会复用旧 token，不能迁移。
+- KBoard 使用 ordered broadcast，等待厂商 receiver 应用策略后切到同包 `DisplaySwitchInputMethodService`。中继获得新 token 后立即调用 `switchInputMethod()` 返回主 `FcitxInputMethodService`，因此最终默认输入法仍是 KBoard。
+- 中继必须在目标设备一次性启用：
+
+```bash
+adb -s 192.168.3.62:5555 shell ime enable \
+  org.fcitx.fcitx5.android/.input.DisplaySwitchInputMethodService
+adb -s 192.168.3.62:5555 shell ime set \
+  org.fcitx.fcitx5.android/.input.FcitxInputMethodService
+```
+
+验收时分别点击 D2 与 D0 的切屏键，并检查：
+
+```bash
+adb -s 192.168.3.62:5555 shell settings get secure default_input_method
+adb -s 192.168.3.62:5555 shell dumpsys window windows
+```
+
+期望默认输入法始终是主 KBoard，IME window 的 `mDisplayId` 按顺序为 2→0→2。中继 APK 组件由 `BIND_INPUT_METHOD` 权限保护，不创建输入视图，也不读取、提交或保存用户文本。
+
 ### 单仓库合并操作（2026-08-04）
 
 原根项目与 `fcitx5-android/` 各有一套独立 Git 历史，无共同祖先。合并过程：

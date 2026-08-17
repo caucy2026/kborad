@@ -32,6 +32,15 @@ open class HorizontalCandidateViewAdapter(val theme: Theme) :
     var total = -1
         private set
 
+    var highlightFirstCandidate = false
+        private set
+
+    fun setHighlightFirstCandidate(highlight: Boolean) {
+        if (highlightFirstCandidate == highlight) return
+        highlightFirstCandidate = highlight
+        if (candidates.isNotEmpty()) notifyItemChanged(0)
+    }
+
     @SuppressLint("NotifyDataSetChanged")
     fun updateCandidates(data: Array<CandidateWord>, total: Int) {
         this.candidates = data
@@ -56,7 +65,11 @@ open class HorizontalCandidateViewAdapter(val theme: Theme) :
 
     @CallSuper
     override fun onBindViewHolder(holder: CandidateViewHolder, position: Int) {
-        holder.update(position, candidates[position])
+        holder.update(
+            position,
+            candidates[position],
+            newDirectHit = highlightFirstCandidate && position == 0
+        )
     }
 
     @CallSuper

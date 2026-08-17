@@ -6,7 +6,12 @@
 package org.fcitx.fcitx5.android.input
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.Dialog
+import android.content.BroadcastReceiver
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.ColorStateList
 import android.content.res.Configuration
@@ -15,6 +20,7 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.hardware.display.DisplayManager
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.InputType
@@ -34,6 +40,7 @@ import android.view.inputmethod.InlineSuggestionsResponse
 import android.view.inputmethod.InputBinding
 import android.view.inputmethod.InputMethodSubtype
 import android.widget.FrameLayout
+import android.widget.Toast
 import android.widget.inline.InlinePresentationSpec
 import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
@@ -91,6 +98,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     private val cachedKeyEvents = LruCache<Int, KeyEvent>(78)
     private var cachedKeyEventIndex = 0
+
+    private val hardwareKeyAnomalyFilter = HardwareKeyAnomalyFilter()
 
     /**
      * Saves MetaState produced by hardware keyboard with "sticky" modifier keys, to clear them in order.
@@ -708,6 +717,54 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     fun toggleFloatingKeyboard(): Boolean = inputView?.toggleFloatingKeyboard() ?: false
 
+    fun toggleImeDisplay() {
+        val secondaryDisplay = getSystemService(DisplayManager::class.java)
+            ?.getDisplay(SECONDARY_IME_DISPLAY_ID)
+        if (secondaryDisplay == null) {
+            Toast.makeText(this, R.string.secondary_display_unavailable, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val relayIme = ComponentName(this, DisplaySwitchInputMethodService::class.java)
+            .flattenToShortString()
+        if (inputMethodManager.enabledInputMethodList.none { it.id == relayIme }) {
+            Timber.e("Display-switch IME relay is not enabled")
+            Toast.makeText(this, R.string.screen_switch_relay_unavailable, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        @Suppress("DEPRECATION")
+        val currentDisplayId = display?.displayId ?: android.view.Display.DEFAULT_DISPLAY
+        val moveToSecondary = currentDisplayId != SECONDARY_IME_DISPLAY_ID
+        val mode = if (moveToSecondary) DISPLAY_IME_MODE_LOCAL else DISPLAY_IME_MODE_FALLBACK
+        val policyIntent = Intent(ACTION_SET_DISPLAY_IME_POLICY)
+            .setPackage(DISPLAY_IME_POLICY_PACKAGE)
+            .putExtra(EXTRA_DISPLAY_ID, SECONDARY_IME_DISPLAY_ID)
+            .putExtra(EXTRA_MODE, mode)
+        Timber.i(
+            "Requested IME display switch: current=%d target=%d mode=%s",
+            currentDisplayId,
+            if (moveToSecondary) SECONDARY_IME_DISPLAY_ID else android.view.Display.DEFAULT_DISPLAY,
+            mode
+        )
+
+        // Android 12 applies this vendor policy when it creates a new IME token. Wait until the
+        // ordered vendor receiver has finished, then bind the one-shot KBoard relay. This avoids
+        // racing token creation against the policy update.
+        sendOrderedBroadcast(
+            policyIntent,
+            null,
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    switchInputMethod(relayIme)
+                }
+            },
+            null,
+            Activity.RESULT_OK,
+            null,
+            null
+        )
+    }
+
     private fun forwardKeyEvent(event: KeyEvent): Boolean {
         // reason to use a self increment index rather than timestamp:
         // KeyUp and KeyDown events actually can happen on the same time
@@ -727,6 +784,22 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (isPhysicalHardwareKey(event) && hardwareKeyAnomalyFilter.shouldDropDown(
+                HardwareKeyAnomalyFilter.Key(event.deviceId, keyCode),
+                event.eventTime,
+                event.isPrintingKey,
+                KeyEvent.isModifierKey(keyCode),
+                event.repeatCount
+            )
+        ) {
+            Timber.w(
+                "Dropped abnormal hardware key down: device=%d keyCode=%d after < %dms",
+                event.deviceId,
+                keyCode,
+                HardwareKeyAnomalyFilter.DEFAULT_MINIMUM_RELEASE_TO_PRESS_MILLIS
+            )
+            return true
+        }
         // request to show floating CandidatesView when pressing physical keyboard
         if (inputDeviceMgr.evaluateOnKeyDown(event, this)) {
             postFcitxJob {
@@ -738,8 +811,21 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (isPhysicalHardwareKey(event) && hardwareKeyAnomalyFilter.shouldDropUp(
+                HardwareKeyAnomalyFilter.Key(event.deviceId, keyCode),
+                event.eventTime,
+                event.isPrintingKey,
+                KeyEvent.isModifierKey(keyCode)
+            )
+        ) {
+            return true
+        }
         return forwardKeyEvent(event) || super.onKeyUp(keyCode, event)
     }
+
+    private fun isPhysicalHardwareKey(event: KeyEvent): Boolean =
+        event.deviceId != KeyCharacterMap.VIRTUAL_KEYBOARD &&
+            event.flags and KeyEvent.FLAG_VIRTUAL_HARD_KEY == 0
 
     // Added in API level 14, deprecated in 29
     // it's needed because editors still use it even on API 36
@@ -809,6 +895,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
+        hardwareKeyAnomalyFilter.reset()
         // update selection as soon as possible
         // sometimes when restarting input, onUpdateSelection happens before onStartInput, and
         // initialSel{Start,End} is outdated. but it's the client app's responsibility to send
@@ -1202,5 +1289,13 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     @Suppress("ConstPropertyName")
     companion object {
         const val DeleteSurroundingFlag = "org.fcitx.fcitx5.android.DELETE_SURROUNDING"
+        private const val ACTION_SET_DISPLAY_IME_POLICY =
+            "com.newlink.action.SET_DISPLAY_IME_POLICY"
+        private const val DISPLAY_IME_POLICY_PACKAGE = "com.newlink.device.ime"
+        private const val EXTRA_DISPLAY_ID = "display_id"
+        private const val EXTRA_MODE = "mode"
+        private const val DISPLAY_IME_MODE_LOCAL = "local"
+        private const val DISPLAY_IME_MODE_FALLBACK = "fallback"
+        private const val SECONDARY_IME_DISPLAY_ID = 2
     }
 }

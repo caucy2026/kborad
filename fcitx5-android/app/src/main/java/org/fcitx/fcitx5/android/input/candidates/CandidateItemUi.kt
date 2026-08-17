@@ -21,6 +21,8 @@ import splitties.views.dsl.core.view
 import splitties.views.dsl.core.wrapContent
 import splitties.views.gravityCenter
 
+internal const val DIRECT_HIT_CANDIDATE_COLOR = -12417548 // 0xff4285f4
+
 class CandidateItemUi(override val ctx: Context, val theme: Theme) : Ui {
 
     private val text = view(::AutoScaleTextView) {
@@ -44,9 +46,12 @@ class CandidateItemUi(override val ctx: Context, val theme: Theme) : Ui {
         })
     }
 
-    fun updateCandidate(candidate: CandidateWord) {
-        val fg = theme.candidateTextColor
+    fun updateCandidate(candidate: CandidateWord, directHit: Boolean) {
+        val fg = if (directHit) DIRECT_HIT_CANDIDATE_COLOR else theme.candidateTextColor
         val altFg = theme.candidateCommentColor
+        // AutoScaleTextView draws with currentTextColor and intentionally flattens spans in its
+        // custom Canvas path, so set the actual paint color as well as building styled text.
+        text.setTextColor(fg)
         text.text = buildSpannedString {
             color(fg) {
                 append(candidate.text)

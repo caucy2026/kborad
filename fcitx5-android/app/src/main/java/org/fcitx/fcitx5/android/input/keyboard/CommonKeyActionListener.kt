@@ -28,6 +28,7 @@ import org.fcitx.fcitx5.android.input.keyboard.KeyAction.LangSwitchAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.MoveSelectionAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.PickerSwitchAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.QuickPhraseAction
+import org.fcitx.fcitx5.android.input.keyboard.KeyAction.ScreenSwitchAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.ShowInputMethodPickerAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.SpaceLongPressAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.SymAction
@@ -132,6 +133,7 @@ class CommonKeyActionListener :
                     }
                 }
                 is ShowInputMethodPickerAction -> showInputMethodPicker()
+                is ScreenSwitchAction -> service.toggleImeDisplay()
                 is MoveSelectionAction -> {
                     when (backspaceSwipeState) {
                         Stopped -> {

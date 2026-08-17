@@ -12,6 +12,7 @@ import androidx.core.text.buildSpannedString
 import androidx.core.text.color
 import org.fcitx.fcitx5.android.core.CandidateWord
 import org.fcitx.fcitx5.android.data.theme.Theme
+import org.fcitx.fcitx5.android.input.candidates.DIRECT_HIT_CANDIDATE_COLOR
 import splitties.views.backgroundColor
 import splitties.views.dsl.core.Ui
 import splitties.views.dsl.core.textView
@@ -26,9 +27,13 @@ class LabeledCandidateItemUi(
         setupTextView(this)
     }
 
-    fun update(candidate: CandidateWord, active: Boolean) {
+    fun update(candidate: CandidateWord, active: Boolean, directHit: Boolean) {
         val labelFg = if (active) theme.genericActiveForegroundColor else theme.candidateLabelColor
-        val fg = if (active) theme.genericActiveForegroundColor else theme.candidateTextColor
+        val fg = when {
+            directHit -> DIRECT_HIT_CANDIDATE_COLOR
+            active -> theme.genericActiveForegroundColor
+            else -> theme.candidateTextColor
+        }
         val altFg = if (active) theme.genericActiveForegroundColor else theme.candidateCommentColor
         root.text = buildSpannedString {
             color(labelFg) {

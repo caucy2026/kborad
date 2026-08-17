@@ -34,6 +34,8 @@ sealed class KeyAction {
 
     data object ShowInputMethodPickerAction : KeyAction()
 
+    data object ScreenSwitchAction : KeyAction()
+
     data class LayoutSwitchAction(val act: String = "") : KeyAction()
 
     data class MoveSelectionAction(val start: Int = 0, val end: Int = 0) : KeyAction()

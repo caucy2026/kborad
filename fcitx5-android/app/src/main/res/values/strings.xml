@@ -299,6 +299,10 @@
     <string name="hide_candidates_list">Hide candidates list</string>
     <string name="switch_to_voice_input">Switch to voice input</string>
     <string name="hide_keyboard">Hide keyboard</string>
+    <string name="switch_keyboard_screen">Switch keyboard screen</string>
+    <string name="secondary_display_unavailable">Secondary display unavailable</string>
+    <string name="screen_switch_relay_name">KBoard screen switch</string>
+    <string name="screen_switch_relay_unavailable">Screen switch service is not enabled</string>
     <string name="private_mode">Private mode (tap to toggle toolbar)</string>
     <string name="hide_toolbar">Hide toolbar</string>
     <string name="expand_toolbar">Expand toolbar</string>

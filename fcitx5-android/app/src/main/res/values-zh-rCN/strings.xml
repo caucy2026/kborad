@@ -299,6 +299,10 @@
     <string name="hide_candidates_list">隐藏</string>
     <string name="switch_to_voice_input">切换到语音输入</string>
     <string name="hide_keyboard">隐藏键盘</string>
+    <string name="switch_keyboard_screen">切换键盘屏幕</string>
+    <string name="secondary_display_unavailable">未检测到副屏</string>
+    <string name="screen_switch_relay_name">KBoard 屏幕切换</string>
+    <string name="screen_switch_relay_unavailable">屏幕切换服务未启用</string>
     <string name="private_mode">隐私模式（点击以切换工具栏）</string>
     <string name="hide_toolbar">隐藏工具栏</string>
     <string name="expand_toolbar">展开工具栏</string>

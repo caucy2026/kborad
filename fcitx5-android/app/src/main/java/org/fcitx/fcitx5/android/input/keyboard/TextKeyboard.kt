@@ -95,7 +95,7 @@ class TextKeyboard(
                     R.drawable.ic_baseline_keyboard_arrow_right_24,
                     FcitxKeyMapping.FcitxKey_Right
                 ),
-                LayoutSwitchKey("?123", PickerWindow.Key.Symbol.name, 0.08f)
+                ScreenSwitchKey(0.08f)
             )
         )
 
@@ -150,6 +150,7 @@ class TextKeyboard(
                     border = KeyDef.Appearance.Border.Special,
                     viewId = R.id.button_punctuation
                 ),
+                ScreenSwitchKey(0.14f),
                 ReturnKey(0.14f)
             )
         )

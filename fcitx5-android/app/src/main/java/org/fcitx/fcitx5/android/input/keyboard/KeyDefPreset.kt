@@ -307,6 +307,17 @@ class LanguageKey(percentWidth: Float = 0.1f) : KeyDef(
     )
 )
 
+class ScreenSwitchKey(percentWidth: Float = 0.08f) : KeyDef(
+    Appearance.Image(
+        src = R.drawable.ic_switch_display_24,
+        percentWidth = percentWidth,
+        variant = Variant.Alternative
+    ),
+    setOf(
+        Behavior.Press(KeyAction.ScreenSwitchAction)
+    )
+)
+
 class SpacerKey(percentWidth: Float) : KeyDef(
     Appearance.Text(
         displayText = "",

@@ -1,0 +1,45 @@
+/*
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
+ */
+
+package org.fcitx.fcitx5.android.input
+
+import android.inputmethodservice.InputMethodService
+import android.os.Handler
+import android.os.Looper
+import android.view.inputmethod.EditorInfo
+import org.fcitx.fcitx5.android.utils.InputMethodUtil
+import timber.log.Timber
+
+/**
+ * One-shot IME token relay for Android 12 multi-display devices.
+ *
+ * The vendor display policy only affects newly created IME tokens. The primary KBoard service
+ * switches here after the policy broadcast completes; this service receives the new token and
+ * immediately selects the primary service again. No user text is handled by this relay.
+ */
+class DisplaySwitchInputMethodService : InputMethodService() {
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var returnPosted = false
+
+    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
+        if (returnPosted) return
+        returnPosted = true
+        mainHandler.post {
+            runCatching {
+                switchInputMethod(InputMethodUtil.componentName)
+            }.onFailure {
+                Timber.e(it, "Failed to return from display-switch IME relay")
+            }
+        }
+    }
+
+    override fun onFinishInput() {
+        mainHandler.removeCallbacksAndMessages(null)
+        returnPosted = false
+        super.onFinishInput()
+    }
+}

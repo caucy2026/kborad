@@ -146,6 +146,25 @@
                 android:resource="@xml/input_method" />
         </service>
 
+        <!--
+          Internal one-shot IME used to obtain a fresh Android 12 IME token after the vendor
+          display policy changes. It immediately hands control back to FcitxInputMethodService.
+        -->
+        <service
+            android:name=".input.DisplaySwitchInputMethodService"
+            android:directBootAware="true"
+            android:exported="true"
+            android:label="@string/screen_switch_relay_name"
+            android:permission="android.permission.BIND_INPUT_METHOD">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/input_method" />
+        </service>
+
         <service
             android:name=".FcitxRemoteService"
             android:exported="true"

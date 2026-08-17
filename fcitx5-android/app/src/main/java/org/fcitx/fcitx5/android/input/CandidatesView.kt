@@ -134,7 +134,12 @@ class CandidatesView(
     private fun updateUi() {
         preeditUi.update(inputPanel)
         preeditUi.root.visibility = if (preeditUi.visible) VISIBLE else GONE
-        candidatesUi.update(paged, orientation)
+        candidatesUi.update(
+            paged,
+            orientation,
+            highlightFirstCandidate = inputPanel.preedit.isNotEmpty() ||
+                inputPanel.auxUp.isNotEmpty() || inputPanel.auxDown.isNotEmpty()
+        )
         if (evaluateVisibility()) {
             visibility = VISIBLE
         } else {

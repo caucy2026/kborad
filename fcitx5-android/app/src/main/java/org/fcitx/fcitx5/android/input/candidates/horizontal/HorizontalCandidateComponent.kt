@@ -8,6 +8,7 @@ package org.fcitx.fcitx5.android.input.candidates.horizontal
 import android.content.res.Configuration
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.RectShape
+import android.view.inputmethod.EditorInfo
 import androidx.core.view.updateLayoutParams
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.flexbox.FlexboxLayoutManager
@@ -15,7 +16,9 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.core.CapabilityFlags
 import org.fcitx.fcitx5.android.core.FcitxEvent
+import org.fcitx.fcitx5.android.core.FormattedText
 import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.BooleanKey.ExpandedCandidatesEmpty
@@ -57,6 +60,12 @@ class HorizontalCandidateComponent :
 
     private var layoutMinWidth = 0
     private var layoutFlexGrow = 1f
+    private var clientPreeditActive = false
+    private var panelCompositionActive = false
+
+    private fun updateDirectHitState() {
+        adapter.setHighlightFirstCandidate(clientPreeditActive || panelCompositionActive)
+    }
 
     /**
      * (for [HorizontalCandidateMode.AutoFillWidth] only)
@@ -167,6 +176,10 @@ class HorizontalCandidateComponent :
     }
 
     override fun onCandidateUpdate(data: FcitxEvent.CandidateListEvent.Data) {
+        // Candidate and preedit callbacks can be coalesced/reordered on a busy decoder thread.
+        // Read the connection cache at the candidate boundary so the visual state always matches
+        // the candidate batch being rendered.
+        updateDirectHitState()
         val candidates = data.candidates
         val total = data.total
         val maxSpanCount = maxSpanCountPref.getValue()
@@ -195,4 +208,23 @@ class HorizontalCandidateComponent :
             refreshExpanded(0)
         }
     }
+
+    override fun onClientPreeditUpdate(data: FormattedText) {
+        clientPreeditActive = data.isNotEmpty()
+        updateDirectHitState()
+    }
+
+    override fun onInputPanelUpdate(data: FcitxEvent.InputPanelEvent.Data) {
+        panelCompositionActive = data.hasActiveComposition()
+        updateDirectHitState()
+    }
+
+    override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
+        clientPreeditActive = false
+        panelCompositionActive = false
+        updateDirectHitState()
+    }
+
+    private fun FcitxEvent.InputPanelEvent.Data.hasActiveComposition() =
+        preedit.isNotEmpty() || auxUp.isNotEmpty() || auxDown.isNotEmpty()
 }
