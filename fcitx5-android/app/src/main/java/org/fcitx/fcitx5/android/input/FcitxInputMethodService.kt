@@ -423,6 +423,14 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     private fun handleReturnKey() {
         currentInputEditorInfo.run {
+            // RustDesk's Android text proxy forwards Enter through its key-event path. Its
+            // editor-action path can report success even when a Windows peer receives nothing.
+            // Use an explicit down/up pair for this package so the peer gets VK_ENTER exactly
+            // once; keep standard editor actions for ordinary Android applications.
+            if (packageName == KEMI_REMOTE_PACKAGE) {
+                sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
+                return
+            }
             if (inputType and InputType.TYPE_MASK_CLASS == InputType.TYPE_NULL ||
                 imeOptions.hasFlag(EditorInfo.IME_FLAG_NO_ENTER_ACTION)
             ) {
@@ -1302,6 +1310,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         private const val ACTION_SET_DISPLAY_IME_POLICY =
             "com.newlink.action.SET_DISPLAY_IME_POLICY"
         private const val DISPLAY_IME_POLICY_PACKAGE = "com.newlink.device.ime"
+        private const val KEMI_REMOTE_PACKAGE = "com.newlinksz.kemi.remote"
         private const val EXTRA_DISPLAY_ID = "display_id"
         private const val EXTRA_MODE = "mode"
         private const val DISPLAY_IME_MODE_LOCAL = "local"
