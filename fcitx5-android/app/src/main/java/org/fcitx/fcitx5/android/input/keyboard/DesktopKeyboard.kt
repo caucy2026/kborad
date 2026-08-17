@@ -33,7 +33,10 @@ class DesktopKeyboard(context: Context, theme: Theme) :
 
     init {
         setPadding(0, context.dp(4), 0, context.dp(10))
-        allViews.filterIsInstance<KeyView>().forEach { it.setPhysicalKeyStyle(true) }
+        allViews.filterIsInstance<KeyView>().forEach {
+            it.setPhysicalKeyStyle(true)
+            it.physicalReleaseSoundEnabled = false
+        }
     }
 
     companion object {

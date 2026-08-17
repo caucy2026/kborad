@@ -22,6 +22,7 @@ import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
+import org.fcitx.fcitx5.android.input.DisplaySwitchRelayManager
 import org.fcitx.fcitx5.android.ui.main.LogActivity
 import org.fcitx.fcitx5.android.utils.AppUtil
 import org.fcitx.fcitx5.android.utils.Locales
@@ -124,6 +125,10 @@ class FcitxApplication : Application() {
         Timber.setupForest(verbose = sharedPrefs.getBoolean("verbose_log", false))
 
         Timber.d("isDirectBootMode=$isDirectBootMode")
+
+        // On platform-signed V900 builds, make the same-package Android 12 display relay ready
+        // as soon as KBoard starts. This never changes the selected/default input method.
+        DisplaySwitchRelayManager.ensureEnabled(this)
 
         AppPrefs.init(sharedPrefs)
         // record last pid for crash logs

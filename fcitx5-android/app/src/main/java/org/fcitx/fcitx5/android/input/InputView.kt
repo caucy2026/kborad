@@ -509,6 +509,7 @@ class InputView(
             theme.altKeyBackgroundColor,
             theme.keyPressHighlightColor
         )
+        desktopExitButton.physicalReleaseSoundEnabled = !enabled
         desktopExitButton.setIconTintColor(theme.altKeyTextColor)
         if (enabled) {
             bringDesktopButtonsToFront()

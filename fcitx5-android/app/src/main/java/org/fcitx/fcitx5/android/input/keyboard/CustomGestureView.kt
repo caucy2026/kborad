@@ -93,10 +93,6 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     var physicalKeySoundEnabled = false
     var physicalReleaseSoundEnabled = true
 
-    fun playPhysicalReleaseSound() {
-        if (physicalKeySoundEnabled) InputFeedbacks.physicalKeyUp()
-    }
-
     private val touchSlop: Float = ViewConfiguration.get(ctx).scaledTouchSlop.toFloat()
 
     init {

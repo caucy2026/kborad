@@ -128,7 +128,6 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private var shouldShowVoiceInput: Boolean = false
     private var desktopKeyboardMode: Boolean = false
     private var desktopVoiceButton: ToolButton? = null
-    private var desktopVoiceReleasePending = false
 
     private val voiceNetworkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = refreshVoiceInputAvailability()
@@ -279,7 +278,6 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     fun setDesktopKeyboardMode(enabled: Boolean) {
         desktopKeyboardMode = enabled
         if (!enabled) {
-            desktopVoiceReleasePending = false
             InputFeedbacks.setPhysicalKeyboardSoundSuppressed(false)
         }
         view.visibility = if (enabled && view.displayedChild ==
@@ -408,10 +406,6 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 InputFeedbacks.setPhysicalKeyboardSoundSuppressed(
                     desktopKeyboardMode && state != IflytekAsrClient.State.Idle
                 )
-                if (state == IflytekAsrClient.State.Idle && desktopVoiceReleasePending) {
-                    desktopVoiceReleasePending = false
-                    desktopVoiceButton?.playPhysicalReleaseSound()
-                }
                 idleUi.setVoiceInputActive(state != IflytekAsrClient.State.Idle)
                 if (desktopKeyboardMode && view.displayedChild ==
                     KawaiiBarStateMachine.State.Idle.ordinal
@@ -474,14 +468,12 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
 
     private var voicePressActive = false
 
-    private val voiceInputGestureCallback = CustomGestureView.OnGestureListener { source, event ->
-        val isDesktopVoice = source === desktopVoiceButton
+    private val voiceInputGestureCallback = CustomGestureView.OnGestureListener { _, event ->
         Timber.i(
             "iFlytek ASR gesture=${event.type} active=$voicePressActive state=${asrClient.state}"
         )
         when (event.type) {
             CustomGestureView.GestureType.Down -> {
-                if (isDesktopVoice) desktopVoiceReleasePending = true
                 if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
                     PackageManager.PERMISSION_GRANTED
                 ) {
@@ -522,10 +514,6 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 if (wasVoicePressActive) {
                     voicePressActive = false
                     asrClient.stop()
-                }
-                if (isDesktopVoice && !wasVoicePressActive && desktopVoiceReleasePending) {
-                    desktopVoiceReleasePending = false
-                    source.playPhysicalReleaseSound()
                 }
             }
             CustomGestureView.GestureType.Move -> {
