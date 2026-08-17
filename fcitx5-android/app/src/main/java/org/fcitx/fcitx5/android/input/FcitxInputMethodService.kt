@@ -31,6 +31,7 @@ import android.view.inputmethod.CursorAnchorInfo
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InlineSuggestionsRequest
 import android.view.inputmethod.InlineSuggestionsResponse
+import android.view.inputmethod.InputBinding
 import android.view.inputmethod.InputMethodSubtype
 import android.widget.FrameLayout
 import android.widget.inline.InlinePresentationSpec
@@ -205,7 +206,36 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         return job
     }
 
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onCreateInputMethodInterface() =
+        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.S) {
+            object : InputMethodImpl() {
+                override fun bindInput(binding: InputBinding) {
+                    try {
+                        super.bindInput(binding)
+                    } catch (error: IllegalStateException) {
+                        if (!Android12ImeFrameworkCompat.canIgnoreBindBeforeInitialize(
+                                Build.VERSION.SDK_INT,
+                                error
+                            )
+                        ) {
+                            throw error
+                        }
+                        Timber.w(
+                            error,
+                            "Ignored Android 12 bindInput-before-initialize framework race"
+                        )
+                    }
+                }
+            }
+        } else {
+            super.onCreateInputMethodInterface()
+        }
+
     override fun onCreate() {
+        // Initialize InputMethodService and its window before connecting the native daemon.
+        // This minimizes the interval in which a vendor IME callback can observe partial state.
+        super.onCreate()
         fcitx = FcitxDaemon.connect(javaClass.name)
         lifecycleScope.launch {
             jobs.consumeEach { it.join() }
@@ -226,7 +256,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 SubtypeManager.syncWith(enabledIme())
             }
         }
-        super.onCreate()
         decorView = window.window!!.decorView
         contentView = decorView.findViewById(android.R.id.content)
         lastKnownConfig = resources.configuration
