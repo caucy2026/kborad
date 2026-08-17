@@ -503,3 +503,10 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - `DisplaySwitchInputMethodService` 与主服务位于同一 APK，不是需要用户另行安装的输入法。平台签名 V900 包通过 `WRITE_SECURE_SETTINGS` 调用系统 `ime enable` 接口，仅启用这个固定同包组件；不得直接改写 enabled IME 字符串，也不得修改默认输入法或关闭其他输入法。
 - Android 安装后在应用进程首次启动前不会执行代码；主 KBoard 首次被系统唤起时自动完成中继启用，用户无需进入输入法列表单独授权。非平台签名设备无法获得该签名权限，必须保持失败可见，不得绕过系统安全模型。
 - 全键盘机械视觉仍保留按下位移和释放回弹，但声音只在 `ACTION_DOWN` 播放一次。桌面字符键、功能键、退出键和语音键的 `physicalReleaseSoundEnabled` 均关闭，语音完成后也不再补播释放音。
+
+#### Android 12 双屏输入连接边界
+
+- V900 的 `local`/`fallback` 策略决定“当前输入客户的 IME window 显示在哪个屏幕”，不会迁移输入客户本身。
+- 当 `mCurClient.displayId=2` 时，`local` 使 `mCurTokenDisplayId=2`，`fallback` 使 `mCurTokenDisplayId=0`；`.62` 连续 12 次双向切换全部成功。
+- 当 `mCurClient.displayId=0` 时，切换为 `local` 后 token 仍由 Android 12 绑定在 D0。日志中出现切屏请求和 IME window 重建不代表最终迁移成功，验收必须同时检查 `mCurClient.displayId` 和 `mCurTokenDisplayId`。
+- 要支持 D0 输入框的键盘显示到 D2，需要目标屏代理输入客户和转发协议；仅调整中继时序、广播延迟或重选 IME 无法绕过这个系统约束。
