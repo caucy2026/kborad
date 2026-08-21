@@ -87,9 +87,11 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     var onDoubleTapListener: ((View) -> Unit)? = null
     var onRepeatListener: ((View) -> Unit)? = null
     var onGestureListener: OnGestureListener? = null
+    var onTouchDownFeedback: ((View, Float, Float) -> Unit)? = null
 
     var soundEffect: InputFeedbacks.SoundEffect = InputFeedbacks.SoundEffect.Standard
 
+    var keyDownSoundEnabled = true
     var physicalKeySoundEnabled = false
     var physicalReleaseSoundEnabled = true
 
@@ -150,11 +152,14 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                 drawableHotspotChanged(x, y)
                 isPressed = true
                 InputFeedbacks.hapticFeedback(this)
-                if (physicalKeySoundEnabled) {
-                    InputFeedbacks.physicalKeyDown(soundEffect)
-                } else {
-                    InputFeedbacks.soundEffect(soundEffect)
+                if (keyDownSoundEnabled) {
+                    if (physicalKeySoundEnabled) {
+                        InputFeedbacks.physicalKeyDown(soundEffect)
+                    } else {
+                        InputFeedbacks.soundEffect(soundEffect)
+                    }
                 }
+                onTouchDownFeedback?.invoke(this, x, y)
                 dispatchGestureEvent(GestureType.Down, x, y)
                 if (longPressEnabled) {
                     longPressJob?.cancel()

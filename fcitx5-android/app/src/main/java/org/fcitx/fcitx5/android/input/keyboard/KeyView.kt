@@ -27,6 +27,7 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.FloatRange
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.graphics.ColorUtils
+import androidx.core.view.allViews
 import androidx.core.view.updateLayoutParams
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.theme.Theme
@@ -213,6 +214,26 @@ abstract class KeyView(
         appearanceView.translationY = 0f
         appearanceView.translationZ = 0f
         appearanceView.elevation = if (enabled) dp(PHYSICAL_KEY_TRAVEL_DP) else 0f
+    }
+
+    fun setAquariumGlassStyle(enabled: Boolean) {
+        if (!enabled) return
+        appearanceView.background = aquariumGlassKeyBackgroundDrawable(
+            radius = radius,
+            hMargin = hMargin,
+            vMargin = vMargin
+        )
+        appearanceView.foreground = RippleDrawable(
+            ColorStateList.valueOf(0x667FE7FF),
+            null,
+            highlightMaskDrawable(Color.WHITE)
+        )
+        appearanceView.allViews.forEach { child ->
+            when (child) {
+                is android.widget.TextView -> child.setTextColor(0xFFF1F8FF.toInt())
+                is ImageView -> child.imageTintList = ColorStateList.valueOf(0xFFF1F8FF.toInt())
+            }
+        }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

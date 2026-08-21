@@ -10,6 +10,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.LayerDrawable
+import android.graphics.drawable.StateListDrawable
 import androidx.annotation.ColorInt
 
 fun radiusDrawable(
@@ -77,4 +78,39 @@ fun borderedKeyBackgroundDrawable(
     )
 ).apply {
     setLayerInset(0, hMargin, vMargin, hMargin, vMargin)
+}
+
+fun aquariumGlassKeyBackgroundDrawable(
+    radius: Float,
+    hMargin: Int,
+    vMargin: Int
+): Drawable {
+    fun face(selected: Boolean): Drawable = LayerDrawable(
+        arrayOf(
+            GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(0x96142338.toInt(), 0x86081325.toInt())
+            ).apply {
+                cornerRadius = radius
+                setStroke(1, if (selected) 0xE66DDCFF.toInt() else 0x806BA0C8.toInt())
+            },
+            GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(
+                    if (selected) 0x6679E2FF else 0x42FFFFFF,
+                    0x00000000
+                )
+            ).apply {
+                cornerRadius = radius * 0.9f
+            }
+        )
+    ).apply {
+        setLayerInset(0, hMargin, vMargin + 2, hMargin, vMargin)
+        setLayerInset(1, hMargin + 2, vMargin + 2, hMargin + 2, vMargin + 5)
+    }
+
+    return StateListDrawable().apply {
+        addState(intArrayOf(android.R.attr.state_selected), face(true))
+        addState(intArrayOf(), face(false))
+    }
 }

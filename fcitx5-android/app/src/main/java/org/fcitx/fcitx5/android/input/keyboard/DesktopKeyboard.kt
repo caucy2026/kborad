@@ -19,24 +19,63 @@ import org.fcitx.fcitx5.android.core.KeyStates
 import org.fcitx.fcitx5.android.core.KeySym
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.InputFeedbacks
+import org.fcitx.fcitx5.android.input.keyboard.aquarium.DesktopAquariumView
 import kotlin.math.roundToInt
 
 @SuppressLint("ViewConstructor")
-class DesktopKeyboard(context: Context, theme: Theme) :
+class DesktopKeyboard private constructor(
+    context: Context,
+    theme: Theme,
+    private val aquariumView: DesktopAquariumView,
+    private val compositionHeader: View
+) :
     BaseKeyboard(
         context,
         theme,
         Layout,
-        createHeader(context),
+        compositionHeader,
         KeyVisualMetrics(horizontalMarginDp = 3, verticalMarginDp = 3, radiusDp = 10f)
     ) {
 
+    constructor(context: Context, theme: Theme) : this(
+        context,
+        theme,
+        DesktopAquariumView(context),
+        createHeader(context)
+    )
+
+    private val aquariumLocation = IntArray(2)
+    private val keyLocation = IntArray(2)
+
     init {
+        addView(
+            aquariumView,
+            0,
+            ConstraintLayout.LayoutParams(
+                ConstraintLayout.LayoutParams.MATCH_PARENT,
+                ConstraintLayout.LayoutParams.MATCH_PARENT
+            )
+        )
         setPadding(0, context.dp(4), 0, context.dp(10))
         allViews.filterIsInstance<KeyView>().forEach {
             it.setPhysicalKeyStyle(true)
+            it.setAquariumGlassStyle(true)
+            it.keyDownSoundEnabled = false
             it.physicalReleaseSoundEnabled = false
+            it.onTouchDownFeedback = ::onAquariumKeyDown
         }
+    }
+
+    private fun onAquariumKeyDown(view: View, x: Float, y: Float) {
+        aquariumView.getLocationInWindow(aquariumLocation)
+        view.getLocationInWindow(keyLocation)
+        val localX = keyLocation[0] - aquariumLocation[0] + x
+        val localY = keyLocation[1] - aquariumLocation[1] + y
+        aquariumView.feedAt(
+            localX / aquariumView.width.coerceAtLeast(1),
+            localY / aquariumView.height.coerceAtLeast(1)
+        )
+        InputFeedbacks.rippleSound()
     }
 
     companion object {
@@ -224,10 +263,18 @@ class DesktopKeyboard(context: Context, theme: Theme) :
     }
 
     override fun onAttach() {
+        super.onAttach()
         modifierStates.clear()
         updateModifierKeys()
         updateLetterKeys()
         updateSpaceLanguageLabel()
+        aquariumView.activate()
+        InputFeedbacks.prepareRippleSoundAsync()
+    }
+
+    override fun onDetach() {
+        aquariumView.deactivate()
+        super.onDetach()
     }
 
     override fun onInputMethodUpdate(ime: InputMethodEntry) {
@@ -273,10 +320,10 @@ class DesktopKeyboard(context: Context, theme: Theme) :
     }
 
     fun firstRowTopOnScreen(): Int? {
-        if (!isLaidOut || childCount < 2) return null
+        if (!isLaidOut) return null
         val location = IntArray(2)
         getLocationOnScreen(location)
-        return location[1] + getChildAt(1).top
+        return location[1] + compositionHeader.bottom
     }
 
     fun operationButtonCentersOnScreen(): Pair<Int, Int>? {
@@ -305,7 +352,7 @@ class DesktopKeyboard(context: Context, theme: Theme) :
         val compositionHeight = (availableHeight - rowHeight * 6f)
             .roundToInt()
             .coerceAtLeast(0)
-        getChildAt(0).updateLayoutParams<LayoutParams> {
+        compositionHeader.updateLayoutParams<LayoutParams> {
             height = compositionHeight
         }
         setPadding(horizontalPadding, topPadding, horizontalPadding, bottomPadding)
