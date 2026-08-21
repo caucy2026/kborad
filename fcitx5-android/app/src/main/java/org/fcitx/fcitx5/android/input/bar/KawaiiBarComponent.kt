@@ -457,7 +457,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     delay(VOICE_FINAL_PREVIEW_MS)
                     service.commitText(text)
                     idleUi.hideVoiceTranscript()
-                    if (desktopKeyboardMode && asrClient.state == IflytekAsrClient.State.Idle &&
+                    if (desktopKeyboardMode &&
                         view.displayedChild == KawaiiBarStateMachine.State.Idle.ordinal
                     ) {
                         view.visibility = View.INVISIBLE
