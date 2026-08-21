@@ -167,7 +167,6 @@ class CursorKey(
 
 class DesktopModifierKey(
     displayText: String,
-    state: KeyState,
     percentWidth: Float,
     border: Border = Border.On
 ) : KeyDef(
@@ -179,7 +178,9 @@ class DesktopModifierKey(
         variant = Variant.Alternative,
         border = border
     ),
-    setOf(Behavior.Press(KeyAction.ModifierAction(state)))
+    // DesktopKeyboard binds modifier state to touch DOWN/UP so the preview and the
+    // generated chord last exactly as long as the user's finger remains on the key.
+    emptySet()
 )
 
 class DesktopSymKey(

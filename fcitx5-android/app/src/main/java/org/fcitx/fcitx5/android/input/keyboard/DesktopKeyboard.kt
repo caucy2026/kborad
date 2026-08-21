@@ -21,6 +21,8 @@ import org.fcitx.fcitx5.android.core.KeySym
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.InputFeedbacks
 import org.fcitx.fcitx5.android.input.keyboard.aquarium.DesktopAquariumView
+import org.fcitx.fcitx5.android.input.keyboard.CustomGestureView.GestureType
+import org.fcitx.fcitx5.android.input.keyboard.CustomGestureView.OnGestureListener
 import kotlin.math.roundToInt
 
 @SuppressLint("ViewConstructor")
@@ -64,6 +66,7 @@ class DesktopKeyboard private constructor(
             it.keyDownSoundEnabled = false
             it.physicalReleaseSoundEnabled = false
         }
+        configureHeldModifierKeys()
         InputFeedbacks.prepareRippleSoundAsync()
     }
 
@@ -210,20 +213,20 @@ class DesktopKeyboard private constructor(
             ),
             // Row 4: Shift Z-M , . / Shift  (weightSum=15)
             listOf(
-                DesktopModifierKey("Shift", KeyState.Shift, 2.2f / 15f),
+                DesktopModifierKey("Shift", 2.2f / 15f),
                 *"ZXCVBNM".map { characterKey(it.toString(), 1f / 15f) }.toTypedArray(),
                 shiftedSymbolKey(",", "<", 1f / 15f),
                 shiftedSymbolKey(".", ">", 1f / 15f),
                 shiftedSymbolKey("/", "?", 1f / 15f),
-                DesktopModifierKey("Shift", KeyState.Shift, 2.8f / 15f)
+                DesktopModifierKey("Shift", 2.8f / 15f)
             ),
             // Row 5: Ctrl Alt 中/英 ──SPACE── ⌘ ← [↑/↓] →
             listOf(
-                DesktopModifierKey("Ctrl", KeyState.Ctrl, 2.2f / 18.3f),
-                DesktopModifierKey("Alt", KeyState.Alt, 1.6f / 18.3f),
+                DesktopModifierKey("Ctrl", 2.2f / 18.3f),
+                DesktopModifierKey("Alt", 1.6f / 18.3f),
                 languageKey(1.6f / 18.3f),
                 DesktopSpaceKey(8f / 18.3f),
-                DesktopModifierKey("\u2318", KeyState.Meta, 1.6f / 18.3f),
+                DesktopModifierKey("\u2318", 1.6f / 18.3f),
                 DesktopSymKey("←", FcitxKeyMapping.FcitxKey_Left, 1f / 18.3f, repeat = true),
                 KeyDef(
                     KeyDef.Appearance.VerticalGroup(
@@ -238,32 +241,72 @@ class DesktopKeyboard private constructor(
                 DesktopSymKey("→", FcitxKeyMapping.FcitxKey_Right, 1f / 18.3f, repeat = true)
             )
         )
+
+        // Cross-application conventional shortcuts. The target application remains the authority:
+        // these labels preview the real modifier+key event that KBoard sends, not an app command.
+        private val CtrlShortcutHints = mapOf(
+            "A" to "全选", "B" to "粗体", "C" to "复制", "D" to "收藏",
+            "F" to "查找", "G" to "下一个", "H" to "替换", "I" to "斜体",
+            "K" to "插入链接", "L" to "地址栏", "N" to "新建文档", "O" to "打开",
+            "P" to "打印", "R" to "刷新", "S" to "保存", "T" to "新标签",
+            "U" to "下划线", "V" to "粘贴", "W" to "关闭", "X" to "剪切",
+            "Y" to "重做", "Z" to "撤销", "Tab" to "下一标签",
+            "Backspace" to "删除整词", "←" to "上一词", "→" to "下一词",
+            "↑" to "段落开头", "↓" to "段落结尾", " " to "切换中英",
+            "-" to "缩小", "=" to "放大", "0" to "重置缩放"
+        )
+
+        private val CtrlShiftShortcutHints = CtrlShortcutHints + mapOf(
+            "T" to "恢复标签", "N" to "无痕窗口", "V" to "纯文本粘贴",
+            "S" to "另存为", "Z" to "重做", "Tab" to "上一标签",
+            "←" to "选到词首", "→" to "选到词尾",
+            "↑" to "选到段首", "↓" to "选到段尾"
+        )
+
+        private val AltShortcutHints = mapOf(
+            "Tab" to "切换窗口", "F4" to "关闭窗口", "Enter" to "属性",
+            "←" to "后退", "→" to "前进", "↑" to "上一级",
+            "↓" to "展开菜单", " " to "窗口菜单"
+        )
+
+        private val CmdShortcutHints = mapOf(
+            "A" to "全选", "B" to "粗体", "C" to "复制", "F" to "查找",
+            "H" to "隐藏", "I" to "斜体", "K" to "插入链接", "L" to "地址栏",
+            "M" to "最小化", "N" to "新建文档", "O" to "打开", "P" to "打印",
+            "Q" to "退出", "R" to "刷新", "S" to "保存", "T" to "新标签",
+            "U" to "下划线", "V" to "粘贴", "W" to "关闭", "X" to "剪切",
+            "Z" to "撤销", "Tab" to "切换应用", " " to "系统搜索",
+            "←" to "行首", "→" to "行尾", "↑" to "文首", "↓" to "文尾",
+            "-" to "缩小", "=" to "放大", "0" to "重置缩放"
+        )
+
+        private val CmdShiftShortcutHints = CmdShortcutHints + mapOf(
+            "3" to "全屏截图", "4" to "区域截图", "5" to "截图工具",
+            "T" to "恢复标签", "N" to "新建文件夹", "S" to "另存为",
+            "Z" to "重做", "Tab" to "反向切换",
+            "←" to "选到行首", "→" to "选到行尾",
+            "↑" to "选到文首", "↓" to "选到文尾"
+        )
+
+        private val ShiftShortcutHints = mapOf(
+            "Tab" to "反向切换", "Enter" to "换行", "F10" to "右键菜单"
+        )
     }
 
     // ── Runtime state ──
     private val modifierStates = linkedSetOf<KeyState>()
+    private val heldModifierKeys = linkedMapOf<TextKeyView, KeyState>()
     private val textKeys by lazy { allViews.filterIsInstance<TextKeyView>() }
     private var currentImeName: String = ""
     private var currentImeLanguageCode: String = ""
 
     override fun onAction(action: KeyAction, source: KeyActionListener.Source) {
-        when (action) {
-            is KeyAction.ModifierAction -> {
-                if (!modifierStates.add(action.state)) modifierStates.remove(action.state)
-                updateModifierKeys()
-                return
-            }
-            else -> {}
-        }
-
         // Ctrl+Space → language switch
         if (action is KeyAction.SymAction &&
             action.sym == KeySym(FcitxKeyMapping.FcitxKey_space) &&
             KeyState.Ctrl in modifierStates
         ) {
             super.onAction(KeyAction.LangSwitchAction, source)
-            modifierStates.clear()
-            updateModifierKeys()
             return
         }
 
@@ -284,16 +327,14 @@ class DesktopKeyboard private constructor(
             else -> action
         }
         super.onAction(transformed, source)
-        if (modifierStates.isNotEmpty()) {
-            modifierStates.clear()
-            updateModifierKeys()
-        }
     }
 
     override fun onAttach() {
         super.onAttach()
+        heldModifierKeys.clear()
         modifierStates.clear()
         updateModifierKeys()
+        updateShortcutHints()
         updateLetterKeys()
         updateSpaceLanguageLabel()
         aquariumView.activate()
@@ -301,6 +342,10 @@ class DesktopKeyboard private constructor(
     }
 
     override fun onDetach() {
+        heldModifierKeys.clear()
+        modifierStates.clear()
+        updateModifierKeys()
+        updateShortcutHints()
         aquariumView.deactivate()
         super.onDetach()
     }
@@ -349,6 +394,56 @@ class DesktopKeyboard private constructor(
                 else -> return@forEach
             }
             key.isSelected = state in modifierStates
+        }
+    }
+
+    private fun configureHeldModifierKeys() {
+        textKeys.forEach { key ->
+            val state = modifierStateFor(key) ?: return@forEach
+            key.onGestureListener = OnGestureListener { _, event ->
+                when (event.type) {
+                    GestureType.Down -> heldModifierKeys[key] = state
+                    GestureType.Up -> heldModifierKeys.remove(key)
+                    GestureType.Move -> return@OnGestureListener false
+                }
+                modifierStates.clear()
+                modifierStates.addAll(heldModifierKeys.values)
+                updateModifierKeys()
+                updateShortcutHints()
+                // Modifier observation must not consume the touch; CustomGestureView still owns
+                // pressed visuals, sound and multi-pointer dispatch.
+                false
+            }
+        }
+    }
+
+    private fun modifierStateFor(key: TextKeyView): KeyState? =
+        when ((key.def as? KeyDef.Appearance.Text)?.displayText) {
+            "Ctrl" -> KeyState.Ctrl
+            "Alt" -> KeyState.Alt
+            "\u2318" -> KeyState.Meta
+            "Shift" -> KeyState.Shift
+            else -> null
+        }
+
+    private fun updateShortcutHints() {
+        val hints = when {
+            KeyState.Ctrl in modifierStates && KeyState.Shift in modifierStates ->
+                CtrlShiftShortcutHints
+            KeyState.Meta in modifierStates && KeyState.Shift in modifierStates ->
+                CmdShiftShortcutHints
+            KeyState.Ctrl in modifierStates -> CtrlShortcutHints
+            KeyState.Meta in modifierStates -> CmdShortcutHints
+            KeyState.Alt in modifierStates -> AltShortcutHints
+            KeyState.Shift in modifierStates -> ShiftShortcutHints
+            else -> emptyMap()
+        }
+        textKeys.forEach { key ->
+            val label = (key.def as? KeyDef.Appearance.Text)?.displayText.orEmpty()
+            // The desktop space reserves "English" as stable measure text, but the shortcut
+            // table deliberately uses a single blank as the semantic space-key identifier.
+            val semanticLabel = if (key.id == R.id.button_space) " " else label
+            key.setShortcutHint(hints[semanticLabel])
         }
     }
 

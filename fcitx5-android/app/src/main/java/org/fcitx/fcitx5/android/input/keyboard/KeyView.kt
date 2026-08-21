@@ -412,12 +412,51 @@ open class TextKeyView(
         )
     }
 
+    private var shortcutHint: AutoScaleTextView? = null
+
     init {
         appearanceView.apply {
             add(mainText, lParams(wrapContent, wrapContent) {
                 centerInParent()
             })
         }
+    }
+
+    /**
+     * Adds a permanently measured secondary label used by DesktopKeyboard's modifier preview.
+     * Once created, state changes only alter alpha/translation and the view's stable-draw text;
+     * they never toggle visibility or request another parent layout.
+     */
+    fun setShortcutHint(label: String?) {
+        val hint = shortcutHint ?: view(::AutoScaleTextView) {
+            isClickable = false
+            isFocusable = false
+            includeFontPadding = false
+            maxLines = 1
+            alpha = 0f
+            text = "组合功能"
+            setTextSize(TypedValue.COMPLEX_UNIT_DIP, 8.5f)
+            setTypeface(typeface, Typeface.NORMAL)
+            setTextColor(DESKTOP_SHORTCUT_HINT_COLOR)
+            textDirection = View.TEXT_DIRECTION_FIRST_STRONG_LTR
+            scaleMode = AutoScaleTextView.Mode.Horizontal
+        }.also { created ->
+            appearanceView.apply {
+                add(created, lParams(matchParent, wrapContent) {
+                    bottomToBottom = parentId
+                    bottomMargin = vMargin + dp(5)
+                })
+            }
+            shortcutHint = created
+        }
+        val active = !label.isNullOrEmpty()
+        hint.setLayoutStableText(label.orEmpty())
+        hint.alpha = if (active) 1f else 0f
+        mainText.translationY = if (active) -dp(7).toFloat() else 0f
+    }
+
+    private companion object {
+        const val DESKTOP_SHORTCUT_HINT_COLOR = 0xFFD8ECF6.toInt()
     }
 }
 
