@@ -17,6 +17,7 @@ import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.RippleDrawable
 import android.graphics.drawable.StateListDrawable
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.animation.OvershootInterpolator
@@ -439,6 +440,7 @@ open class TextKeyView(
             setTypeface(typeface, Typeface.NORMAL)
             setTextColor(DESKTOP_SHORTCUT_HINT_COLOR)
             textDirection = View.TEXT_DIRECTION_FIRST_STRONG_LTR
+            gravity = Gravity.CENTER
             scaleMode = AutoScaleTextView.Mode.Horizontal
         }.also { created ->
             appearanceView.apply {
