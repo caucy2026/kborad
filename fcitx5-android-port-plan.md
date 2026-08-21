@@ -491,6 +491,13 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - 当前正式签名为 AOSP Android 平台证书，SHA-256：`c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。早期文档中的 `fc84f5...` 是另一把 Android Debug 证书，只适用于对应历史产物，不能再用于当前设备覆盖安装。
 - 2026-08-17 当前安装到 `.63` 的正式版本为 `f6b7271c`；安装后首次启动或首次唤起 KBoard 会自动启用同包中继，默认输入法仍必须保持主 `FcitxInputMethodService`。
 
+#### `.63` Mali-G52 水族渲染验证（2026-08-21）
+
+- `.63` 为 Android 12/API 31、arm64-v8a、Mali-G52、OpenGL ES 3.2，D0/D2 均为 1920×1280@60Hz；全局键盘内部水面限制到 1440 宽。
+- Release 构建成功不代表 GLSL 可在目标驱动运行。Mali 编译器会拒绝保留标识符 `patch`，首版因此在 `KBoardAquarium` 日志中停止；改用 `koiPatch` 后程序正常链接。
+- 最终 `be056495` Release 在 D0 的内部 surface 为 1440×471，10 条鱼连续 58.5–59.5 FPS，未发生 EGL/GL、`AudioTrack` 或应用崩溃。
+- 设备安装与性能验收仍按 Release-only 流程执行；水滴音的听感必须由真机扬声器人工确认，日志只能证明音轨创建和播放路径没有异常。
+
 #### RustDesk/KEMI 远程回车
 
 - KEMI 远程客户端包名为 `com.newlinksz.kemi.remote`。它的 Flutter/RustDesk 输入代理把组合文本、Android 编辑器动作和特殊键分成不同通路；编辑器动作可能返回成功，但 Windows 主机仍未收到 Enter。
