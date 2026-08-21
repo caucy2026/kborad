@@ -124,16 +124,16 @@ fun aquariumDepthKeyBackgroundDrawable(
         arrayOf(
             GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(0xC0020A12.toInt(), 0xB807121E.toInt())
+                intArrayOf(0x9A020A12.toInt(), 0x8807121E.toInt())
             ).apply {
                 cornerRadius = radius
             },
             GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 if (selected) {
-                    intArrayOf(0xD1297895.toInt(), 0xC2123B55.toInt())
+                    intArrayOf(0xB8297895.toInt(), 0xA1123B55.toInt())
                 } else {
-                    intArrayOf(0xCC29465C.toInt(), 0xB8102536.toInt())
+                    intArrayOf(0xA829465C.toInt(), 0x8F102536.toInt())
                 }
             ).apply {
                 cornerRadius = radius
