@@ -304,6 +304,7 @@ private class AquariumEngine {
     private var fishPhaseLocation = -1
     private var fishSeedLocation = -1
     private var fishAlphaLocation = -1
+    private var fishActivityLocation = -1
     private var fishBaseColorLocation = -1
     private var fishPatchColorLocation = -1
     private var fishAccentColorLocation = -1
@@ -334,6 +335,7 @@ private class AquariumEngine {
         fishPhaseLocation = GLES30.glGetUniformLocation(fishProgram, "uPhase")
         fishSeedLocation = GLES30.glGetUniformLocation(fishProgram, "uSeed")
         fishAlphaLocation = GLES30.glGetUniformLocation(fishProgram, "uAlpha")
+        fishActivityLocation = GLES30.glGetUniformLocation(fishProgram, "uActivity")
         fishBaseColorLocation = GLES30.glGetUniformLocation(fishProgram, "uBaseColor")
         fishPatchColorLocation = GLES30.glGetUniformLocation(fishProgram, "uPatchColor")
         fishAccentColorLocation = GLES30.glGetUniformLocation(fishProgram, "uAccentColor")
@@ -386,9 +388,15 @@ private class AquariumEngine {
     private fun createFish(index: Int): Fish {
         val heading = if (index % 2 == 0) 1f else -1f
         val palette = FISH_PALETTES[index % FISH_PALETTES.size]
+        val initialY = if (index % 3 == 0) {
+            // Keep several fish visibly roaming under the bottom keyboard rows.
+            -0.92f + random.nextFloat() * 0.62f
+        } else {
+            random.nextFloat() * 1.78f - 0.92f
+        }
         return Fish(
             x = random.nextFloat() * 1.7f - 0.85f,
-            y = random.nextFloat() * 1.55f - 0.78f,
+            y = initialY,
             vx = heading * (0.07f + random.nextFloat() * 0.08f),
             vy = random.nextFloat() * 0.08f - 0.04f,
             depth = random.nextFloat(),
@@ -400,7 +408,7 @@ private class AquariumEngine {
             accentColor = palette.accent,
             pattern = (index % 4).toFloat(),
             wanderX = random.nextFloat() * 1.6f - 0.8f,
-            wanderY = random.nextFloat() * 1.4f - 0.7f,
+            wanderY = nextWanderY(index),
             nextWanderTime = 1f + random.nextFloat() * 3f
         )
     }
@@ -411,7 +419,7 @@ private class AquariumEngine {
             val f = fish[index]
             if (!feeding && time >= f.nextWanderTime) {
                 f.wanderX = random.nextFloat() * 1.7f - 0.85f
-                f.wanderY = random.nextFloat() * 1.5f - 0.75f
+                f.wanderY = nextWanderY(index)
                 f.nextWanderTime = time + 2.5f + random.nextFloat() * 4f
             }
             val offsetAngle = f.seed * 2.1f
@@ -462,11 +470,17 @@ private class AquariumEngine {
                 f.x = f.x.coerceIn(-1.05f, 1.05f)
                 f.vx = -f.vx
             }
-            if (f.y < -0.92f || f.y > 0.92f) {
-                f.y = f.y.coerceIn(-0.92f, 0.92f)
+            if (f.y < -0.97f || f.y > 0.93f) {
+                f.y = f.y.coerceIn(-0.97f, 0.93f)
                 f.vy = -f.vy
             }
         }
+    }
+
+    private fun nextWanderY(index: Int): Float = if (index % 3 == 0) {
+        -0.94f + random.nextFloat() * 0.70f
+    } else {
+        random.nextFloat() * 1.84f - 0.94f
     }
 
     private fun drawWater(time: Float) {
@@ -498,6 +512,7 @@ private class AquariumEngine {
     private fun drawFish(time: Float) {
         GLES30.glUseProgram(fishProgram)
         GLES30.glUniform1f(fishTimeLocation, time)
+        GLES30.glUniform1f(fishActivityLocation, if (time < attractionUntil) 1f else 0f)
         GLES30.glUniform1f(
             fishAspectLocation,
             width.toFloat() / height.coerceAtLeast(1)
@@ -592,22 +607,22 @@ private class AquariumEngine {
             vertex(0.08f + cos(a1).toFloat() * 0.72f, sin(a1).toFloat() * 0.25f, 0.02f)
         }
         vertex(-0.57f, 0.08f, 0.01f)
-        vertex(-1.30f, 0.46f, -0.02f)
+        vertex(-1.52f, 0.60f, -0.02f)
         vertex(-0.96f, 0.02f, 0f)
         vertex(-0.57f, -0.08f, 0.01f)
         vertex(-0.96f, -0.02f, 0f)
-        vertex(-1.30f, -0.46f, -0.02f)
+        vertex(-1.52f, -0.60f, -0.02f)
         vertex(-0.20f, 0.18f, 0.01f)
-        vertex(-0.56f, 0.52f, -0.03f)
+        vertex(-0.68f, 0.70f, -0.03f)
         vertex(0.34f, 0.20f, 0f)
         vertex(-0.20f, -0.18f, 0.01f)
-        vertex(-0.56f, -0.52f, -0.03f)
+        vertex(-0.68f, -0.70f, -0.03f)
         vertex(0.34f, -0.20f, 0f)
         vertex(0.02f, 0.11f, 0.015f)
-        vertex(-0.34f, 0.39f, -0.025f)
+        vertex(-0.48f, 0.56f, -0.025f)
         vertex(0.45f, 0.15f, 0f)
         vertex(0.02f, -0.11f, 0.015f)
-        vertex(-0.34f, -0.39f, -0.025f)
+        vertex(-0.48f, -0.56f, -0.025f)
         vertex(0.45f, -0.15f, 0f)
         fishVertexCount = vertices.size / 5
         val data = vertices.toFloatArray()
@@ -713,11 +728,25 @@ private class AquariumEngine {
                     float age = uTime - uRipples[i].z;
                     vec2 delta = uv - uRipples[i].xy;
                     delta.x *= aspect;
-                    float rawDistance = max(length(delta), 0.001);
-                    float angle = atan(delta.y, delta.x);
-                    float edgeVariation = sin(angle * 7.0 + uRipples[i].x * 8.0) * 0.005 +
-                                          sin(angle * 13.0 - uRipples[i].y * 9.0) * 0.0025;
-                    float distanceFromTouch = rawDistance + edgeVariation;
+                    vec2 flowDrift = vec2(
+                        sin(uRipples[i].x * 17.0 + uRipples[i].y * 5.0),
+                        cos(uRipples[i].y * 13.0 - uRipples[i].x * 4.0)
+                    ) * age * 0.018;
+                    delta -= flowDrift;
+                    float currentAngle = uRipples[i].x * 7.3 + uRipples[i].y * 11.1;
+                    vec2 currentAxis = vec2(cos(currentAngle), sin(currentAngle));
+                    vec2 currentNormal = vec2(-currentAxis.y, currentAxis.x);
+                    float alongCurrent = dot(delta, currentAxis);
+                    float acrossCurrent = dot(delta, currentNormal);
+                    vec2 currentSpace = vec2(alongCurrent * 0.84, acrossCurrent * 1.16);
+                    float rawDistance = max(length(currentSpace), 0.001);
+                    float angle = atan(currentSpace.y, currentSpace.x);
+                    float directionalStretch = 1.0 +
+                        sin(angle * 2.0 + uRipples[i].x * 6.0) * 0.13 +
+                        sin(angle * 3.0 - uRipples[i].y * 7.0 + age * 0.7) * 0.065;
+                    float edgeVariation = sin(angle * 5.0 + uRipples[i].x * 8.0 + age) * 0.011 +
+                                          sin(angle * 9.0 - uRipples[i].y * 9.0) * 0.006;
+                    float distanceFromTouch = rawDistance * directionalStretch + edgeVariation;
                     float waveFront = age * 0.34;
                     float wake = waveFront - distanceFromTouch;
                     float arrived = smoothstep(-0.018, 0.026, wake);
@@ -727,7 +756,9 @@ private class AquariumEngine {
                     float envelope = arrived * lifetime * damping;
                     float phase = wake * 64.0;
                     float height = sin(phase) * envelope;
-                    vec2 radial = delta / rawDistance;
+                    vec2 radialInCurrent = currentSpace / rawDistance;
+                    vec2 radial = currentAxis * radialInCurrent.x * 0.84 +
+                                  currentNormal * radialInCurrent.y * 1.16;
                     waveHeight += height;
                     waveEnergy += abs(height);
                     waveSlope += radial * cos(phase) * envelope;
@@ -762,16 +793,31 @@ private class AquariumEngine {
             uniform float uPhase;
             uniform float uTime;
             uniform float uAspect;
+            uniform float uActivity;
             out vec2 vLocal;
             out float vHighlight;
             void main() {
                 vec3 local = aPosition;
                 float tailWeight = 1.0 - smoothstep(-1.08, -0.38, local.x);
-                float finWeight = smoothstep(0.17, 0.48, abs(local.y)) *
+                float finWeight = smoothstep(0.22, 0.54, abs(local.y)) *
                                   (1.0 - smoothstep(0.10, 0.48, local.x));
-                local.y += sin(uTime * 5.4 + uPhase + local.x * 2.8) * tailWeight * 0.24;
-                local.y += sin(uTime * 3.1 + uPhase * 0.7 + local.x * 4.2) * tailWeight * 0.075;
-                local.y += sin(uTime * 4.0 + uPhase + local.x * 5.0) * finWeight * 0.055;
+                float swimRate = mix(1.0, 1.72, uActivity);
+                float bodyFlex = sin(uTime * 3.0 * swimRate + uPhase + local.x * 2.2) *
+                                 (1.0 - smoothstep(-0.35, 0.72, local.x));
+                local.y += bodyFlex * 0.032;
+                local.y += sin(uTime * 5.4 * swimRate + uPhase + local.x * 2.8) *
+                           tailWeight * mix(0.24, 0.34, uActivity);
+                local.y += sin(uTime * 3.1 * swimRate + uPhase * 0.7 + local.x * 4.2) *
+                           tailWeight * 0.085;
+                local.x += cos(uTime * 4.2 * swimRate + uPhase + local.x * 3.4) *
+                           tailWeight * 0.055;
+                float finFlutter = sin(uTime * 3.7 * swimRate + uPhase +
+                                       local.x * 5.0 + abs(local.y) * 3.0 +
+                                       sign(local.y) * 1.15);
+                local.y += finFlutter * finWeight * sign(local.y) *
+                           mix(0.115, 0.155, uActivity);
+                local.x += cos(uTime * 3.2 * swimRate + uPhase + local.y * 4.0 +
+                               sign(local.y) * 0.8) * finWeight * 0.060;
                 float c = cos(uHeading);
                 float s = sin(uHeading);
                 vec2 rotated = mat2(c, -s, s, c) * local.xy;

@@ -300,11 +300,11 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             }
             setIcon(R.drawable.ic_baseline_keyboard_voice_24)
             useFullSizeIcon()
-            setPressHighlightColor(theme.keyPressHighlightColor)
+            setPressHighlightColor(DESKTOP_VOICE_HIGHLIGHT_COLOR)
             setPhysicalKeyStyle(
                 true,
-                theme.altKeyBackgroundColor,
-                theme.keyPressHighlightColor
+                DESKTOP_VOICE_KEY_COLOR,
+                DESKTOP_VOICE_HIGHLIGHT_COLOR
             )
             physicalReleaseSoundEnabled = false
             contentDescription = context.getString(R.string.start_voice_input)
@@ -312,7 +312,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             isClickable = true
             alpha = if (isEnabled) 1f else 0.38f
             setIconTintColor(
-                if (isEnabled) theme.altKeyTextColor else theme.candidateCommentColor
+                if (isEnabled) Color.WHITE else DESKTOP_VOICE_DISABLED_COLOR
             )
             swipeEnabled = false
             setOnTouchListener(null)
@@ -320,13 +320,13 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 when (event.type) {
                     CustomGestureView.GestureType.Down -> {
                         view.parent.requestDisallowInterceptTouchEvent(true)
-                        setCircleBackgroundColor(theme.altKeyBackgroundColor)
-                        setIconTintColor(theme.altKeyTextColor)
+                        setCircleBackgroundColor(DESKTOP_VOICE_KEY_COLOR)
+                        setIconTintColor(Color.WHITE)
                     }
                     CustomGestureView.GestureType.Up -> {
                         view.parent.requestDisallowInterceptTouchEvent(false)
-                        setPressHighlightColor(theme.keyPressHighlightColor)
-                        setIconTintColor(theme.altKeyTextColor)
+                        setPressHighlightColor(DESKTOP_VOICE_HIGHLIGHT_COLOR)
+                        setIconTintColor(Color.WHITE)
                     }
                     CustomGestureView.GestureType.Move -> {}
                 }
@@ -420,15 +420,15 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     if (voicePressActive) {
                         button.setIconTintColor(
                             if (state != IflytekAsrClient.State.Idle) 0xff34a853.toInt()
-                            else theme.altKeyTextColor
+                            else Color.WHITE
                         )
                         button.setCircleBackgroundColor(
                             if (state != IflytekAsrClient.State.Idle) theme.genericActiveBackgroundColor
-                            else theme.altKeyBackgroundColor
+                            else DESKTOP_VOICE_KEY_COLOR
                         )
                     } else {
-                        button.setPressHighlightColor(theme.keyPressHighlightColor)
-                        button.setIconTintColor(theme.altKeyTextColor)
+                        button.setPressHighlightColor(DESKTOP_VOICE_HIGHLIGHT_COLOR)
+                        button.setIconTintColor(Color.WHITE)
                     }
                     button.contentDescription = context.getString(
                         if (state != IflytekAsrClient.State.Idle) R.string.stop_voice_input
@@ -852,6 +852,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         const val VOICE_FINAL_PREVIEW_MS = 300L
         const val VOICE_PERMISSION_REQUEST_COOLDOWN_MS = 2_000L
         const val VOICE_CANCEL_MOVE_THRESHOLD = 24f
+        const val DESKTOP_VOICE_KEY_COLOR = 0xFF29465C.toInt()
+        const val DESKTOP_VOICE_HIGHLIGHT_COLOR = 0xFF4EC7E8.toInt()
+        const val DESKTOP_VOICE_DISABLED_COLOR = 0x66FFFFFF
     }
 
     fun onKeyboardLayoutSwitched(isNumber: Boolean) {
