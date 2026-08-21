@@ -25,7 +25,6 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
-import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -305,6 +304,7 @@ private class AquariumEngine {
     private var fishSeedLocation = -1
     private var fishAlphaLocation = -1
     private var fishActivityLocation = -1
+    private var fishSpeedLocation = -1
     private var fishBaseColorLocation = -1
     private var fishPatchColorLocation = -1
     private var fishAccentColorLocation = -1
@@ -336,6 +336,7 @@ private class AquariumEngine {
         fishSeedLocation = GLES30.glGetUniformLocation(fishProgram, "uSeed")
         fishAlphaLocation = GLES30.glGetUniformLocation(fishProgram, "uAlpha")
         fishActivityLocation = GLES30.glGetUniformLocation(fishProgram, "uActivity")
+        fishSpeedLocation = GLES30.glGetUniformLocation(fishProgram, "uSpeed")
         fishBaseColorLocation = GLES30.glGetUniformLocation(fishProgram, "uBaseColor")
         fishPatchColorLocation = GLES30.glGetUniformLocation(fishProgram, "uPatchColor")
         fishAccentColorLocation = GLES30.glGetUniformLocation(fishProgram, "uAccentColor")
@@ -426,14 +427,14 @@ private class AquariumEngine {
             val urgency = 0.86f + (f.seed % 1f) * 0.42f
             val targetX = if (feeding) attractionX + cos(offsetAngle) * 0.055f else f.wanderX
             val targetY = if (feeding) attractionY + sin(offsetAngle) * 0.045f else f.wanderY
+            val targetDx = targetX - f.x
+            val targetDy = targetY - f.y
+            val targetDistance = sqrt(targetDx * targetDx + targetDy * targetDy)
+                .coerceAtLeast(0.001f)
             val attractionStrength = if (feeding) 3.15f * urgency else 0.32f
-            var ax = (targetX - f.x) * attractionStrength
-            var ay = (targetY - f.y) * attractionStrength
+            var ax = targetDx * attractionStrength
+            var ay = targetDy * attractionStrength
             if (feeding) {
-                val targetDx = targetX - f.x
-                val targetDy = targetY - f.y
-                val targetDistance = sqrt(targetDx * targetDx + targetDy * targetDy)
-                    .coerceAtLeast(0.001f)
                 val scramble = sin(time * (8.5f + urgency) + f.phase) * 0.13f
                 ax += -targetDy / targetDistance * scramble
                 ay += targetDx / targetDistance * scramble
@@ -453,17 +454,30 @@ private class AquariumEngine {
             }
             ax += sin(time * 0.73f + f.phase) * 0.025f
             ay += cos(time * 0.61f + f.phase) * 0.018f
-            f.vx += ax * dt
-            f.vy += ay * dt
-            val maxSpeed = if (feeding) 0.64f + urgency * 0.10f else 0.24f
-            val speed = sqrt(f.vx * f.vx + f.vy * f.vy).coerceAtLeast(0.0001f)
-            if (speed > maxSpeed) {
-                f.vx *= maxSpeed / speed
-                f.vy *= maxSpeed / speed
+
+            // A fish first turns its head, then gains forward speed from its tail beat.
+            // Keeping velocity aligned with the curved heading removes sideways sliding.
+            val currentHeading = atan2(f.vy, f.vx)
+            val desiredHeading = atan2(ay + f.vy * 0.58f, ax + f.vx * 0.58f)
+            val headingDelta = atan2(
+                sin(desiredHeading - currentHeading),
+                cos(desiredHeading - currentHeading)
+            )
+            val maxTurn = (if (feeding) 4.2f else 1.75f) *
+                    (0.82f + urgency * 0.18f) * dt
+            val curvedHeading = currentHeading + headingDelta.coerceIn(-maxTurn, maxTurn)
+            val currentSpeed = sqrt(f.vx * f.vx + f.vy * f.vy).coerceAtLeast(0.035f)
+            val tailPulse = 0.90f + sin(time * (if (feeding) 8.2f else 4.7f) + f.phase) * 0.10f
+            val desiredSpeed = if (feeding) {
+                min(0.68f + urgency * 0.08f, 0.20f + targetDistance * 1.25f) * tailPulse
+            } else {
+                (0.105f + f.depth * 0.075f + min(targetDistance, 0.35f) * 0.18f) * tailPulse
             }
-            val damping = exp((-if (feeding) 0.28f else 0.7f) * dt)
-            f.vx *= damping
-            f.vy *= damping
+            val propulsionResponse = if (feeding) 5.2f else 2.0f
+            val propelledSpeed = currentSpeed +
+                    (desiredSpeed - currentSpeed) * (propulsionResponse * dt).coerceIn(0f, 1f)
+            f.vx = cos(curvedHeading) * propelledSpeed
+            f.vy = sin(curvedHeading) * propelledSpeed
             f.x += f.vx * dt
             f.y += f.vy * dt
             if (f.x < -1.05f || f.x > 1.05f) {
@@ -527,6 +541,10 @@ private class AquariumEngine {
             GLES30.glUniform1f(fishPhaseLocation, f.phase)
             GLES30.glUniform1f(fishSeedLocation, f.seed)
             GLES30.glUniform1f(fishAlphaLocation, 0.72f + f.depth * 0.24f)
+            GLES30.glUniform1f(
+                fishSpeedLocation,
+                sqrt(f.vx * f.vx + f.vy * f.vy)
+            )
             GLES30.glUniform3f(
                 fishBaseColorLocation,
                 f.baseColor[0], f.baseColor[1], f.baseColor[2]
@@ -747,15 +765,18 @@ private class AquariumEngine {
                     float edgeVariation = sin(angle * 5.0 + uRipples[i].x * 8.0 + age) * 0.011 +
                                           sin(angle * 9.0 - uRipples[i].y * 9.0) * 0.006;
                     float distanceFromTouch = rawDistance * directionalStretch + edgeVariation;
-                    float waveFront = age * 0.34;
+                    float waveFront = age * 0.30;
                     float wake = waveFront - distanceFromTouch;
-                    float arrived = smoothstep(-0.018, 0.026, wake);
+                    float arrived = smoothstep(-0.032, 0.046, wake);
                     float lifetime = step(0.0, age) *
                                      (1.0 - smoothstep(1.18, 1.82, age));
-                    float damping = exp(-max(wake, 0.0) * 3.3) * exp(-age * 0.72);
+                    float damping = exp(-max(wake, 0.0) * 2.65) * exp(-age * 0.68);
                     float envelope = arrived * lifetime * damping;
-                    float phase = wake * 64.0;
-                    float height = sin(phase) * envelope;
+                    float phase = wake * 39.0;
+                    float impact = exp(-rawDistance * rawDistance * 310.0) *
+                                   exp(-age * 3.8) * sin(age * 15.0);
+                    float height = (sin(phase) * 0.82 + sin(phase * 0.53 + 0.7) * 0.18) *
+                                   envelope + impact * lifetime * 0.72;
                     vec2 radialInCurrent = currentSpace / rawDistance;
                     vec2 radial = currentAxis * radialInCurrent.x * 0.84 +
                                   currentNormal * radialInCurrent.y * 1.16;
@@ -794,23 +815,28 @@ private class AquariumEngine {
             uniform float uTime;
             uniform float uAspect;
             uniform float uActivity;
+            uniform float uSpeed;
             out vec2 vLocal;
             out float vHighlight;
+            out float vMembrane;
             void main() {
                 vec3 local = aPosition;
                 float tailWeight = 1.0 - smoothstep(-1.08, -0.38, local.x);
                 float finWeight = smoothstep(0.22, 0.54, abs(local.y)) *
                                   (1.0 - smoothstep(0.10, 0.48, local.x));
-                float swimRate = mix(1.0, 1.72, uActivity);
+                float motion = clamp(uSpeed / 0.62, 0.12, 1.0);
+                float swimRate = mix(0.88 + motion * 0.45, 1.82, uActivity);
                 float bodyFlex = sin(uTime * 3.0 * swimRate + uPhase + local.x * 2.2) *
                                  (1.0 - smoothstep(-0.35, 0.72, local.x));
-                local.y += bodyFlex * 0.032;
+                local.y += bodyFlex * mix(0.024, 0.050, motion);
+                float tailWave = sin(uTime * 5.4 * swimRate + uPhase + local.x * 2.8);
                 local.y += sin(uTime * 5.4 * swimRate + uPhase + local.x * 2.8) *
-                           tailWeight * mix(0.24, 0.34, uActivity);
+                           tailWeight * mix(0.21, 0.36, max(uActivity, motion));
                 local.y += sin(uTime * 3.1 * swimRate + uPhase * 0.7 + local.x * 4.2) *
                            tailWeight * 0.085;
                 local.x += cos(uTime * 4.2 * swimRate + uPhase + local.x * 3.4) *
                            tailWeight * 0.055;
+                local.z += tailWave * tailWeight * 0.090;
                 float finFlutter = sin(uTime * 3.7 * swimRate + uPhase +
                                        local.x * 5.0 + abs(local.y) * 3.0 +
                                        sign(local.y) * 1.15);
@@ -818,14 +844,26 @@ private class AquariumEngine {
                            mix(0.115, 0.155, uActivity);
                 local.x += cos(uTime * 3.2 * swimRate + uPhase + local.y * 4.0 +
                                sign(local.y) * 0.8) * finWeight * 0.060;
+                local.z += finFlutter * finWeight * sign(local.y) *
+                           mix(0.12, 0.22, max(uActivity, motion));
                 float c = cos(uHeading);
                 float s = sin(uHeading);
                 vec2 rotated = mat2(c, -s, s, c) * local.xy;
-                rotated.y *= uAspect * 0.70;
+                rotated.y = (rotated.y + local.z * 0.24) * uAspect * 0.70;
                 vec2 world = uPosition + rotated * uScale;
                 gl_Position = vec4(world, local.z * 0.12, 1.0);
                 vLocal = vec2(aPosition.x, aPosition.y);
-                vHighlight = 0.55 + aPosition.z * 2.2;
+                vec3 surfaceNormal = normalize(vec3(
+                    aPosition.x * 0.52,
+                    aPosition.y * 1.85,
+                    1.15 + aPosition.z * 2.4
+                ));
+                vec3 fishLight = normalize(vec3(-0.38, 0.52, 0.76));
+                float diffuse = max(dot(surfaceNormal, fishLight), 0.0);
+                float movingSpecular = pow(max(dot(surfaceNormal,
+                    normalize(vec3(-0.18 + finFlutter * 0.08, 0.32, 0.93))), 0.0), 14.0);
+                vHighlight = 0.58 + diffuse * 0.42 + movingSpecular * 0.34;
+                vMembrane = clamp(max(finWeight, tailWeight * 0.82), 0.0, 1.0);
             }
         """
 
@@ -833,6 +871,7 @@ private class AquariumEngine {
             precision mediump float;
             in vec2 vLocal;
             in float vHighlight;
+            in float vMembrane;
             out vec4 fragColor;
             uniform float uSeed;
             uniform float uAlpha;
@@ -860,8 +899,14 @@ private class AquariumEngine {
                     sin(vLocal.x * 8.0 - uSeed * 2.3) + sin(vLocal.y * 11.0));
                 color = mix(color, uAccentColor, accentPatch * 0.68);
                 color *= clamp(vHighlight, 0.62, 1.18);
-                float fin = 1.0 - smoothstep(0.18, 0.35, abs(vLocal.y));
-                float alpha = mix(uAlpha * 0.68, uAlpha, fin);
+                float membraneRibs = 0.5 + 0.5 * sin(
+                    vLocal.x * 21.0 + abs(vLocal.y) * 31.0 + uSeed
+                );
+                color = mix(color, uBaseColor + vec3(0.16, 0.20, 0.22),
+                            vMembrane * (0.16 + membraneRibs * 0.16));
+                color += vec3(0.22, 0.34, 0.40) *
+                         vMembrane * membraneRibs * max(vHighlight - 0.72, 0.0);
+                float alpha = mix(uAlpha, uAlpha * (0.48 + membraneRibs * 0.16), vMembrane);
                 fragColor = vec4(color, alpha);
             }
         """
