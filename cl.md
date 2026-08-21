@@ -1079,6 +1079,33 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.36 - 2026-08-21
+
+### 主题
+修复全局键盘组合提示初始化崩溃，并完成提示文字居中和白色视觉收口。
+
+### 过程
+- 63 在 `e1d14853` 显示全局键盘时崩溃；17:39:45 的 `AndroidRuntime` 明确记录 `DesktopKeyboard.getTextKeys()` 在构造阶段抛出 `NullPointerException`。
+- 根因是 `init` 块调用 `configureHeldModifierKeys()` 时访问了源码顺序更靠后的 `textKeys by lazy` 委托；此时委托字段本身尚未初始化，不是 lazy 计算内容为空，也与 Android 12、GPU 或水族 Shader 无关。
+- 修复版先在 63 成功进入全局键盘并保持进程存活，再在 62 对最终视觉版执行普通键盘→全局键盘、Ctrl 长按、Ctrl 松开的完整截图回归。
+
+### 修改
+- 构造阶段的修饰键绑定改为直接遍历已创建的 `allViews.filterIsInstance<TextKeyView>()`，不再访问后初始化的 lazy 属性；正常挂载后的状态更新仍复用缓存 `textKeys`。
+- 组合功能提示增加 `Gravity.CENTER`，确保每段文字在所属键帽内位于主字符下方并水平居中。
+- 提示色由浅蓝调整为与主键体系一致的白色 `#F4F8FC`，仍以 8.5dp 小字号保持主次层级。
+
+### 验证
+- `:app:compileReleaseKotlin` 和完整 `./scripts/assemble-release-local.sh` 均成功，只构建 Release。
+- 最终 Release `versionName=e5ec4f17`、`versionCode=102`；APK SHA-256 为 `89cd6861c6b3f7256c0e83f47b9b76b88d79785be13e2584200c1a8a6d9b673e`。
+- 63、62 覆盖安装均返回 `Success`；63 的修复中间版成功显示全局键盘且无新增退出记录，随后 63 的整机网络变为不可达，无法完成最终白色版截图。
+- 62 最终版实测：普通键盘正常；进入全局键盘无崩溃，进程 PID 8044 持续存活；Ctrl 按住显示白色居中提示，松开后提示全部取消并恢复原键帽；日志只存在 17:40:08 旧故障版历史堆栈，没有最终版新增 FATAL。
+
+### 待办
+- 63 恢复网络后补查 `ApplicationExitInfo` 和最终版截图；当前无法从“主机不可达”判断是设备重启、网络断连或 ADB 服务异常，不能把网络故障归因为输入法。
+- 继续由用户验证 Windows/macOS 前台应用对真实组合键的具体解释；提示语义是通用约定，不保证所有应用完全一致。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

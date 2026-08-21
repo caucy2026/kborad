@@ -1,7 +1,7 @@
 # KBoard 摸鱼水族键盘可复刻设计规范
 
 > 文档状态：可交付 / 可复刻  
-> 对应源码版本：`e1d14853`
+> 对应源码版本：`e5ec4f17`
 > 目标设备基线：Android 12、arm64-v8a、Mali-G52、OpenGL ES 3.2、1920×1280  
 > 目标效果：全局键盘下方是一整块沉浸式池塘；金鱼依靠尾鳍和胸鳍真实游动，触摸后争先恐后游向手指，滑动时持续跟随，松手后散开并恢复巡游、跟随和玩耍；触点产生轻微非圆涟漪和一次真实水滴声；持续渲染稳定在 30Hz。
 
@@ -9,11 +9,11 @@
 
 若项目也是 Android View + OpenGL ES，最可靠的复刻方法不是重新估算参数，而是复制下列源码与资源，再按第 3 节接入。本文后续章节解释每个参数为什么存在，便于移植到 Compose、Flutter Texture、Qt、Unity 原生插件或其他 GLES 容器。
 
-| 文件 | 用途 | SHA-256（`e1d14853`） |
+| 文件 | 用途 | SHA-256（`e5ec4f17`） |
 |---|---|---|
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/aquarium/DesktopAquariumView.kt` | EGL、30Hz 渲染线程、水面 Shader、鱼体网格、鱼群行为和水动力 | `e8fb548b74ead4abdaf64b7efab53b3be623461adaf4bd29c50def02cf0dbfb4` |
-| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/DesktopKeyboard.kt` | 水族层和原生按键层组合、触摸观察、底部水域、组合键提示映射 | `60b495f5ebd8e911050d27d2cf6d9c130da735d7a8967a7ef8f626c47f4d0b18` |
-| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyView.kt` | 半透明景深键帽、按压行程、无圆形 Ripple、稳定提示层 | `1b5984d9e3b8bcf381cbdb5da2ece3e1d6d1ce09c0b3293e1636e11e573a279d` |
+| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/DesktopKeyboard.kt` | 水族层和原生按键层组合、触摸观察、底部水域、组合键提示映射 | `a92af8ea3e1f69ec32c00baf88c78dbd379554d34fe3a98c3ed901b75bacece3` |
+| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyView.kt` | 半透明景深键帽、按压行程、无圆形 Ripple、稳定提示层 | `6e9a5bc1b48d04fe5539f702dfb381c5a45795fdadecf50dafc072ab4b10cd76` |
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyDefPreset.kt` | 全局修饰键的按住式定义 | `e6b8b09a074c47cab241dd6fef70a0f864e5268d438132786ab8c0c868a5751e` |
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyDrawable.kt` | 键帽分层渐变、描边和透明度 | 以同一提交为准 |
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/data/InputFeedbacks.kt` | SoundPool 预加载、单次水滴播放和音量控制 | `eb3f55664b0ce829d131e946e82b4b59103b07c4141ae5260ad8c080a657d318` |
@@ -420,6 +420,8 @@ mat2(cosH, sinH, -sinH, cosH) * local.xy
 - 用 `setLayoutStableText()` 改变绘制内容；
 - 用 `alpha=0/1` 隐藏或显示；
 - 把主字符向上平移固定 7dp，松开后回到 0。
+
+第二行使用 8.5dp 白色 `#F4F8FC` 和 `Gravity.CENTER`，必须在当前键帽主字符下方水平居中。构造阶段绑定修饰键时直接遍历已经生成的 `allViews`；不要访问声明顺序位于 `init` 之后的 lazy 委托，否则其委托字段尚未初始化，会在第一次显示全局键盘时崩溃。
 
 禁止在按压时创建/删除 View、切换 `visibility`、更改 LayoutParams 或调用普通 `setText()`。提示层只由 `DesktopKeyboard` 使用，所以普通键盘、数字键盘、候选栏和语音流程不会变化。
 

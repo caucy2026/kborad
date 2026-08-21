@@ -167,6 +167,11 @@ V1.27 不再让目标点直接控制位置或朝向。每帧固定经过以下�
 - 每个全局文字键预创建一个固定测量的第二行提示层。按压期间只修改稳定绘制文本、alpha 和主字符 translation；不得动态 add/remove、切换 visibility 或 requestLayout。
 - 提示只是跨应用通用语义，输入链仍发送真实 modifier + key；前台 Windows/macOS 应用保留最终解释权。普通键盘不创建或更新这套提示。
 
+### V1.36 初始化与视觉约束
+
+- 不得在 Kotlin 构造 `init` 块中访问声明顺序更靠后的 lazy 委托；构造阶段直接遍历已生成的 View，运行期才使用缓存集合。否则 Release/R8 下显示全局键盘会在 lazy 委托字段尚未赋值时 NPE。
+- 第二行功能提示使用 `Gravity.CENTER`、8.5dp、`#F4F8FC`，固定在所属键帽主字符下方中央。按住和松开仍只修改稳定绘制文字、alpha 和 translation，不重新布局。
+
 ## 验收
 
 - 只使用签名 Release APK 安装到 63，不安装 Debug。
