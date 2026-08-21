@@ -706,41 +706,47 @@ private class AquariumEngine {
             void main() {
                 vec2 uv = vUv;
                 float aspect = uResolution.x / max(uResolution.y, 1.0);
-                float flowA = sin((uv.x * 8.0 + uv.y * 5.0) + uTime * 0.52);
-                float flowB = sin((uv.x * -11.0 + uv.y * 7.0) + uTime * 0.39);
-                float caustic = smoothstep(0.58, 0.98, 0.5 + 0.25 * flowA + 0.25 * flowB);
-                vec3 deep = vec3(0.012, 0.075, 0.14);
-                vec3 shallow = vec3(0.018, 0.22, 0.30);
-                vec3 color = mix(deep, shallow, uv.y * 0.72 + caustic * 0.10);
-                float rippleLight = 0.0;
-                float rippleShadow = 0.0;
+                vec2 waveSlope = vec2(0.0);
+                float waveHeight = 0.0;
+                float waveEnergy = 0.0;
                 for (int i = 0; i < 4; ++i) {
                     float age = uTime - uRipples[i].z;
                     vec2 delta = uv - uRipples[i].xy;
                     delta.x *= aspect;
-                    float distanceFromTouch = length(delta);
+                    float rawDistance = max(length(delta), 0.001);
                     float angle = atan(delta.y, delta.x);
-                    float angularWarp = sin(angle * 5.0 + age * 3.7 + uRipples[i].x * 9.0) * 0.018 +
-                                        sin(angle * 11.0 - age * 2.4 + uRipples[i].y * 7.0) * 0.008;
-                    float surfaceWarp = sin(delta.x * 13.0 + delta.y * 9.0 + uTime * 1.6) * 0.006;
-                    float warpedDistance = distanceFromTouch +
-                        (angularWarp + surfaceWarp) * (1.0 - smoothstep(0.08, 0.86, distanceFromTouch));
-                    float front = age * 0.43;
-                    float distanceToFront = warpedDistance - front;
-                    float packet = exp(-abs(distanceToFront) * 8.5) *
-                                   (1.0 - smoothstep(0.72, 1.28, warpedDistance));
-                    float carrier = sin(distanceToFront * 76.0 +
-                                        sin(angle * 3.0 + age * 2.0) * 0.9);
-                    float secondary = sin(distanceToFront * 43.0 - angle * 2.0 + age * 1.4) * 0.34;
-                    float touchGlow = exp(-distanceFromTouch * 34.0) *
-                                      (1.0 - smoothstep(0.0, 0.34, age));
-                    float alive = step(0.0, age) * (1.0 - smoothstep(0.72, 1.68, age));
-                    float wave = (carrier + secondary) * packet * alive;
-                    rippleLight += max(wave, 0.0) + touchGlow * alive;
-                    rippleShadow += max(-wave, 0.0);
+                    float edgeVariation = sin(angle * 7.0 + uRipples[i].x * 8.0) * 0.005 +
+                                          sin(angle * 13.0 - uRipples[i].y * 9.0) * 0.0025;
+                    float distanceFromTouch = rawDistance + edgeVariation;
+                    float waveFront = age * 0.34;
+                    float wake = waveFront - distanceFromTouch;
+                    float arrived = smoothstep(-0.018, 0.026, wake);
+                    float lifetime = step(0.0, age) *
+                                     (1.0 - smoothstep(1.18, 1.82, age));
+                    float damping = exp(-max(wake, 0.0) * 3.3) * exp(-age * 0.72);
+                    float envelope = arrived * lifetime * damping;
+                    float phase = wake * 64.0;
+                    float height = sin(phase) * envelope;
+                    vec2 radial = delta / rawDistance;
+                    waveHeight += height;
+                    waveEnergy += abs(height);
+                    waveSlope += radial * cos(phase) * envelope;
                 }
-                color += vec3(0.20, 0.74, 0.92) * rippleLight * 0.43;
-                color -= vec3(0.02, 0.11, 0.16) * rippleShadow * 0.38;
+
+                vec2 refractedUv = clamp(uv + waveSlope * vec2(0.0055, 0.0080), 0.0, 1.0);
+                float flowA = sin((refractedUv.x * 8.0 + refractedUv.y * 5.0) + uTime * 0.52);
+                float flowB = sin((refractedUv.x * -11.0 + refractedUv.y * 7.0) + uTime * 0.39);
+                float caustic = smoothstep(0.58, 0.98, 0.5 + 0.25 * flowA + 0.25 * flowB);
+                vec3 deep = vec3(0.012, 0.075, 0.14);
+                vec3 shallow = vec3(0.018, 0.22, 0.30);
+                vec3 color = mix(deep, shallow, refractedUv.y * 0.72 + caustic * 0.12);
+                vec3 waterNormal = normalize(vec3(-waveSlope.x * 0.72, -waveSlope.y * 0.72, 1.0));
+                vec3 lightDirection = normalize(vec3(-0.38, 0.46, 0.80));
+                float waveHighlight = pow(max(dot(waterNormal, lightDirection), 0.0), 18.0);
+                float crest = max(waveHeight, 0.0);
+                float trough = max(-waveHeight, 0.0);
+                color += vec3(0.30, 0.78, 0.92) * (waveHighlight * waveEnergy * 0.72 + crest * 0.10);
+                color -= vec3(0.02, 0.10, 0.15) * trough * 0.14;
                 float vignette = 1.0 - smoothstep(0.20, 1.18, length((uv - 0.5) * vec2(1.0, 0.74)));
                 color *= 0.72 + vignette * 0.28;
                 fragColor = vec4(color, 1.0);
