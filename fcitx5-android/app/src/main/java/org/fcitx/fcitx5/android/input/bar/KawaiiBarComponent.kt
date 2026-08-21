@@ -302,6 +302,11 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     fun setDesktopKeyboardMode(enabled: Boolean) {
         desktopKeyboardMode = enabled
         idleUi.setDesktopQuietMode(enabled)
+        if (enabled) {
+            // Build the ASR client while global mode is entering, not on the first voice DOWN.
+            // This keeps Handler/OkHttp initialization out of the first interaction frame.
+            asrClient.state
+        }
         if (!enabled) {
             desktopVoiceTranscript.text = ""
             desktopVoiceTranscript.alpha = 0f
@@ -481,12 +486,19 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 voiceCommitJob?.cancel()
                 voiceCommitJob = service.lifecycleScope.launch {
                     delay(VOICE_FINAL_PREVIEW_MS)
-                    service.commitVoiceComposing(text)
+                    if (desktopKeyboardMode) {
+                        // Global mode must not mutate the target editor while listening: some
+                        // adjustPan clients reposition their whole surface on the first composing
+                        // update, which looks like the keyboard zoomed. Commit corrected final once.
+                        service.commitText(text)
+                    } else {
+                        service.commitVoiceComposing(text)
+                    }
                     hideVoiceFeedback()
                 }
             },
             onError = { message ->
-                service.cancelVoiceComposing()
+                cancelVoiceEditorPreview()
                 hideVoiceFeedback()
                 Toast.makeText(
                     context,
@@ -495,10 +507,14 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 ).show()
             },
             onPartial = { text ->
-                service.updateVoiceComposing(text)
+                if (!desktopKeyboardMode) service.updateVoiceComposing(text)
                 showVoiceFeedback(text)
             }
         )
+    }
+
+    private fun cancelVoiceEditorPreview() {
+        if (!desktopKeyboardMode) service.cancelVoiceComposing()
     }
 
     private fun showVoiceFeedback(text: CharSequence) {
@@ -563,7 +579,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     }
                     // A new press supersedes an uncommitted preview from the previous session,
                     // but does not disturb the editor until the hold threshold is actually met.
-                    service.cancelVoiceComposing()
+                    cancelVoiceEditorPreview()
                     showVoiceFeedback(
                         context.getString(R.string.voice_input_listening)
                     )
@@ -571,7 +587,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     voiceStartJob = service.lifecycleScope.launch {
                         delay(VOICE_HOLD_START_DELAY_MS)
                         if (voicePressActive) {
-                            service.beginVoiceComposing()
+                            if (!desktopKeyboardMode) service.beginVoiceComposing()
                             asrClient.start()
                         }
                         voiceStartJob = null
@@ -586,7 +602,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     voiceStartJob = null
                     when (asrClient.state) {
                         IflytekAsrClient.State.Idle -> {
-                            service.cancelVoiceComposing()
+                            cancelVoiceEditorPreview()
                             hideVoiceFeedback()
                         }
                         IflytekAsrClient.State.Starting -> {
@@ -594,7 +610,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                             // audio to calibrate. End cleanly instead of leaving a permanent
                             // calibration label after stop() cancels a Starting session.
                             asrClient.cancel()
-                            service.cancelVoiceComposing()
+                            cancelVoiceEditorPreview()
                             hideVoiceFeedback()
                         }
                         IflytekAsrClient.State.Listening,
@@ -614,7 +630,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     voiceStartJob?.cancel()
                     voiceStartJob = null
                     asrClient.cancel()
-                    service.cancelVoiceComposing()
+                    cancelVoiceEditorPreview()
                     hideVoiceFeedback()
                 }
             }
@@ -850,7 +866,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         voiceStartJob?.cancel()
         voiceCommitJob = null
         voiceStartJob = null
-        service.cancelVoiceComposing()
+        cancelVoiceEditorPreview()
         hideVoiceFeedback()
         voicePressActive = false
         shouldShowVoiceInput = !capFlags.has(CapabilityFlag.Password)
