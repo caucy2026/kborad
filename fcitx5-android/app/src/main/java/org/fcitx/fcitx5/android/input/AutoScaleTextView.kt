@@ -53,6 +53,25 @@ class AutoScaleTextView @JvmOverloads constructor(
     private var baselineY = 0.0f
     private var textScaleX = 1.0f
     private var textScaleY = 1.0f
+    private var layoutStableText: String? = null
+    private var layoutStableCharacterColors: IntArray? = null
+    private val drawTextBounds = Rect()
+
+    /**
+     * Changes only what is painted, preserving this view's measured size. This is useful for
+     * keyboard state labels: TextView.setText() requests a parent layout even when both labels
+     * occupy the same fixed key, which can make an adjustPan client visibly move.
+     */
+    fun setLayoutStableText(displayText: String, characterColors: IntArray? = null) {
+        if (layoutStableText == displayText &&
+            layoutStableCharacterColors?.contentEquals(characterColors) != false &&
+            (layoutStableCharacterColors != null) == (characterColors != null)
+        ) return
+        layoutStableText = displayText
+        layoutStableCharacterColors = characterColors?.copyOf()
+        needsCalculateTransform = true
+        invalidate()
+    }
 
     override fun setText(charSequence: CharSequence?, bufferType: BufferType) {
         if (charSequence == null || !text.contentEquals(charSequence)) {
@@ -117,9 +136,20 @@ class AutoScaleTextView @JvmOverloads constructor(
     private fun calculateTransform(viewWidth: Int, viewHeight: Int) {
         val contentWidth: Int = viewWidth - paddingLeft - paddingRight
         val contentHeight: Int = viewHeight - paddingTop - paddingBottom
-        measureTextBounds()
-        val textLeft: Float = textBounds.left.toFloat()
-        val textWidth: Float = textBounds.width().toFloat()
+        val displayText = layoutStableText ?: text.toString()
+        paint.getFontMetrics(fontMetrics)
+        if (Character.codePointCount(displayText, 0, displayText.length) == 1) {
+            paint.getTextBounds(displayText, 0, displayText.length, drawTextBounds)
+        } else {
+            drawTextBounds.set(
+                0,
+                floor(fontMetrics.top).toInt(),
+                ceil(paint.measureText(displayText)).toInt(),
+                ceil(fontMetrics.bottom).toInt()
+            )
+        }
+        val textLeft: Float = drawTextBounds.left.toFloat()
+        val textWidth: Float = drawTextBounds.width().toFloat()
         val textTop: Float = fontMetrics.top
         val textHeight: Float = fontMetrics.bottom - fontMetrics.top
         if (textWidth > contentWidth) {
@@ -189,12 +219,24 @@ class AutoScaleTextView @JvmOverloads constructor(
             needsCalculateTransform = false
         }
         val paint = paint
-        paint.color = currentTextColor
+        val displayText = layoutStableText ?: text.toString()
+        val characterColors = layoutStableCharacterColors
         canvas.withSave {
             translate(scrollX.toFloat(), scrollY.toFloat())
             translate(baselineX, baselineY)
             scale(textScaleX, textScaleY)
-            drawText(text.toString(), 0.0f, 0.0f, paint)
+            if (characterColors == null || characterColors.size != displayText.length) {
+                paint.color = currentTextColor
+                drawText(displayText, 0.0f, 0.0f, paint)
+            } else {
+                var x = 0f
+                displayText.forEachIndexed { index, character ->
+                    val glyph = character.toString()
+                    paint.color = characterColors[index]
+                    drawText(glyph, x, 0.0f, paint)
+                    x += paint.measureText(glyph)
+                }
+            }
         }
     }
 

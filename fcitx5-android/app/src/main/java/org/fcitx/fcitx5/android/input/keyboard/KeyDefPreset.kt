@@ -346,7 +346,9 @@ open class SpaceKey(percentWidth: Float = 0f) : KeyDef(
 
 class DesktopSpaceKey(percentWidth: Float) : KeyDef(
     Appearance.Text(
-        displayText = " ",
+        // Reserve a stable label width. DesktopKeyboard changes only the painted text when the
+        // active language changes, avoiding a TextView requestLayout on the whole IME hierarchy.
+        displayText = "English",
         textSize = 15f,
         percentWidth = percentWidth,
         border = Border.On,

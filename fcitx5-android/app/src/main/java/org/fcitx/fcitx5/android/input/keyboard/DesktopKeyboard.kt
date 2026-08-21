@@ -7,9 +7,6 @@ package org.fcitx.fcitx5.android.input.keyboard
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.style.ForegroundColorSpan
 import android.view.MotionEvent
 import android.view.View
 import androidx.constraintlayout.widget.ConstraintLayout
@@ -109,6 +106,7 @@ class DesktopKeyboard private constructor(
         private const val DESKTOP_DECK_COLOR = 0xFF061827.toInt()
         private const val DESKTOP_OPERATION_WATER_HEIGHT_DP = 44
         private const val DESKTOP_ACTIVE_LANGUAGE_COLOR = 0xFF4285F4.toInt()
+        private const val DESKTOP_KEY_TEXT_COLOR = 0xFFF4F8FC.toInt()
 
         private fun Context.dp(value: Int) =
             (value * resources.displayMetrics.density).roundToInt()
@@ -153,7 +151,7 @@ class DesktopKeyboard private constructor(
 
         private fun languageKey(width: Float) = KeyDef(
             KeyDef.Appearance.Text(
-                displayText = "英中",
+                displayText = "中/英",
                 textSize = 15f,
                 percentWidth = width,
                 variant = KeyDef.Appearance.Variant.Alternative,
@@ -219,7 +217,7 @@ class DesktopKeyboard private constructor(
                 shiftedSymbolKey("/", "?", 1f / 15f),
                 DesktopModifierKey("Shift", KeyState.Shift, 2.8f / 15f)
             ),
-            // Row 5: Ctrl Alt 英中 ──SPACE── ⌘ ← [↑/↓] →
+            // Row 5: Ctrl Alt 中/英 ──SPACE── ⌘ ← [↑/↓] →
             listOf(
                 DesktopModifierKey("Ctrl", KeyState.Ctrl, 2.2f / 18.3f),
                 DesktopModifierKey("Alt", KeyState.Alt, 1.6f / 18.3f),
@@ -323,17 +321,19 @@ class DesktopKeyboard private constructor(
             currentImeName.contains("zh", ignoreCase = true)
         val langLabel = if (chineseActive) "拼 音" else "English"
         findViewById<View>(R.id.button_space)?.let { space ->
-            (space as? TextKeyView)?.mainText?.text = langLabel
+            (space as? TextKeyView)?.mainText?.setLayoutStableText(langLabel)
         }
         textKeys.firstOrNull { key ->
-            (key.def as? KeyDef.Appearance.Text)?.displayText == "英中"
-        }?.mainText?.text = SpannableString("英中").apply {
-            val activeIndex = if (chineseActive) 1 else 0
-            setSpan(
-                ForegroundColorSpan(DESKTOP_ACTIVE_LANGUAGE_COLOR),
-                activeIndex,
-                activeIndex + 1,
-                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            (key.def as? KeyDef.Appearance.Text)?.displayText == "中/英"
+        }?.mainText?.let { languageText ->
+            val label = if (chineseActive) "中/英" else "英/中"
+            languageText.setLayoutStableText(
+                label,
+                intArrayOf(
+                    DESKTOP_ACTIVE_LANGUAGE_COLOR,
+                    DESKTOP_KEY_TEXT_COLOR,
+                    DESKTOP_KEY_TEXT_COLOR
+                )
             )
         }
     }
