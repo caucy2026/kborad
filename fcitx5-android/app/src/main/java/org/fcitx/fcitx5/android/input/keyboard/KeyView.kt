@@ -458,7 +458,7 @@ open class TextKeyView(
     }
 
     private companion object {
-        const val DESKTOP_SHORTCUT_HINT_COLOR = 0xFFD8ECF6.toInt()
+        const val DESKTOP_SHORTCUT_HINT_COLOR = 0xFFF4F8FC.toInt()
     }
 }
 
