@@ -64,6 +64,7 @@ class DesktopKeyboard private constructor(
             it.physicalReleaseSoundEnabled = false
             it.onTouchDownFeedback = ::onAquariumKeyDown
         }
+        InputFeedbacks.prepareRippleSoundAsync()
     }
 
     private fun onAquariumKeyDown(view: View, x: Float, y: Float) {

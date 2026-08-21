@@ -696,11 +696,11 @@ private class AquariumEngine {
             void main() {
                 float patchNoise = sin(vLocal.x * 13.0 + uSeed) +
                                    sin(vLocal.y * 18.0 - uSeed * 1.7) * 0.72;
-                float patch = smoothstep(0.20, 0.82, patchNoise);
+                float koiPatch = smoothstep(0.20, 0.82, patchNoise);
                 vec3 pearl = vec3(0.93, 0.96, 0.97);
                 vec3 vermilion = vec3(1.0, 0.16, 0.055);
                 vec3 ink = vec3(0.055, 0.075, 0.095);
-                vec3 color = mix(pearl, vermilion, patch);
+                vec3 color = mix(pearl, vermilion, koiPatch);
                 float inkPatch = smoothstep(1.20, 1.78,
                     sin(vLocal.x * 8.0 - uSeed * 2.3) + sin(vLocal.y * 11.0));
                 color = mix(color, ink, inkPatch * 0.72);
