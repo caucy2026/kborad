@@ -614,9 +614,20 @@ private class AquariumEngine {
             var desiredSpeed = f.cruiseSpeed
 
             if (feeding) {
-                val offsetAngle = f.seed * 2.1f
-                targetX = attractionX + cos(offsetAngle) * 0.060f
-                targetY = attractionY + sin(offsetAngle) * 0.050f
+                // Gather around the finger instead of assigning nearly the same destination to
+                // every fish. Golden-angle slots plus individual radii keep bodies and long tails
+                // separated; near an edge the offset is reflected back into the visible pond so
+                // clamping cannot collapse half the school onto one line.
+                val offsetAngle = index * FEED_GOLDEN_ANGLE + f.seed * 0.37f
+                val offsetRadius = 0.14f + (index % 4) * 0.032f + (f.seed % 1f) * 0.025f
+                var offsetX = cos(offsetAngle) * offsetRadius
+                var offsetY = sin(offsetAngle) * offsetRadius * 0.76f
+                if (attractionX < -0.70f) offsetX = abs(offsetX)
+                if (attractionX > 0.70f) offsetX = -abs(offsetX)
+                if (attractionY < -0.68f) offsetY = abs(offsetY)
+                if (attractionY > 0.66f) offsetY = -abs(offsetY)
+                targetX = attractionX + offsetX
+                targetY = attractionY + offsetY
                 desiredSpeed = 0.80f + (f.seed % 1f) * 0.12f
             } else if (scattering) {
                 targetX = scatterTargetX[index]
@@ -1269,6 +1280,7 @@ private class AquariumEngine {
         const val MAX_RIPPLES = 4
         const val ATTRACTION_SECONDS = 4.6f
         const val TOUCH_EVENT_TIMEOUT_SECONDS = 1.0f
+        const val FEED_GOLDEN_ANGLE = 2.3999632f
         const val SCATTER_SECONDS = 3.4f
         const val FEED_REPORT_SECONDS = 0.75f
         const val PERFORMANCE_REPORT_NS = 5_000_000_000L

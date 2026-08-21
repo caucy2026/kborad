@@ -7,6 +7,9 @@ package org.fcitx.fcitx5.android.input.keyboard
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.MotionEvent
 import android.view.View
 import androidx.constraintlayout.widget.ConstraintLayout
@@ -105,6 +108,7 @@ class DesktopKeyboard private constructor(
         private const val LayoutWidthInKeyUnits = 15f
         private const val DESKTOP_DECK_COLOR = 0xFF061827.toInt()
         private const val DESKTOP_OPERATION_WATER_HEIGHT_DP = 44
+        private const val DESKTOP_ACTIVE_LANGUAGE_COLOR = 0xFF4285F4.toInt()
 
         private fun Context.dp(value: Int) =
             (value * resources.displayMetrics.density).roundToInt()
@@ -149,8 +153,8 @@ class DesktopKeyboard private constructor(
 
         private fun languageKey(width: Float) = KeyDef(
             KeyDef.Appearance.Text(
-                displayText = "中/英",
-                textSize = 14f,
+                displayText = "英中",
+                textSize = 15f,
                 percentWidth = width,
                 variant = KeyDef.Appearance.Variant.Alternative,
                 border = KeyDef.Appearance.Border.On
@@ -215,7 +219,7 @@ class DesktopKeyboard private constructor(
                 shiftedSymbolKey("/", "?", 1f / 15f),
                 DesktopModifierKey("Shift", KeyState.Shift, 2.8f / 15f)
             ),
-            // Row 5: Ctrl Alt 中/英 ──SPACE── ⌘ ← [↑/↓] →
+            // Row 5: Ctrl Alt 英中 ──SPACE── ⌘ ← [↑/↓] →
             listOf(
                 DesktopModifierKey("Ctrl", KeyState.Ctrl, 2.2f / 18.3f),
                 DesktopModifierKey("Alt", KeyState.Alt, 1.6f / 18.3f),
@@ -242,6 +246,7 @@ class DesktopKeyboard private constructor(
     private val modifierStates = linkedSetOf<KeyState>()
     private val textKeys by lazy { allViews.filterIsInstance<TextKeyView>() }
     private var currentImeName: String = ""
+    private var currentImeLanguageCode: String = ""
 
     override fun onAction(action: KeyAction, source: KeyActionListener.Source) {
         when (action) {
@@ -304,19 +309,32 @@ class DesktopKeyboard private constructor(
 
     override fun onInputMethodUpdate(ime: InputMethodEntry) {
         currentImeName = ime.uniqueName
+        currentImeLanguageCode = ime.languageCode
         updateSpaceLanguageLabel()
     }
 
     private fun updateSpaceLanguageLabel() {
-        val langLabel = if (currentImeName.contains("pinyin", ignoreCase = true) ||
+        val chineseActive = currentImeLanguageCode.startsWith("zh", ignoreCase = true) ||
+            currentImeName.contains("pinyin", ignoreCase = true) ||
             currentImeName.contains("chinese", ignoreCase = true) ||
             currentImeName.contains("shuangpin", ignoreCase = true) ||
             currentImeName.contains("wubi", ignoreCase = true) ||
             currentImeName.contains("cangjie", ignoreCase = true) ||
             currentImeName.contains("zh", ignoreCase = true)
-        ) "拼 音" else "English"
+        val langLabel = if (chineseActive) "拼 音" else "English"
         findViewById<View>(R.id.button_space)?.let { space ->
             (space as? TextKeyView)?.mainText?.text = langLabel
+        }
+        textKeys.firstOrNull { key ->
+            (key.def as? KeyDef.Appearance.Text)?.displayText == "英中"
+        }?.mainText?.text = SpannableString("英中").apply {
+            val activeIndex = if (chineseActive) 1 else 0
+            setSpan(
+                ForegroundColorSpan(DESKTOP_ACTIVE_LANGUAGE_COLOR),
+                activeIndex,
+                activeIndex + 1,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
         }
     }
 
