@@ -227,6 +227,8 @@ class InputView(
         keyboardBottomPaddingLandscape,
     )
     private var desktopKeyboardMode = false
+    private var desktopHeightConfigurationKey = ""
+    private var lockedDesktopKeyboardHeightPx = 0
 
     private val floatingKeyboardOutline = object : ViewOutlineProvider() {
         override fun getOutline(view: View, outline: Outline) {
@@ -287,6 +289,21 @@ class InputView(
      */
     private val desktopKeyboardHeightPx: Int
         get() {
+            val configuration = resources.configuration
+            val configurationKey = buildString {
+                append(configuration.orientation)
+                append(':')
+                append(configuration.screenWidthDp)
+                append(':')
+                append(configuration.screenHeightDp)
+                append(':')
+                append(configuration.densityDpi)
+            }
+            if (configurationKey == desktopHeightConfigurationKey &&
+                lockedDesktopKeyboardHeightPx > 0
+            ) {
+                return lockedDesktopKeyboardHeightPx
+            }
             val displayWidth = resources.displayMetrics.widthPixels
             val displayHeight = resources.displayMetrics.heightPixels
             val contentWidth = displayWidth - dp(DESKTOP_SIDE_PADDING_DP * 2)
@@ -297,7 +314,11 @@ class InputView(
             )
             val minimum = displayHeight * DESKTOP_MIN_HEIGHT_PERCENT / 100
             val maximum = displayHeight * DESKTOP_MAX_HEIGHT_PERCENT / 100
-            return (rowsHeight + chromeHeight).roundToInt().coerceIn(minimum, maximum)
+            lockedDesktopKeyboardHeightPx = (rowsHeight + chromeHeight)
+                .roundToInt()
+                .coerceIn(minimum, maximum)
+            desktopHeightConfigurationKey = configurationKey
+            return lockedDesktopKeyboardHeightPx
         }
 
     @Keep

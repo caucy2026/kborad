@@ -142,7 +142,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             setTextColor(Color.WHITE)
             textSize = 18f
             setBackgroundColor(DESKTOP_VOICE_STATUS_BACKGROUND)
-            visibility = View.INVISIBLE
+            // Keep this overlay permanently measured. Voice feedback changes alpha only so the
+            // first press cannot request a new IME layout or move/resize the aquarium.
+            visibility = View.VISIBLE
+            alpha = 0f
         }
     }
 
@@ -301,8 +304,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         idleUi.setDesktopQuietMode(enabled)
         if (!enabled) {
             desktopVoiceTranscript.text = ""
-            desktopVoiceTranscript.visibility = View.INVISIBLE
-            barAnimator.visibility = View.VISIBLE
+            desktopVoiceTranscript.alpha = 0f
         }
         if (!enabled) {
             InputFeedbacks.setPhysicalKeyboardSoundSuppressed(false)
@@ -502,10 +504,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private fun showVoiceFeedback(text: CharSequence) {
         if (desktopKeyboardMode) {
             desktopVoiceTranscript.text = text
-            desktopVoiceTranscript.visibility = View.VISIBLE
-            // Overlay instead of changing the ViewAnimator child. INVISIBLE preserves the exact
-            // measured bar height, so the aquarium TextureView cannot resize or zoom.
-            barAnimator.visibility = View.INVISIBLE
+            // The opaque overlay is already measured above the candidate animator. Alpha is a
+            // draw property only and therefore cannot start a layout/insets animation.
+            desktopVoiceTranscript.alpha = 1f
         } else {
             idleUi.showVoiceTranscript(text)
         }
@@ -514,8 +515,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private fun hideVoiceFeedback() {
         if (desktopKeyboardMode) {
             desktopVoiceTranscript.text = ""
-            desktopVoiceTranscript.visibility = View.INVISIBLE
-            barAnimator.visibility = View.VISIBLE
+            desktopVoiceTranscript.alpha = 0f
         } else {
             idleUi.hideVoiceTranscript()
         }
