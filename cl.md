@@ -972,6 +972,29 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.32 - 2026-08-21
+
+### 主题
+消除全局键盘第一次按语音时仍出现的整体放大/位移动作，使进入全局模式后的键盘尺寸在语音前、中、后始终一致。
+
+### 过程
+- 读取用户刚完成首次语音操作后的 `.63` 日志，水族内部 Surface 在操作前后持续保持 `1080×451`、29.8–29.9 FPS，证明 GPU 缓冲本身没有变大；视觉变化来自第一次显示语音状态时内部控件切换 `VISIBLE/INVISIBLE` 后触发的外层重新布局或 Insets 动画。
+- 上一版虽然固定了候选栏根高度，但仍会在按下时隐藏候选 `ViewAnimator`、显示语音 `TextView`；Android 的 visibility 变化可以请求 layout，`InputView` 的布局监听随后会重新读取一次桌面高度。
+
+### 修改
+- 全局语音状态层从创建起就保持 `VISIBLE` 和完整测量尺寸，空闲时 `alpha=0`、语音时 `alpha=1`；候选 `ViewAnimator` 始终可见在其下方。语音全过程只改变绘制属性和文字，不再改变任何相关 View 的 visibility、尺寸或约束。
+- `InputView` 按 `orientation / screenWidthDp / screenHeightDp / densityDpi` 锁存一次全局键盘高度；同一屏幕配置内的候选更新、ASR 状态和普通 layout 回调只能复用同一高度，只有真实旋转或分辨率配置变化才重新计算。
+- 保持用户当前看到的较大全局键盘尺寸，不改变普通键盘高度偏好、普通候选栏、按键事件或 ASR 协议。
+
+### 验证
+- `:app:compileReleaseKotlin` 与完整 `./scripts/assemble-release-local.sh` 均成功；Lint Vital、R8、arm64 原生组件及 v1/v2 签名验证通过。
+- 正式 Release `versionName=f85c2c28`、`versionCode=102`，APK SHA-256 为 `46c8ad924e5818fd9cd401f0e7d9e6005021e921c41606fc226bde16e7e17e2e`；覆盖安装 `192.168.3.63:5555` 返回 `Success`。
+
+### 待办
+- 安装后未远程按语音，避免采集现场声音。用户需在 `.63` 重新打开全局键盘，比较出现时、第一次按下、识别中及松开后的键帽顶部位置；四个阶段应保持完全一致。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

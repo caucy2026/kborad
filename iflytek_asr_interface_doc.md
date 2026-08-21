@@ -462,6 +462,7 @@ adb logcat -d | grep -iE \
 - 达到按住阈值后调用 `beginVoiceComposing()`，partial 同时更新界面提示与 `updateVoiceComposing(text)`。final 必须调用 `commitVoiceComposing(correctedText)` 替换整个临时组合区域，错误、移动取消、短按和输入框切换必须调用 `cancelVoiceComposing()`。
 - `IflytekAsrClient.finish()` 会先发布 `Idle`，再把 final 投递到主线程。状态回调不能无条件在 `Idle` 清空文本；final、error 和显式取消路径应各自负责清理，避免 final 闪烁或消失。
 - 普通键盘仍可使用 `IdleUi` 展示同一组状态；固定全局覆盖层和水族触控只在 `desktopKeyboardMode` 启用。
+- 在 Android IME 中，子 View 即使尺寸相同，首次切换 `VISIBLE / INVISIBLE` 仍可能请求外层 layout 并触发 Insets 动画。需要绝对稳定的全局界面时，状态覆盖层应永久保持已测量的 `VISIBLE`，只用 `alpha` 显隐；候选子页也不要在 ASR 期间改变 visibility。
 
 ---
 
