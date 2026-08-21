@@ -35,7 +35,8 @@ class DesktopKeyboard private constructor(
         theme,
         Layout,
         compositionHeader,
-        KeyVisualMetrics(horizontalMarginDp = 2, verticalMarginDp = 2, radiusDp = 8f)
+        KeyVisualMetrics(horizontalMarginDp = 2, verticalMarginDp = 2, radiusDp = 8f),
+        (DESKTOP_OPERATION_WATER_HEIGHT_DP * context.resources.displayMetrics.density).roundToInt()
     ) {
 
     constructor(context: Context, theme: Theme) : this(
@@ -103,7 +104,7 @@ class DesktopKeyboard private constructor(
         const val Name = "Desktop"
         private const val LayoutWidthInKeyUnits = 15f
         private const val DESKTOP_DECK_COLOR = 0xFF061827.toInt()
-        private const val DESKTOP_OPERATION_WATER_HEIGHT_DP = 64
+        private const val DESKTOP_OPERATION_WATER_HEIGHT_DP = 44
 
         private fun Context.dp(value: Int) =
             (value * resources.displayMetrics.density).roundToInt()
@@ -147,8 +148,9 @@ class DesktopKeyboard private constructor(
         )
 
         private fun languageKey(width: Float) = KeyDef(
-            KeyDef.Appearance.Image(
-                src = R.drawable.ic_baseline_language_24,
+            KeyDef.Appearance.Text(
+                displayText = "中/英",
+                textSize = 14f,
                 percentWidth = width,
                 variant = KeyDef.Appearance.Variant.Alternative,
                 border = KeyDef.Appearance.Border.On
@@ -380,7 +382,10 @@ class DesktopKeyboard private constructor(
         compositionHeader.updateLayoutParams<LayoutParams> {
             height = compositionHeight
         }
-        setPadding(horizontalPadding, topPadding, horizontalPadding, bottomPadding)
+        // BaseKeyboard owns a real bottom constraint spacer. Padding alone is ignored by
+        // ConstraintLayout's parent-edge anchors on the V900 ROM and allowed row 6 to render
+        // underneath the operation rail.
+        setPadding(horizontalPadding, topPadding, horizontalPadding, 0)
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {

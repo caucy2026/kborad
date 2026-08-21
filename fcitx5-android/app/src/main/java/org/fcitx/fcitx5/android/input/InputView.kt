@@ -441,7 +441,13 @@ class InputView(
         kawaiiBar.setDesktopVoiceButton(desktopVoiceButton) { event ->
             keyboardWindow.onDesktopPondTouch(event)
         }
-        windowManager.view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        windowManager.view.addOnLayoutChangeListener { _, left, top, right, bottom,
+                                                       oldLeft, oldTop, oldRight, oldBottom ->
+            if (desktopKeyboardMode &&
+                (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)
+            ) {
+                refreshDesktopKeyboardHeight()
+            }
             updateDesktopCompositionPosition()
             updateDesktopOperationButtonPositions()
         }
@@ -502,7 +508,10 @@ class InputView(
     }
 
     fun setDesktopKeyboardMode(enabled: Boolean) {
-        if (desktopKeyboardMode == enabled) return
+        if (desktopKeyboardMode == enabled) {
+            if (enabled) refreshDesktopKeyboardHeight()
+            return
+        }
         desktopKeyboardMode = enabled
         kawaiiBar.setDesktopKeyboardMode(enabled)
         desktopOperationArea.visibility = if (enabled) VISIBLE else GONE
@@ -566,6 +575,15 @@ class InputView(
         updateKeyboardSize()
         updateDesktopCompositionPosition()
         updateDesktopOperationButtonPositions()
+    }
+
+    private fun refreshDesktopKeyboardHeight() {
+        if (!desktopKeyboardMode) return
+        val targetHeight = desktopKeyboardHeightPx
+        if (keyboardView.layoutParams.height == targetHeight) return
+        keyboardView.updateLayoutParams<LayoutParams> {
+            height = targetHeight
+        }
     }
 
     private fun updateFloatingKeyboardLayout() {
@@ -900,8 +918,8 @@ class InputView(
         const val FLOATING_HANDLE_HEIGHT_DP = 48
         const val FLOATING_HIDE_BUTTON_SIZE_DP = 48
         const val FLOATING_HIDE_BUTTON_OFFSET_DP = 12
-        const val DESKTOP_OPERATION_HEIGHT_DP = 64
-        const val DESKTOP_OPERATION_BUTTON_SIZE_DP = 56
+        const val DESKTOP_OPERATION_HEIGHT_DP = 44
+        const val DESKTOP_OPERATION_BUTTON_SIZE_DP = 40
         const val DESKTOP_PREEDIT_GAP_DP = 0
         const val DESKTOP_SIDE_PADDING_DP = 0
         const val DESKTOP_VERTICAL_INSET_DP = 20

@@ -48,7 +48,13 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     private val bar: KawaiiBarComponent by manager.must()
     private val returnKeyDrawable: ReturnKeyDrawableComponent by manager.must()
 
-    companion object : EssentialWindow.Key
+    companion object : EssentialWindow.Key {
+        // Keep the user's explicit desktop-mode choice across editor focus changes and the
+        // InputView recreation performed by Android during rotation. Process restart still
+        // returns to the normal keyboard, which avoids making a temporary mode permanent.
+        @Volatile
+        private var desktopModeRequested = false
+    }
 
     override val key: EssentialWindow.Key
         get() = KeyboardWindow
@@ -156,10 +162,14 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     }
 
     override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
-        val targetLayout = when (info.inputType and InputType.TYPE_MASK_CLASS) {
-            InputType.TYPE_CLASS_NUMBER -> NumberKeyboard.Name
-            InputType.TYPE_CLASS_PHONE -> NumberKeyboard.Name
-            else -> if (floatingMode) TextKeyboard.FloatingName else TextKeyboard.Name
+        val targetLayout = if (desktopModeRequested) {
+            DesktopKeyboard.Name
+        } else {
+            when (info.inputType and InputType.TYPE_MASK_CLASS) {
+                InputType.TYPE_CLASS_NUMBER -> NumberKeyboard.Name
+                InputType.TYPE_CLASS_PHONE -> NumberKeyboard.Name
+                else -> if (floatingMode) TextKeyboard.FloatingName else TextKeyboard.Name
+            }
         }
         switchLayout(targetLayout, remember = false)
     }
@@ -173,13 +183,16 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     }
 
     fun showDesktopKeyboard() {
+        desktopModeRequested = true
         switchLayout(DesktopKeyboard.Name, remember = false)
     }
 
     fun toggleDesktopKeyboard() {
         val target = if (currentKeyboardName == DesktopKeyboard.Name) {
+            desktopModeRequested = false
             if (floatingMode) TextKeyboard.FloatingName else TextKeyboard.Name
         } else {
+            desktopModeRequested = true
             DesktopKeyboard.Name
         }
         switchLayout(target, remember = false)

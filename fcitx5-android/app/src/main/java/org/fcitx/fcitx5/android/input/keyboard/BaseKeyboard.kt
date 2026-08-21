@@ -50,7 +50,8 @@ abstract class BaseKeyboard(
     protected val theme: Theme,
     private val keyLayout: List<List<KeyDef>>,
     private val headerView: View? = null,
-    private val keyVisualMetrics: KeyVisualMetrics? = null
+    private val keyVisualMetrics: KeyVisualMetrics? = null,
+    private val bottomInsetPx: Int = 0
 ) : ConstraintLayout(context) {
 
     var keyActionListener: KeyActionListener? = null
@@ -83,6 +84,7 @@ abstract class BaseKeyboard(
 
     private val bounds = Rect()
     private val keyRows: List<ConstraintLayout>
+    private val bottomInsetView: View? = if (bottomInsetPx > 0) View(context) else null
 
     /**
      * HashMap of [PointerId (Int)][MotionEvent.getPointerId] to [KeyView]
@@ -94,6 +96,12 @@ abstract class BaseKeyboard(
         headerView?.let {
             add(it, lParams(MATCH_PARENT, dp(48)) {
                 topOfParent()
+                centerHorizontally()
+            })
+        }
+        bottomInsetView?.let {
+            add(it, lParams(MATCH_PARENT, bottomInsetPx) {
+                bottomOfParent()
                 centerHorizontally()
             })
         }
@@ -148,7 +156,9 @@ abstract class BaseKeyboard(
                     headerView?.let(::below) ?: topOfParent()
                 }
                 else below(keyRows[index - 1])
-                if (index == keyRows.size - 1) bottomOfParent()
+                if (index == keyRows.size - 1) {
+                    bottomInsetView?.let(::above) ?: bottomOfParent()
+                }
                 else above(keyRows[index + 1])
                 centerHorizontally()
             })
