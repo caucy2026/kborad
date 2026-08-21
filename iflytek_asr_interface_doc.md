@@ -446,7 +446,7 @@ adb logcat -d | grep -iE \
 普通键盘与全局键盘使用同一个 ASR 会话状态机，界面时序固定为：
 
 1. `ACTION_DOWN` 立即显示“正在听，请继续说…”，但仍需达到 160ms 按住阈值才真正启动录音。
-2. `Starting / Listening` 保持该提示；收到 partial 后实时显示当前合并识别文本，partial 只用于预览，不能提前写入编辑器。
+2. `Starting / Listening` 保持该提示；收到 partial 后实时显示当前合并识别文本。普通键盘可用 composing 在编辑器内预览，全局键盘只在固定状态层预览，不能在识别过程中修改目标编辑器。
 3. `ACTION_UP` 结束音频并发送 `--end--`，界面进入“正在校准…”。移动超限、权限失败和离线检查仍按原取消路径处理。
 4. final 到达后预览 600ms，再通过 `commitText` 只提交一次并清理本次会话；不得同时走编辑器动作或重复提交。
 
@@ -459,10 +459,18 @@ adb logcat -d | grep -iE \
 
 - 不要假设候选栏当前一定显示 `IdleUi`。全局语音提示应覆盖在候选状态机外层的固定尺寸容器中；候选、标题和空闲子页继续留在原 `ViewAnimator`，语音状态层只覆盖显示，不能切换根视图尺寸。
 - 已处于 `Idle` 时不要为了开始新会话再次调用 `cancel()`；异步 `Idle` 回调可能清除同一事件中刚显示的按下提示。
-- 达到按住阈值后调用 `beginVoiceComposing()`，partial 同时更新界面提示与 `updateVoiceComposing(text)`。final 必须调用 `commitVoiceComposing(correctedText)` 替换整个临时组合区域，错误、移动取消、短按和输入框切换必须调用 `cancelVoiceComposing()`。
+- 普通键盘达到按住阈值后调用 `beginVoiceComposing()`，partial 同时更新界面提示与 `updateVoiceComposing(text)`。final 调用 `commitVoiceComposing(correctedText)` 替换整个临时组合区域，错误、移动取消、短按和输入框切换调用 `cancelVoiceComposing()`。
 - `IflytekAsrClient.finish()` 会先发布 `Idle`，再把 final 投递到主线程。状态回调不能无条件在 `Idle` 清空文本；final、error 和显式取消路径应各自负责清理，避免 final 闪烁或消失。
 - 普通键盘仍可使用 `IdleUi` 展示同一组状态；固定全局覆盖层和水族触控只在 `desktopKeyboardMode` 启用。
 - 在 Android IME 中，子 View 即使尺寸相同，首次切换 `VISIBLE / INVISIBLE` 仍可能请求外层 layout 并触发 Insets 动画。需要绝对稳定的全局界面时，状态覆盖层应永久保持已测量的 `VISIBLE`，只用 `alpha` 显隐；候选子页也不要在 ASR 期间改变 visibility。
+
+### 10.8 `adjustPan` 客户端与全局键盘 ASR 隔离（2026-08-21）
+
+- 判断“第一次按语音放大”不能只看截图。应同时核对 IME Insets/relayout、输入法 Surface 尺寸、目标应用窗口 soft-input mode 和第一次 InputConnection 变更时刻；若前三项稳定而客户端是 `adjustPan`，首个 composing 变更可能平移目标应用自身画面。
+- 全局键盘识别过程中不得调用 `beginVoiceComposing()` 或 `updateVoiceComposing()`。按下提示、partial、校准和 final 全部显示在永久测量的固定覆盖层，final 预览结束后再用 `commitText(correctedText)` 一次性提交。
+- 普通键盘没有沉浸式整屏视觉约束，继续保留 `begin/update/commitVoiceComposing`，因此仍能在编辑框内看到实时识别并用 final 整体纠正。两种模式共用同一个 ASR 会话、权限和错误处理，但编辑器预览策略不能强行统一。
+- 可在进入全局模式时只读一次 ASR 客户端状态完成对象预热，避免第一次 DOWN 帧承担 Handler 或网络客户端初始化；预热不得启动录音、连接 WebSocket 或请求权限。
+- 全局模式的取消路径只清理 ASR 会话和固定提示层，因为监听期没有创建编辑器组合区；不得为了“保险”调用 `cancelVoiceComposing()`，否则同样可能触发客户端 selection/composing 更新。
 
 ---
 

@@ -995,6 +995,33 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.33 - 2026-08-21
+
+### 主题
+依据 `.63` 第一次点击语音的完整日志，隔离全局键盘 ASR 与目标编辑器的实时组合文本，消除客户端 `adjustPan` 造成的视觉放大。
+
+### 过程
+- 对照首次语音按下前后日志确认：水族 Surface 始终为 `1080×451`，渲染维持 28.8–29.9 FPS；没有 IME Insets、窗口 relayout、Surface 重建或键盘高度变化，因此 V1.32 已锁住输入法自身几何。
+- 目标便签窗口使用 `adjustPan`。旧路径达到 160ms 阈值后立即调用 `beginVoiceComposing()`，partial 再持续改写 InputConnection；客户端第一次建立组合区时会平移自己的内容窗口，视觉上像全局键盘或整个画面突然放大。
+- 将普通键盘与全局键盘的编辑器预览策略分开：普通键盘保留实时组合文本和 final 整体纠正；全局键盘只在固定覆盖层显示相同实时 ASR 过程，识别期间不写目标编辑器。
+
+### 修改
+- 进入全局模式时预热 ASR 客户端，把 Handler/网络客户端惰性初始化移出第一次语音按下帧。
+- 全局模式不再调用 `beginVoiceComposing()`、`updateVoiceComposing()` 或 `cancelVoiceComposing()`；按下提示、partial、松开校准和 final 仍在永久测量的固定覆盖层展示。
+- 全局模式 final 预览 600ms 后通过 `commitText()` 一次性写入纠正结果；普通模式继续使用 `begin/update/commitVoiceComposing`，未改变原来的实时编辑器反馈和纠错闭环。
+- 权限检查、160ms 按住阈值、移动取消、离线预检、讯飞鉴权、WebSocket、鱼群触摸和普通键盘布局均未修改。
+
+### 验证
+- `:app:compileReleaseKotlin` 与完整 `./scripts/assemble-release-local.sh` 均成功；Lint Vital、R8 和 arm64 原生组件通过。
+- 正式 Release `versionName=e2d28913`、`versionCode=102`；APK v1/v2 签名有效，平台证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- APK 位于 `fcitx5-android/build/kboard.apk`，SHA-256 为 `85278f459789be6ce881e42befc6035de41ca2b234a1d728cdbe9e5b8a9879bc`；覆盖安装到 `192.168.3.63:5555` 返回 `Success`。
+
+### 待办
+- 遵循不远程采集现场音频的边界，本轮没有代替用户按语音键。用户需现场确认全局模式第一次按下不再发生客户端画面位移，同时检查 partial、校准和 final 一次性发送。
+- 全局模式刻意不把 partial 写进应用编辑框，以稳定 `adjustPan` 客户端；实时识别文字仍完整显示在输入法固定提示层。普通键盘仍保留编辑框内实时组合文本。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。
