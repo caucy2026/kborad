@@ -943,6 +943,35 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.31 - 2026-08-21
+
+### 主题
+修复全局键盘语音按下仍跳动、提示与 partial 不可见、final 未替换临时识别文本的问题，并让鱼群在语音键附近分散停留、全局中英键显示当前状态。
+
+### 过程
+- 普通键盘和全局键盘虽然共用 ASR 回调，但提示仍写入 `IdleUi`；当候选栏当前显示候选或标题子页时，`IdleUi` 处于未展示状态，因此全局按钮已收到事件却看不到“正在听”、partial 和校准文本。
+- 按下路径无条件调用 `asrClient.cancel()`，即使客户端本来已经是 `Idle` 也会异步再次发布 `Idle`；这个回调与刚显示的按下提示竞争并把它清掉。
+- 项目已有 `begin/update/commit/cancelVoiceComposing` 临时组合文本接口，但 ASR partial/final 只更新候选栏并直接 `commitText`，没有形成“实时临时文本—final 纠正替换—单次确认”的闭环。
+- 鱼群投喂目标只在触点周围约 `0.05–0.06` NDC 范围变化，目标设备上的鱼身和长尾明显大于该间隔；语音键又靠近底边，边界钳制进一步让多个目标重合。
+
+### 修改
+- `KawaiiBarComponent` 的根视图改为固定 `FrameLayout`，内部保留原候选 `ViewAnimator`，仅全局模式增加同尺寸语音状态覆盖层；显示/隐藏只切换内部 `INVISIBLE/VISIBLE`，不改变根高度、键盘约束或水族 Surface 尺寸。
+- 普通键盘继续使用原 `IdleUi`；全局键盘固定覆盖层显示按下提示、partial、校准和 final。`Idle` 状态不再抢先清空 final，取消、错误、短按和输入框重启分别负责自己的清理。
+- 达到原 160ms 按住阈值后才调用 `beginVoiceComposing()`；partial 同时调用 `updateVoiceComposing()`，松开显示“正在校准…”，final 预览 600ms 后用 `commitVoiceComposing()` 替换临时文本并只确认一次。权限、网络检查、移动取消、讯飞鉴权和 WebSocket 协议未改。
+- 鱼群使用黄金角分配、四层个体半径和屏幕边缘向内反射的目标点，在语音键附近约 `0.14–0.26` NDC 范围停留，不再完全叠到同一点。
+- 全局语言键由“中/英”改为“英中”；根据当前 `InputMethodEntry.languageCode/uniqueName`，当前生效的“英”或“中”使用 `#4285F4`，另一字符保持普通功能键文字色。切换动作仍为原 `LangSwitchAction`。
+
+### 验证
+- `:app:compileReleaseKotlin` 和完整 `./scripts/assemble-release-local.sh` 均成功，Lint Vital、R8、原生 arm64 组件和 APK 签名流程通过；项目没有定义 `:app:testReleaseUnitTest` 任务。
+- 最终 Release 包名 `org.fcitx.fcitx5.android`、`versionName=feca3b94`、`versionCode=102`、ABI `arm64-v8a`；v1/v2 签名有效，平台证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- APK 位于 `fcitx5-android/build/kboard.apk`，SHA-256 为 `f90251d76c7f4b47e95d209e84988fec29aecf86fe69af172d0a8a77a48d4915`；覆盖安装到 `192.168.3.63:5555` 返回 `Success`。设备确认默认输入法仍为主服务，近期日志未见 `FATAL EXCEPTION`。
+
+### 待办
+- 未远程按下语音键，避免在没有本轮明确音频授权的情况下采集并上传现场声音。全局状态覆盖层无尺寸变化已经由代码与 Release 构建确认，但“完全无视觉跳动”、partial 实时显示和 final 实际纠正仍需用户在 `.63` 现场完成一次普通/全局对照验收。
+- `Starting` 阶段尚未打开麦克风；若用户在鉴权完成前就松手，本次按住会干净取消，不显示伪校准结果。需要有效识别时应按住至提示期间完成说话再松开。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

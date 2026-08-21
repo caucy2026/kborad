@@ -455,6 +455,14 @@ adb logcat -d | grep -iE \
 - 普通键盘不启用水族底部占位、触摸镜像或全局模式保持；本节只要求两种模式共享语音提示与识别提交时序。
 - 真机完整语音验证会采集现场声音并发送至讯飞，远程触发前必须取得明确授权。
 
+### 10.7 固定全局状态层与编辑器纠正闭环（2026-08-21）
+
+- 不要假设候选栏当前一定显示 `IdleUi`。全局语音提示应覆盖在候选状态机外层的固定尺寸容器中；候选、标题和空闲子页继续留在原 `ViewAnimator`，语音状态层只覆盖显示，不能切换根视图尺寸。
+- 已处于 `Idle` 时不要为了开始新会话再次调用 `cancel()`；异步 `Idle` 回调可能清除同一事件中刚显示的按下提示。
+- 达到按住阈值后调用 `beginVoiceComposing()`，partial 同时更新界面提示与 `updateVoiceComposing(text)`。final 必须调用 `commitVoiceComposing(correctedText)` 替换整个临时组合区域，错误、移动取消、短按和输入框切换必须调用 `cancelVoiceComposing()`。
+- `IflytekAsrClient.finish()` 会先发布 `Idle`，再把 final 投递到主线程。状态回调不能无条件在 `Idle` 清空文本；final、error 和显式取消路径应各自负责清理，避免 final 闪烁或消失。
+- 普通键盘仍可使用 `IdleUi` 展示同一组状态；固定全局覆盖层和水族触控只在 `desktopKeyboardMode` 启用。
+
 ---
 
 *文档版本：2026-08，按讯飞 ASR 协议与通用 Android 集成经验整理，面向跨项目复用。*
