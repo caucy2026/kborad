@@ -908,6 +908,41 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.30 - 2026-08-21
+
+### 主题
+修复全局水族键盘触摸首帧无涟漪、旋转后鱼体比例不恢复、语音键不参与水族交互、底栏遮住第六行及跨页面布局不一致，并统一普通/全局键盘的按住语音反馈。
+
+### 过程
+- 复查水面 Shader 后确认旧触点项含 `sin(age)`，按下瞬间 `age=0` 时振幅必为零；波前扩散后才出现很弱的高光，经过半透明键帽后首帧不可见。
+- 旋转问题来自 `TextureView` 首次限制为 1080 宽后，尺寸变化只更新 GLES viewport，没有同步重新配置 `SurfaceTexture` 缓冲；返回原方向时可能继续使用旋转后的像素比例。
+- 语音按钮位于 `DesktopKeyboard` 外部覆盖层，原始触摸没有经过水族观察器；旧实现同时在 ASR 状态变化时切换整条候选栏的 `VISIBLE/INVISIBLE`，会使全局画面产生瞬时跳动或缩放感。
+- `.63` 真机截图确认源码中的第六行并未删除，但 V900 ROM 的 ConstraintLayout 父边约束没有按动态 padding 预留操作栏，导致 `Ctrl / Option / 中英 / 空格 / Cmd / 方向键` 整行落到 64dp 底栏后面。
+- `KeyboardWindow.onStartInput()` 每次换输入框都按输入类型强制选择普通或数字键盘，且旋转重建 InputView 后不保留用户主动进入的全局模式，因此不同入口会出现不同按钮排列。
+
+### 修改
+- 水面 fragment Shader 新增约 0.16–0.30 秒的非对称触水凹陷、偏心高光和轻微不规则接触波带；第一帧即可见，随后自然交给原有低振幅非圆形波前，不恢复规则 Android 圆圈动画。
+- `DesktopAquariumView.onSurfaceTextureSizeChanged()` 同步重配受 1080 宽限制的底层缓冲和渲染视口，横竖屏双向旋转均按当前宽高恢复鱼体比例。
+- 全局语音按钮以不消费事件的 `OnTouchListener` 把 DOWN/MOVE/UP 镜像到水族引擎；鱼群可追随语音触点并产生一次水滴反馈，按住识别、移动取消和松开收尾仍由原 ASR 手势处理器独占。
+- `BaseKeyboard` 增加默认关闭的真实底部约束占位，只有 `DesktopKeyboard` 传入 44dp；水族 Surface 仍铺到底边，第六行被硬约束到操作栏上方。应用操作栏由 64dp/56dp 收窄为 44dp/40dp。
+- 第六行明确显示 `Ctrl / Alt / 中/英 / 空格 / Cmd / 方向键`；中英键由易混淆的图标改为文字，`Option` 标签统一为 `Alt`，修饰键行为未改变。
+- 用户主动进入全局模式后，以进程内状态跨输入框焦点和旋转重建保持同一套六行布局，直到主动退出；未进入全局模式的普通/数字输入框仍按原 `EditorInfo.inputType` 选择布局。
+- 普通与全局语音共用固定流程：按下立即显示“正在听，请继续说…”，Starting/Listening 保持该提示，partial 实时覆盖字幕，松开进入“正在校准…”，final 预览 600ms 后只提交一次。全局模式只隐藏空闲控件，不再隐藏/显示候选栏根视图，水族 Surface 尺寸保持固定。
+
+### 验证
+- 多次 `:app:compileReleaseKotlin` 和最终 `./scripts/assemble-release-local.sh` 均为 `BUILD SUCCESSFUL`；只构建 Release，未生成或安装 Debug。
+- `.63` 修复前截图只显示五条键盘行；约束修复版截图完整显示第六行 `Ctrl / Option / 中/英 / English / Cmd / 方向键`，鱼仍可见于最下层。最终源码再把 `Option` 文案统一为 `Alt`，未改变布局宽度或键值。
+- 最终 APK `versionName=808aa72a`、`versionCode=102`、包名 `org.fcitx.fcitx5.android`；v1/v2 签名有效，平台证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- Release 位于 `fcitx5-android/build/kboard.apk`，SHA-256 为 `ca5d149b2713172df7af2bfa89fb0e96e4d68501e913251be31a412e157bfd22`；覆盖安装到 `192.168.3.63:5555` 返回 `Success`。
+- 安装后只读取截图，没有远程触发麦克风。普通按键命中、中文候选、回车、跨屏、权限、鉴权、网络和 ASR WebSocket 协议代码均未改动。
+
+### 待办
+- 触摸首帧涟漪、旋转往返比例、语音键鱼群追随和真实水滴听感需用户在 `.63` 现场验收；Release/Kotlin 编译不能代替 Mali-G52 运行时 Shader 观感。
+- 完整语音会话会采集现场声音并发送至讯飞，本轮未远程执行。需现场分别在普通键盘和全局键盘确认提示、partial、松开校准和 final 单次发送，并留意短按取消与移动取消是否符合习惯。
+- 全局模式只在用户主动进入后跨页面保持；进程被系统杀死后恢复普通键盘，这是刻意的临时模式边界。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。
