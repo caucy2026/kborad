@@ -403,7 +403,7 @@ private class AquariumEngine {
             x = random.nextFloat() * 1.7f - 0.85f,
             y = initialY,
             heading = initialHeading + random.nextFloat() * 0.34f - 0.17f,
-            forwardSpeed = 0.055f + random.nextFloat() * 0.045f,
+            forwardSpeed = 0.14f + random.nextFloat() * 0.065f,
             swimPhase = random.nextFloat() * (2f * PI.toFloat()),
             bank = 0f,
             depth = random.nextFloat(),
@@ -461,14 +461,15 @@ private class AquariumEngine {
             ax += sin(time * 0.73f + f.phase) * 0.025f
             ay += cos(time * 0.61f + f.phase) * 0.018f
 
-            // The CPU locomotion and GPU body deformation share this oscillator. Thrust is
-            // generated while the tail crosses the centre line; at either stroke end there is
-            // only a short inertial glide. This makes translation a result of visible swimming.
+            // The CPU locomotion and GPU body deformation share this oscillator. Tail motion
+            // creates acceleration, while the water integrates it into continuous forward
+            // velocity. Position must not be gated by the oscillator a second time: doing so
+            // makes almost every 30 Hz step too small to see and gives the fish a stalled look.
             val activity = ((attractionUntil - time) / ATTRACTION_SECONDS).coerceIn(0f, 1f)
             val tailBeatHz = if (feeding) {
-                0.98f + urgency * 0.22f + activity * 0.18f
+                1.16f + urgency * 0.20f + activity * 0.18f
             } else {
-                0.58f + f.depth * 0.18f
+                0.74f + f.depth * 0.20f
             }
             f.swimPhase = (f.swimPhase + TWO_PI * tailBeatHz * dt) % TWO_PI
             val tailAngularSpeed = abs(cos(f.swimPhase))
@@ -483,33 +484,34 @@ private class AquariumEngine {
                 sin(desiredHeading - f.heading),
                 cos(desiredHeading - f.heading)
             )
-            val steeringGrip = 0.14f + strokePower * 0.86f
-            val maxTurn = (if (feeding) 4.0f else 1.55f) *
+            val steeringGrip = 0.28f + strokePower * 0.72f
+            val maxTurn = (if (feeding) 4.2f else 1.72f) *
                     (0.82f + urgency * 0.18f) * steeringGrip * dt
             val appliedTurn = headingDelta.coerceIn(-maxTurn, maxTurn)
-            f.heading += appliedTurn
+            val turnedHeading = f.heading + appliedTurn
+            f.heading = atan2(sin(turnedHeading), cos(turnedHeading))
             val targetBank = (appliedTurn / dt.coerceAtLeast(0.001f) / 3.8f)
                 .coerceIn(-1f, 1f) *
                     if (feeding) 0.24f else 0.16f
             f.bank += (targetBank - f.bank) * (dt * 3.2f).coerceIn(0f, 1f)
 
             val thrustPerSecond = if (feeding) {
-                (0.62f + urgency * 0.23f + activity * 0.20f) *
-                        (targetDistance / 0.16f).coerceIn(0.18f, 1f)
+                (1.18f + urgency * 0.34f + activity * 0.26f) *
+                        (targetDistance / 0.13f).coerceIn(0.48f, 1f)
             } else {
-                (0.30f + f.depth * 0.09f) *
-                        (targetDistance / 0.12f).coerceIn(0.22f, 1f)
+                (0.54f + f.depth * 0.15f) *
+                        (targetDistance / 0.11f).coerceIn(0.68f, 1f)
             }
             f.forwardSpeed += thrustPerSecond * strokePower * dt
-            val dragPerSecond = if (feeding) 1.18f else 1.62f
+            val dragPerSecond = if (feeding) 1.08f else 1.42f
             f.forwardSpeed *= (1f - dragPerSecond * dt).coerceAtLeast(0f)
-            val maximumSpeed = if (feeding) 0.64f else 0.19f
-            f.forwardSpeed = f.forwardSpeed.coerceIn(0.018f, maximumSpeed)
+            val maximumSpeed = if (feeding) 0.74f else 0.30f
+            f.forwardSpeed = f.forwardSpeed.coerceIn(0.052f, maximumSpeed)
 
-            // Stroke power also modulates the distance covered in this frame. The small base
-            // term is the water inertia between two strokes, not an independent glide animation.
-            val strokeAdvance = 0.08f + strokePower * 0.92f
-            val distance = f.forwardSpeed * strokeAdvance * dt
+            // Integrate the stroke-generated velocity exactly once. The fish keeps moving
+            // between two tail strokes because water has inertia, not because a second model
+            // translation animation is playing.
+            val distance = f.forwardSpeed * dt
             f.x += cos(f.heading) * distance
             f.y += sin(f.heading) * distance
             if (f.x < -1.05f || f.x > 1.05f) {
@@ -939,10 +941,16 @@ private class AquariumEngine {
                 float bodyAmplitude = mix(0.010, 0.042, motion) * rearBody * rearBody;
                 local.y += travellingWave * bodyAmplitude *
                            (bodyWeight + tailWeight * (1.0 - tailMotionWeight) * 0.90);
+                float headWeight = bodyWeight * smoothstep(-0.12, 0.68, local.x);
+                local.y -= sin(uSwimPhase + 0.18) * headWeight *
+                           mix(0.006, 0.014, max(motion, uActivity));
+                local.z += cos(beatPhase - 0.38) * rearBody * bodyWeight *
+                           mix(0.010, 0.026, max(motion, uActivity));
                 float tailAmplitude = mix(0.15, 0.27, max(motion, uActivity));
                 local.y += travellingWave * tailMotionWeight * tailAmplitude;
                 local.x += cos(beatPhase - 0.62) * tailMotionWeight * 0.026;
-                local.z += sin(beatPhase - 0.95) * tailMotionWeight * 0.045;
+                local.z += sin(beatPhase - 0.95) * tailMotionWeight *
+                           mix(0.052, 0.082, max(motion, uActivity));
                 float finFlutter = sin(uSwimPhase * 0.64 + uPhase * 0.72 +
                                        local.x * 2.4 + sign(local.y) * 1.28);
                 local.y += finFlutter * finWeight * sign(local.y) *
