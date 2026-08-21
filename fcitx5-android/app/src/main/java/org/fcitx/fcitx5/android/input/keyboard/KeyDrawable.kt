@@ -115,7 +115,7 @@ fun aquariumGlassKeyBackgroundDrawable(
     }
 }
 
-fun aquariumSolidKeyBackgroundDrawable(
+fun aquariumDepthKeyBackgroundDrawable(
     radius: Float,
     hMargin: Int,
     vMargin: Int
@@ -124,16 +124,16 @@ fun aquariumSolidKeyBackgroundDrawable(
         arrayOf(
             GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(0xFF020A12.toInt(), 0xFF07121E.toInt())
+                intArrayOf(0xC0020A12.toInt(), 0xB807121E.toInt())
             ).apply {
                 cornerRadius = radius
             },
             GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 if (selected) {
-                    intArrayOf(0xFF297895.toInt(), 0xFF123B55.toInt())
+                    intArrayOf(0xD1297895.toInt(), 0xC2123B55.toInt())
                 } else {
-                    intArrayOf(0xFF29465C.toInt(), 0xFF102536.toInt())
+                    intArrayOf(0xCC29465C.toInt(), 0xB8102536.toInt())
                 }
             ).apply {
                 cornerRadius = radius

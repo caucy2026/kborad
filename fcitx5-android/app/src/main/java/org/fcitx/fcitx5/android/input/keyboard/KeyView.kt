@@ -236,9 +236,9 @@ abstract class KeyView(
         }
     }
 
-    fun setAquariumSolidStyle(enabled: Boolean) {
+    fun setAquariumDepthStyle(enabled: Boolean) {
         if (!enabled) return
-        appearanceView.background = aquariumSolidKeyBackgroundDrawable(
+        appearanceView.background = aquariumDepthKeyBackgroundDrawable(
             radius = radius,
             hMargin = hMargin,
             vMargin = vMargin

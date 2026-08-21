@@ -60,7 +60,7 @@ class DesktopKeyboard private constructor(
         setPadding(0, 0, 0, 0)
         allViews.filterIsInstance<KeyView>().forEach {
             it.setPhysicalKeyStyle(true)
-            it.setAquariumSolidStyle(true)
+            it.setAquariumDepthStyle(true)
             it.keyDownSoundEnabled = false
             it.physicalReleaseSoundEnabled = false
             it.onTouchDownFeedback = ::onAquariumKeyDown

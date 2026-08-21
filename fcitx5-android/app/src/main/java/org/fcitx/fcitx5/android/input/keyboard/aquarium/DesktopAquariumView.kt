@@ -571,26 +571,32 @@ private class AquariumEngine {
             vertices += (x + 1.1f) / 2.1f
             vertices += y + 0.5f
         }
-        val segments = 18
+        val segments = 24
         for (i in 0 until segments) {
             val a0 = 2.0 * PI * i / segments
             val a1 = 2.0 * PI * (i + 1) / segments
-            vertex(0.05f, 0f, 0.13f)
-            vertex(0.05f + cos(a0).toFloat() * 0.78f, sin(a0).toFloat() * 0.34f, 0.02f)
-            vertex(0.05f + cos(a1).toFloat() * 0.78f, sin(a1).toFloat() * 0.34f, 0.02f)
+            vertex(0.08f, 0f, 0.13f)
+            vertex(0.08f + cos(a0).toFloat() * 0.72f, sin(a0).toFloat() * 0.25f, 0.02f)
+            vertex(0.08f + cos(a1).toFloat() * 0.72f, sin(a1).toFloat() * 0.25f, 0.02f)
         }
-        vertex(-0.62f, 0f, 0.01f)
-        vertex(-1.08f, 0.43f, -0.02f)
-        vertex(-0.98f, 0f, 0f)
-        vertex(-0.62f, 0f, 0.01f)
-        vertex(-0.98f, 0f, 0f)
-        vertex(-1.08f, -0.43f, -0.02f)
-        vertex(-0.10f, 0.16f, 0.01f)
-        vertex(-0.48f, 0.54f, -0.03f)
-        vertex(0.25f, 0.23f, 0f)
-        vertex(-0.10f, -0.16f, 0.01f)
-        vertex(-0.48f, -0.54f, -0.03f)
-        vertex(0.25f, -0.23f, 0f)
+        vertex(-0.57f, 0.08f, 0.01f)
+        vertex(-1.30f, 0.46f, -0.02f)
+        vertex(-0.96f, 0.02f, 0f)
+        vertex(-0.57f, -0.08f, 0.01f)
+        vertex(-0.96f, -0.02f, 0f)
+        vertex(-1.30f, -0.46f, -0.02f)
+        vertex(-0.20f, 0.18f, 0.01f)
+        vertex(-0.56f, 0.52f, -0.03f)
+        vertex(0.34f, 0.20f, 0f)
+        vertex(-0.20f, -0.18f, 0.01f)
+        vertex(-0.56f, -0.52f, -0.03f)
+        vertex(0.34f, -0.20f, 0f)
+        vertex(0.02f, 0.11f, 0.015f)
+        vertex(-0.34f, 0.39f, -0.025f)
+        vertex(0.45f, 0.15f, 0f)
+        vertex(0.02f, -0.11f, 0.015f)
+        vertex(-0.34f, -0.39f, -0.025f)
+        vertex(0.45f, -0.15f, 0f)
         fishVertexCount = vertices.size / 5
         val data = vertices.toFloatArray()
         val ids = IntArray(1)
@@ -651,8 +657,8 @@ private class AquariumEngine {
         const val PERFORMANCE_REPORT_NS = 5_000_000_000L
 
         val FISH_SCALES = floatArrayOf(
-            0.072f, 0.112f, 0.086f, 0.145f, 0.066f,
-            0.124f, 0.094f, 0.136f, 0.078f, 0.104f
+            0.052f, 0.075f, 0.061f, 0.092f, 0.048f,
+            0.082f, 0.066f, 0.088f, 0.055f, 0.071f
         )
 
         val FISH_PALETTES = arrayOf(
@@ -701,13 +707,14 @@ private class AquariumEngine {
                     delta.x *= aspect;
                     float distanceFromTouch = length(delta);
                     float radius = age * 0.44;
-                    float ring = exp(-abs(distanceFromTouch - radius) * 58.0);
-                    float echo = exp(-abs(distanceFromTouch - radius * 0.68) * 46.0) * 0.58;
-                    float softRing = exp(-abs(distanceFromTouch - radius * 0.42) * 38.0) * 0.28;
+                    float ring = exp(-abs(distanceFromTouch - radius) * 62.0);
+                    float echo = exp(-abs(distanceFromTouch - radius * 0.70) * 48.0) * 0.62;
+                    float softRing = exp(-abs(distanceFromTouch - radius * 0.43) * 38.0) * 0.32;
+                    float innerShadow = exp(-abs(distanceFromTouch - radius * 0.91) * 68.0);
                     float touchGlow = exp(-distanceFromTouch * 34.0) *
                                       (1.0 - smoothstep(0.0, 0.34, age));
                     float alive = step(0.0, age) * (1.0 - smoothstep(0.8, 1.75, age));
-                    rippleLight += (ring + echo + softRing + touchGlow) * alive;
+                    rippleLight += (ring + echo + softRing + touchGlow - innerShadow * 0.20) * alive;
                 }
                 color += vec3(0.20, 0.74, 0.92) * rippleLight * 0.46;
                 float vignette = 1.0 - smoothstep(0.20, 1.18, length((uv - 0.5) * vec2(1.0, 0.74)));
@@ -730,8 +737,11 @@ private class AquariumEngine {
             void main() {
                 vec3 local = aPosition;
                 float tailWeight = 1.0 - smoothstep(-1.08, -0.38, local.x);
-                local.y += sin(uTime * 7.0 + uPhase + local.x * 2.4) * tailWeight * 0.28;
-                local.y += sin(uTime * 4.2 + uPhase + local.x * 3.0) * 0.025;
+                float finWeight = smoothstep(0.17, 0.48, abs(local.y)) *
+                                  (1.0 - smoothstep(0.10, 0.48, local.x));
+                local.y += sin(uTime * 5.4 + uPhase + local.x * 2.8) * tailWeight * 0.24;
+                local.y += sin(uTime * 3.1 + uPhase * 0.7 + local.x * 4.2) * tailWeight * 0.075;
+                local.y += sin(uTime * 4.0 + uPhase + local.x * 5.0) * finWeight * 0.055;
                 float c = cos(uHeading);
                 float s = sin(uHeading);
                 vec2 rotated = mat2(c, -s, s, c) * local.xy;
