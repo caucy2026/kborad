@@ -609,40 +609,103 @@ private class AquariumEngine {
 
     private fun createFishGeometry() {
         val vertices = mutableListOf<Float>()
-        fun vertex(x: Float, y: Float, z: Float) {
+        fun vertex(x: Float, y: Float, z: Float, kind: Float) {
             vertices += x
             vertices += y
             vertices += z
-            vertices += (x + 1.1f) / 2.1f
-            vertices += y + 0.5f
+            vertices += x
+            vertices += y
+            vertices += kind
         }
-        val segments = 24
+        fun triangle(
+            x0: Float, y0: Float,
+            x1: Float, y1: Float,
+            x2: Float, y2: Float,
+            z: Float,
+            kind: Float
+        ) {
+            vertex(x0, y0, z, kind)
+            vertex(x1, y1, z, kind)
+            vertex(x2, y2, z, kind)
+        }
+        fun fan(
+            centerX: Float,
+            centerY: Float,
+            z: Float,
+            kind: Float,
+            edge: Array<Pair<Float, Float>>
+        ) {
+            for (i in edge.indices) {
+                val next = edge[(i + 1) % edge.size]
+                triangle(
+                    centerX, centerY,
+                    edge[i].first, edge[i].second,
+                    next.first, next.second,
+                    z, kind
+                )
+            }
+        }
+        val segments = 32
         for (i in 0 until segments) {
             val a0 = 2.0 * PI * i / segments
             val a1 = 2.0 * PI * (i + 1) / segments
-            vertex(0.08f, 0f, 0.13f)
-            vertex(0.08f + cos(a0).toFloat() * 0.72f, sin(a0).toFloat() * 0.25f, 0.02f)
-            vertex(0.08f + cos(a1).toFloat() * 0.72f, sin(a1).toFloat() * 0.25f, 0.02f)
+            vertex(0.10f, 0f, 0.15f, 0f)
+            vertex(0.10f + cos(a0).toFloat() * 0.76f, sin(a0).toFloat() * 0.27f, 0.025f, 0f)
+            vertex(0.10f + cos(a1).toFloat() * 0.76f, sin(a1).toFloat() * 0.27f, 0.025f, 0f)
         }
-        vertex(-0.57f, 0.08f, 0.01f)
-        vertex(-1.52f, 0.60f, -0.02f)
-        vertex(-0.96f, 0.02f, 0f)
-        vertex(-0.57f, -0.08f, 0.01f)
-        vertex(-0.96f, -0.02f, 0f)
-        vertex(-1.52f, -0.60f, -0.02f)
-        vertex(-0.20f, 0.18f, 0.01f)
-        vertex(-0.68f, 0.70f, -0.03f)
-        vertex(0.34f, 0.20f, 0f)
-        vertex(-0.20f, -0.18f, 0.01f)
-        vertex(-0.68f, -0.70f, -0.03f)
-        vertex(0.34f, -0.20f, 0f)
-        vertex(0.02f, 0.11f, 0.015f)
-        vertex(-0.48f, 0.56f, -0.025f)
-        vertex(0.45f, 0.15f, 0f)
-        vertex(0.02f, -0.11f, 0.015f)
-        vertex(-0.48f, -0.56f, -0.025f)
-        vertex(0.45f, -0.15f, 0f)
-        fishVertexCount = vertices.size / 5
+
+        // Rounded double-lobed tail: each lobe is a small fan instead of one sharp triangle.
+        fan(
+            -0.92f, 0.08f, -0.025f, 1f,
+            arrayOf(
+                -0.56f to 0.10f,
+                -0.92f to 0.12f,
+                -1.24f to 0.27f,
+                -1.43f to 0.48f,
+                -1.49f to 0.39f,
+                -1.34f to 0.18f,
+                -1.08f to 0.02f
+            )
+        )
+        fan(
+            -0.92f, -0.08f, -0.025f, 1f,
+            arrayOf(
+                -0.56f to -0.10f,
+                -0.92f to -0.12f,
+                -1.24f to -0.27f,
+                -1.43f to -0.48f,
+                -1.49f to -0.39f,
+                -1.34f to -0.18f,
+                -1.08f to -0.02f
+            )
+        )
+
+        // One flowing pectoral-fin pair with a rounded trailing edge.
+        fan(
+            -0.02f, 0.25f, -0.035f, 2f,
+            arrayOf(
+                0.40f to 0.15f,
+                0.14f to 0.27f,
+                -0.20f to 0.48f,
+                -0.48f to 0.61f,
+                -0.60f to 0.52f,
+                -0.40f to 0.31f,
+                -0.10f to 0.18f
+            )
+        )
+        fan(
+            -0.02f, -0.25f, -0.035f, 2f,
+            arrayOf(
+                0.40f to -0.15f,
+                0.14f to -0.27f,
+                -0.20f to -0.48f,
+                -0.48f to -0.61f,
+                -0.60f to -0.52f,
+                -0.40f to -0.31f,
+                -0.10f to -0.18f
+            )
+        )
+        fishVertexCount = vertices.size / 6
         val data = vertices.toFloatArray()
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
@@ -653,9 +716,11 @@ private class AquariumEngine {
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, fishVbo)
         GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, data.size * 4, floatBuffer(data), GLES30.GL_STATIC_DRAW)
         GLES30.glEnableVertexAttribArray(0)
-        GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, 5 * 4, 0)
+        GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, 6 * 4, 0)
         GLES30.glEnableVertexAttribArray(1)
-        GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, 5 * 4, 3 * 4)
+        GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, 6 * 4, 3 * 4)
+        GLES30.glEnableVertexAttribArray(2)
+        GLES30.glVertexAttribPointer(2, 1, GLES30.GL_FLOAT, false, 6 * 4, 5 * 4)
         GLES30.glBindVertexArray(0)
     }
 
@@ -808,6 +873,7 @@ private class AquariumEngine {
         const val FISH_VERTEX_SHADER = """#version 300 es
             layout(location = 0) in vec3 aPosition;
             layout(location = 1) in vec2 aUv;
+            layout(location = 2) in float aKind;
             uniform vec2 uPosition;
             uniform float uHeading;
             uniform float uScale;
@@ -819,16 +885,17 @@ private class AquariumEngine {
             out vec2 vLocal;
             out float vHighlight;
             out float vMembrane;
+            out float vBody;
             void main() {
                 vec3 local = aPosition;
-                float tailWeight = 1.0 - smoothstep(-1.08, -0.38, local.x);
-                float finWeight = smoothstep(0.22, 0.54, abs(local.y)) *
-                                  (1.0 - smoothstep(0.10, 0.48, local.x));
+                float tailWeight = 1.0 - step(0.5, abs(aKind - 1.0));
+                float finWeight = 1.0 - step(0.5, abs(aKind - 2.0));
+                float bodyWeight = 1.0 - clamp(tailWeight + finWeight, 0.0, 1.0);
                 float motion = clamp(uSpeed / 0.62, 0.12, 1.0);
                 float swimRate = mix(0.88 + motion * 0.45, 1.82, uActivity);
                 float bodyFlex = sin(uTime * 3.0 * swimRate + uPhase + local.x * 2.2) *
                                  (1.0 - smoothstep(-0.35, 0.72, local.x));
-                local.y += bodyFlex * mix(0.024, 0.050, motion);
+                local.y += bodyFlex * mix(0.024, 0.050, motion) * bodyWeight;
                 float tailWave = sin(uTime * 5.4 * swimRate + uPhase + local.x * 2.8);
                 local.y += sin(uTime * 5.4 * swimRate + uPhase + local.x * 2.8) *
                            tailWeight * mix(0.21, 0.36, max(uActivity, motion));
@@ -864,6 +931,7 @@ private class AquariumEngine {
                     normalize(vec3(-0.18 + finFlutter * 0.08, 0.32, 0.93))), 0.0), 14.0);
                 vHighlight = 0.58 + diffuse * 0.42 + movingSpecular * 0.34;
                 vMembrane = clamp(max(finWeight, tailWeight * 0.82), 0.0, 1.0);
+                vBody = bodyWeight;
             }
         """
 
@@ -872,6 +940,7 @@ private class AquariumEngine {
             in vec2 vLocal;
             in float vHighlight;
             in float vMembrane;
+            in float vBody;
             out vec4 fragColor;
             uniform float uSeed;
             uniform float uAlpha;
@@ -906,6 +975,15 @@ private class AquariumEngine {
                             vMembrane * (0.16 + membraneRibs * 0.16));
                 color += vec3(0.22, 0.34, 0.40) *
                          vMembrane * membraneRibs * max(vHighlight - 0.72, 0.0);
+                float eyeDistance = length(vec2(
+                    (vLocal.x - 0.58) * 3.2,
+                    (abs(vLocal.y) - 0.15) * 7.0
+                ));
+                float eye = (1.0 - smoothstep(0.12, 0.25, eyeDistance)) * vBody;
+                color = mix(color, vec3(0.018, 0.025, 0.032), eye * 0.94);
+                float headGloss = exp(-pow(vLocal.x - 0.42, 2.0) * 18.0 -
+                                      pow(vLocal.y + 0.05, 2.0) * 42.0) * vBody;
+                color += vec3(0.30, 0.42, 0.46) * headGloss * 0.34;
                 float alpha = mix(uAlpha, uAlpha * (0.48 + membraneRibs * 0.16), vMembrane);
                 fragColor = vec4(color, alpha);
             }
