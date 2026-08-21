@@ -128,6 +128,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private var shouldShowVoiceInput: Boolean = false
     private var desktopKeyboardMode: Boolean = false
     private var desktopVoiceButton: ToolButton? = null
+    private var desktopVoicePondTouch: ((MotionEvent) -> Unit)? = null
 
     private val voiceNetworkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = refreshVoiceInputAvailability()
@@ -270,8 +271,12 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         updateDesktopVoiceButton(useVoiceInput)
     }
 
-    fun setDesktopVoiceButton(button: ToolButton?) {
+    fun setDesktopVoiceButton(
+        button: ToolButton?,
+        pondTouch: ((MotionEvent) -> Unit)? = null
+    ) {
         desktopVoiceButton = button
+        desktopVoicePondTouch = pondTouch
         updateHideKeyboardButton()
     }
 
@@ -295,7 +300,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     theme.altKeyBackgroundColor,
                     theme.keyPressHighlightColor
                 )
+                keyDownSoundEnabled = true
                 physicalReleaseSoundEnabled = true
+                setOnTouchListener(null)
                 return@apply
             }
             setIcon(R.drawable.ic_baseline_keyboard_voice_24)
@@ -306,6 +313,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 DESKTOP_VOICE_KEY_COLOR,
                 DESKTOP_VOICE_HIGHLIGHT_COLOR
             )
+            // The aquarium provides the single water-contact sound in desktop mode. Observe the
+            // raw event without consuming it so hold-to-talk, movement cancellation and ASR
+            // lifecycle continue to receive their original gesture stream.
+            keyDownSoundEnabled = false
             physicalReleaseSoundEnabled = false
             contentDescription = context.getString(R.string.start_voice_input)
             isEnabled = isNetworkAvailableForVoice()
@@ -315,7 +326,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 if (isEnabled) Color.WHITE else DESKTOP_VOICE_DISABLED_COLOR
             )
             swipeEnabled = true
-            setOnTouchListener(null)
+            setOnTouchListener { _, event ->
+                desktopVoicePondTouch?.invoke(event)
+                false
+            }
             onGestureListener = CustomGestureView.OnGestureListener { view, event ->
                 when (event.type) {
                     CustomGestureView.GestureType.Down -> {

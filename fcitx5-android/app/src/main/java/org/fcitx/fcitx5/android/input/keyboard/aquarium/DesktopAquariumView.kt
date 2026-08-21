@@ -103,6 +103,7 @@ class DesktopAquariumView(context: Context) : TextureView(context),
     }
 
     override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+        configureSurfaceBuffer(surface, width, height)
         renderThread?.resize(width, height)
     }
 
@@ -115,11 +116,17 @@ class DesktopAquariumView(context: Context) : TextureView(context),
 
     private fun startRenderer(surface: SurfaceTexture, width: Int, height: Int) {
         if (renderThread?.isAlive == true || width <= 0 || height <= 0) return
-        surface.setDefaultBufferSize(
-            min(width, MAX_RENDER_WIDTH),
-            (height * min(width, MAX_RENDER_WIDTH).toFloat() / width).toInt().coerceAtLeast(1)
-        )
+        configureSurfaceBuffer(surface, width, height)
         renderThread = AquariumRenderThread(surface, width, height, touchCommands).also { it.start() }
+    }
+
+    private fun configureSurfaceBuffer(surface: SurfaceTexture, width: Int, height: Int) {
+        if (width <= 0 || height <= 0) return
+        val bufferWidth = min(width, MAX_RENDER_WIDTH)
+        surface.setDefaultBufferSize(
+            bufferWidth,
+            (height * bufferWidth.toFloat() / width).toInt().coerceAtLeast(1)
+        )
     }
 
     private fun stopRenderer() {

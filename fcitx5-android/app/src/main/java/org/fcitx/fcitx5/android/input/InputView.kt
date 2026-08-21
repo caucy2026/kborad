@@ -438,7 +438,9 @@ class InputView(
         desktopOperationArea.setOnTouchListener { _, event ->
             keyboardWindow.onDesktopPondTouch(event)
         }
-        kawaiiBar.setDesktopVoiceButton(desktopVoiceButton)
+        kawaiiBar.setDesktopVoiceButton(desktopVoiceButton) { event ->
+            keyboardWindow.onDesktopPondTouch(event)
+        }
         windowManager.view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateDesktopCompositionPosition()
             updateDesktopOperationButtonPositions()
