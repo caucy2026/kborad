@@ -153,6 +153,12 @@ V1.27 不再让目标点直接控制位置或朝向。每帧固定经过以下�
 - 语音覆盖层从创建起永久参与测量，只通过 `alpha` 在 0/1 之间切换；候选动画层不再隐藏。全局键盘高度按实际屏幕配置锁存，语音状态不能重新计算画布。
 - 屏幕方向、`screenWidthDp`、`screenHeightDp` 或密度变化时允许重新锁存一次，以保留真实旋转后的比例恢复；同一配置内必须保持完全一致。
 
+## 固定状态文字与复刻文档（V1.34）
+
+- 全局空格和中英键在 `IMChangeEvent` 中不能调用普通 `TextView.setText()`，因为 `AutoScaleTextView` 会向父布局发出 `requestLayout()`；当前使用 `setLayoutStableText()` 保留初始测量尺寸，只更新绘制内容和颜色。
+- 中文当前态显示“中/英”，英文当前态显示“英/中”，当前语言始终位于首字符并标为 `#4285F4`。该逐字符颜色由稳定自绘实现，因为 `AutoScaleTextView` 的手动 `Canvas.drawText()` 不读取 `Spannable` 颜色。
+- 面向其他项目的完整复刻规范位于 `kemi-rd/gm/KBoard摸鱼水族键盘复刻设计.md`；其中固定了源码/资源哈希、全部关键参数、移植步骤和验收矩阵，应作为跨项目实现入口。
+
 ## 验收
 
 - 只使用签名 Release APK 安装到 63，不安装 Debug。
@@ -163,9 +169,9 @@ V1.27 不再让目标点直接控制位置或朝向。每帧固定经过以下�
 
 ## 2026-08-21 `.63` Release 实测
 
-- 当前最终版本：`44fdc79e`，Android 12/API 31，Mali-G52，D0 1920×1280@60Hz；水族动画固定 30Hz。
+- 当前水族实测基线来自 `44fdc79e`，Android 12/API 31，Mali-G52，D0 1920×1280@60Hz；水族动画固定 30Hz。后续版本保持同一水动力和 Shader，仅修复布局、语音与状态文字集成。
 - 首版失败原因：Mali GLSL 编译器将 `patch` 视为保留字；变量改为非保留名称后，水体与鱼群程序均成功链接。新增 shader 标识符必须避开 OpenGL ES 保留关键字，构建成功不能代替目标 GPU 验证。
 - 当前默认内部 surface 宽度限制为 1080；同硬件候选版在 1080×451、10 条鱼时连续保持 29.3–29.9 FPS，未触发 7/5 条鱼降级。1440 宽在持续交互时曾跌到约 15 FPS，已经停用。
 - Release 安装、便签聚焦、全局模式、底部鱼群活动范围、白色语音入口、静态截图、录屏和过滤 logcat 均完成；未发现崩溃或 EGL/GL 错误。语音恢复 160ms 按住阈值、移动取消、partial 实时字幕、松开校准态、final 预览 600ms 后单次提交，`RECORD_AUDIO`、`INTERNET`、`ACCESS_NETWORK_STATE` 权限链均保持有效。由于完整语音真机会话会向讯飞上传现场音频，未在缺少该项明确授权时远程触发。
 - 当前水滴声来自 BigSoundBank `Drops of water #1` 的 4 个 CC0 录音切片，由 `SoundPool` 预加载并以 30% 系数播放；只在按下播放一次，移动与释放不播放。来源：https://bigsoundbank.com/drops-of-water-1-s1384.html ，可重复切片脚本为 `fcitx5-android/scripts/prepare-aquarium-water-touch.py`。
-- 当前最终 Release 为 `e2e1813b`，APK SHA-256：`a7f37aaaf60949c8d5adc9367bc2d23fb78970d52964654ccb6b4a135452ef00`，已在 `.63` 覆盖安装。遵照用户要求没有用 ADB 启动或自动触摸最终版；连续尾幕、C 型快速转身和真实声音由用户现场验收。
+- 当前正式 Release 为 `bf7a8e13`，APK SHA-256：`bbdd0e5af70bf3d0eaf2cd9402afd86ccf3b7edd47bbdfa98c309bcc59b0cf85`，已在 `.63` 覆盖安装。水族动力学延续 `e2e1813b` 连续尾幕和 C 型转身，后续集成修复没有改动鱼群物理或水面 Shader。

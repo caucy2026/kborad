@@ -1022,6 +1022,34 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.34 - 2026-08-21
+
+### 主题
+消除全局键盘中英切换时的一次性布局变化，按当前语言调整“中/英、英/中”顺序，并输出可供其他项目完整复刻的摸鱼水族设计文档。
+
+### 过程
+- `.63` 中英切换前后的 `KBoardAquarium` 日志持续为 `surface=1080×451`、29.9 FPS，证明 GLES 画布没有缩放；源码排查发现全局空格键和语言键在 `IMChangeEvent` 中调用普通 `TextView.setText()`，`AutoScaleTextView` 会显式 `requestLayout()`，因此首次切换仍可能使整棵 IME 与 `adjustPan` 客户端重新布局。
+- 旧语言键使用 `SpannableString` 标蓝，但 `AutoScaleTextView.onDraw()` 自行调用 `Canvas.drawText()`，不会读取颜色 Span；因此需要只在全局键盘启用的稳定自绘通路，不能全局改变普通键盘和候选文字绘制。
+- 对今天水族键盘从 GPU 架构、鱼体网格、水动力、群游、触摸、涟漪、真实水滴声、布局隔离到真机性能的全部成果重新按可移植实现顺序整理，并固化源码/资源哈希。
+
+### 修改
+- `AutoScaleTextView` 增加可选 `setLayoutStableText()`：保持原测量尺寸，只重新计算自身绘制变换并 `invalidate()`，不向父布局发出 `requestLayout()`；未调用该接口的所有页面继续走原实现。
+- 全局空格键预留 `English` 的稳定测量宽度，中文/英文状态只切换自绘内容，不重新测量键盘。
+- 全局语言键中文当前态显示“中/英”，英文当前态显示“英/中”；当前语言始终排在前面并使用 `#4285F4`，斜线和另一语言使用 `#F4F8FC`。颜色由稳定自绘逐字符实现，不再使用无效 Span。
+- 新增 `kemi-rd/gm/KBoard摸鱼水族键盘复刻设计.md`，包含可执行源码清单与 SHA-256、30Hz/EGL 架构、触摸状态机、个体/群游状态、完整水动力公式、6×5 连续尾幕、C 型急转、非圆涟漪 Shader、水滴音源、参数表、移植步骤、验收矩阵和常见失败诊断。
+
+### 验证
+- `:app:compileReleaseKotlin` 与完整 `./scripts/assemble-release-local.sh` 均为 `BUILD SUCCESSFUL`；只构建 Release，没有构建或安装 Debug。
+- 正式 Release `versionName=bf7a8e13`、`versionCode=102`、包名 `org.fcitx.fcitx5.android`、ABI `arm64-v8a`；v1/v2 签名有效，平台证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- APK 位于 `fcitx5-android/build/kboard.apk`，SHA-256 为 `bbdd0e5af70bf3d0eaf2cd9402afd86ccf3b7edd47bbdfa98c309bcc59b0cf85`；覆盖安装到 `192.168.3.63:5555` 返回 `Success`。
+- 变更只由 `DesktopKeyboard` 调用稳定自绘接口；普通键盘、候选、数字键盘、其他设置页面和 ASR 协议未改变。
+
+### 待办
+- 本轮未远程触发语音，也未替用户点击中英键。用户需现场确认首次中英切换不再移动画面，并确认中文显示“中/英”、英文显示“英/中”、首字符为蓝色。
+- 复刻文档能保证源码、参数和集成顺序一致，但其他 GPU 的 GLSL 驱动行为、屏幕透明合成和扬声器听感仍必须按文档验收矩阵在目标硬件确认。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

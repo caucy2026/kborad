@@ -504,6 +504,7 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - `feca3b94` 将全局语音提示移到候选状态机外的固定覆盖层，修复非 Idle 候选页看不到提示/partial 以及冗余 `Idle` 回调清空按下提示的问题；partial 恢复编辑器临时组合文本，final 使用纠正文本整体替换后单次确认。鱼群改为语音触点周围分层目标，“英中”键按当前输入法将对应字符标蓝。Release APK SHA-256 为 `f90251d76c7f4b47e95d209e84988fec29aecf86fe69af172d0a8a77a48d4915`，已覆盖安装 `.63`；默认输入法未变，未远程触发麦克风。
 - `f85c2c28` 进一步消除第一次语音的视觉放大：`.63` 现场日志确认 GLES Surface 始终为 `1080×451`，因此把语音覆盖层改为永久测量、仅以 alpha 显隐，并按屏幕配置锁存全局键盘高度；同一配置内 ASR/候选回调不再触发尺寸重算。APK SHA-256 为 `46c8ad924e5818fd9cd401f0e7d9e6005021e921c41606fc226bde16e7e17e2e`，已覆盖安装 `.63`，未远程触发麦克风。
 - `e2d28913` 根据同一次首按日志进一步确认 IME 窗口和 `1080×451` 水族 Surface 均未变化，剩余视觉位移来自目标便签的 `adjustPan` 在首次 composing 写入时平移客户端。全局模式现只在固定覆盖层显示实时 partial，监听期不修改 InputConnection，final 校准后一次性 `commitText`；普通键盘继续保留编辑器 composing 预览。Release APK SHA-256 为 `85278f459789be6ce881e42befc6035de41ca2b234a1d728cdbe9e5b8a9879bc`，已覆盖安装 `.63`，未远程触发麦克风。
+- `bf7a8e13` 将全局空格与中英状态文字改为固定测量、仅重绘，避免 `IMChangeEvent` 中 `TextView.setText()` 触发 IME/`adjustPan` 客户端重新布局；中文显示“中/英”、英文显示“英/中”，当前语言首字符为蓝色。Release APK SHA-256 为 `bbdd0e5af70bf3d0eaf2cd9402afd86ccf3b7edd47bbdfa98c309bcc59b0cf85`，已覆盖安装 `.63`。完整水族复刻规范见 `kemi-rd/gm/KBoard摸鱼水族键盘复刻设计.md`。
 
 #### RustDesk/KEMI 远程回车
 
