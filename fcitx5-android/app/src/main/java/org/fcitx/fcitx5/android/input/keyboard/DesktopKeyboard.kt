@@ -398,7 +398,9 @@ class DesktopKeyboard private constructor(
     }
 
     private fun configureHeldModifierKeys() {
-        textKeys.forEach { key ->
+        // This is called from the constructor init block. Do not access the textKeys lazy
+        // delegate here: Kotlin initializes that property later in source order.
+        allViews.filterIsInstance<TextKeyView>().forEach { key ->
             val state = modifierStateFor(key) ?: return@forEach
             key.onGestureListener = OnGestureListener { _, event ->
                 when (event.type) {
