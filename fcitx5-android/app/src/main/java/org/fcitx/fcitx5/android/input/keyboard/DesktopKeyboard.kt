@@ -215,10 +215,10 @@ class DesktopKeyboard private constructor(
                 shiftedSymbolKey("/", "?", 1f / 15f),
                 DesktopModifierKey("Shift", KeyState.Shift, 2.8f / 15f)
             ),
-            // Row 5: Ctrl Option 中/英 ──SPACE── ⌘ ← [↑/↓] →
+            // Row 5: Ctrl Alt 中/英 ──SPACE── ⌘ ← [↑/↓] →
             listOf(
                 DesktopModifierKey("Ctrl", KeyState.Ctrl, 2.2f / 18.3f),
-                DesktopModifierKey("Option", KeyState.Alt, 1.6f / 18.3f),
+                DesktopModifierKey("Alt", KeyState.Alt, 1.6f / 18.3f),
                 languageKey(1.6f / 18.3f),
                 DesktopSpaceKey(8f / 18.3f),
                 DesktopModifierKey("\u2318", KeyState.Meta, 1.6f / 18.3f),
@@ -325,7 +325,7 @@ class DesktopKeyboard private constructor(
             val label = (key.def as? KeyDef.Appearance.Text)?.displayText ?: return@forEach
             val state = when (label) {
                 "Ctrl" -> KeyState.Ctrl
-                "Option" -> KeyState.Alt
+                "Alt" -> KeyState.Alt
                 "\u2318" -> KeyState.Meta   // ⌘
                 "Shift" -> KeyState.Shift
                 else -> return@forEach
@@ -354,7 +354,7 @@ class DesktopKeyboard private constructor(
     fun operationButtonCentersOnScreen(): Pair<Int, Int>? {
         if (!isLaidOut) return null
         val option = textKeys.firstOrNull { key ->
-            (key.def as? KeyDef.Appearance.Text)?.displayText == "Option"
+            (key.def as? KeyDef.Appearance.Text)?.displayText == "Alt"
         } ?: return null
         val command = textKeys.firstOrNull { key ->
             (key.def as? KeyDef.Appearance.Text)?.displayText == "\u2318"

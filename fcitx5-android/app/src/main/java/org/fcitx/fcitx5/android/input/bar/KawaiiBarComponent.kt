@@ -282,12 +282,13 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
 
     fun setDesktopKeyboardMode(enabled: Boolean) {
         desktopKeyboardMode = enabled
+        idleUi.setDesktopQuietMode(enabled)
         if (!enabled) {
             InputFeedbacks.setPhysicalKeyboardSoundSuppressed(false)
         }
-        view.visibility = if (enabled && view.displayedChild ==
-            KawaiiBarStateMachine.State.Idle.ordinal
-        ) View.INVISIBLE else View.VISIBLE
+        // Keep the bar's measured surface stable in desktop mode. IdleUi hides only its own
+        // controls, while voice prompts reuse the same fixed slot without resizing the aquarium.
+        view.visibility = View.VISIBLE
         updateHideKeyboardButton()
     }
 
@@ -421,15 +422,6 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     desktopKeyboardMode && state != IflytekAsrClient.State.Idle
                 )
                 idleUi.setVoiceInputActive(state != IflytekAsrClient.State.Idle)
-                if (desktopKeyboardMode && view.displayedChild ==
-                    KawaiiBarStateMachine.State.Idle.ordinal
-                ) {
-                    view.visibility = if (state == IflytekAsrClient.State.Idle) {
-                        View.INVISIBLE
-                    } else {
-                        View.VISIBLE
-                    }
-                }
                 desktopVoiceButton?.let { button ->
                     if (voicePressActive) {
                         button.setIconTintColor(
@@ -450,8 +442,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     )
                 }
                 when (state) {
-                    IflytekAsrClient.State.Starting ->
-                        idleUi.showVoiceTranscript(context.getString(R.string.voice_input_connecting))
+                    IflytekAsrClient.State.Starting,
                     IflytekAsrClient.State.Listening ->
                         idleUi.showVoiceTranscript(context.getString(R.string.voice_input_listening))
                     IflytekAsrClient.State.Finishing ->
@@ -460,22 +451,12 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 }
             },
             onFinal = { text ->
-                if (desktopKeyboardMode && view.displayedChild ==
-                    KawaiiBarStateMachine.State.Idle.ordinal
-                ) {
-                    view.visibility = View.VISIBLE
-                }
                 idleUi.showVoiceTranscript(text)
                 voiceCommitJob?.cancel()
                 voiceCommitJob = service.lifecycleScope.launch {
                     delay(VOICE_FINAL_PREVIEW_MS)
                     service.commitText(text)
                     idleUi.hideVoiceTranscript()
-                    if (desktopKeyboardMode &&
-                        view.displayedChild == KawaiiBarStateMachine.State.Idle.ordinal
-                    ) {
-                        view.visibility = View.INVISIBLE
-                    }
                 }
             },
             onError = { message ->
@@ -487,11 +468,6 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 ).show()
             },
             onPartial = { text ->
-                if (desktopKeyboardMode && view.displayedChild ==
-                    KawaiiBarStateMachine.State.Idle.ordinal
-                ) {
-                    view.visibility = View.VISIBLE
-                }
                 idleUi.showVoiceTranscript(text)
             }
         )
@@ -535,7 +511,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     voiceStartJob?.cancel()
                     voiceStartJob = null
                     asrClient.cancel()
-                    idleUi.hideVoiceTranscript()
+                    idleUi.showVoiceTranscript(
+                        context.getString(R.string.voice_input_listening)
+                    )
                     voicePressActive = true
                     voiceStartJob = service.lifecycleScope.launch {
                         delay(VOICE_HOLD_START_DELAY_MS)
@@ -734,11 +712,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     }
 
     private fun switchUiByState(state: KawaiiBarStateMachine.State) {
-        view.visibility = if (desktopKeyboardMode && state == KawaiiBarStateMachine.State.Idle) {
-            View.INVISIBLE
-        } else {
-            View.VISIBLE
-        }
+        view.visibility = View.VISIBLE
         val index = state.ordinal
         if (view.displayedChild == index) return
         val new = view.getChildAt(index)

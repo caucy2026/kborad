@@ -108,6 +108,7 @@ class IdleUi(
         textSize = 18f
         visibility = View.GONE
     }
+    private var desktopQuietMode = false
 
     private val animator = ViewAnimator(ctx).apply {
         add(emptyBar, lParams(matchParent, matchParent))
@@ -252,7 +253,15 @@ class IdleUi(
     fun hideVoiceTranscript() {
         voiceTranscript.text = ""
         voiceTranscript.visibility = View.GONE
-        animator.visibility = View.VISIBLE
+        animator.visibility = if (desktopQuietMode) View.INVISIBLE else View.VISIBLE
+    }
+
+    fun setDesktopQuietMode(enabled: Boolean) {
+        desktopQuietMode = enabled
+        menuButton.visibility = if (enabled) View.INVISIBLE else View.VISIBLE
+        if (voiceTranscript.visibility != View.VISIBLE) {
+            animator.visibility = if (enabled) View.INVISIBLE else View.VISIBLE
+        }
     }
 
     private fun clearAnimation() {
