@@ -294,6 +294,7 @@ private class AquariumEngine {
         var tailDrive: Float,
         var leftFinDrive: Float,
         var rightFinDrive: Float,
+        var turnDrive: Float,
         var completedTailStrokes: Int,
         var brakeDrive: Float,
         var bank: Float,
@@ -361,6 +362,7 @@ private class AquariumEngine {
     private var fishTailDriveLocation = -1
     private var fishLeftFinDriveLocation = -1
     private var fishRightFinDriveLocation = -1
+    private var fishTurnDriveLocation = -1
     private var fishBrakeDriveLocation = -1
     private var fishSeedLocation = -1
     private var fishAlphaLocation = -1
@@ -397,6 +399,7 @@ private class AquariumEngine {
         fishTailDriveLocation = GLES30.glGetUniformLocation(fishProgram, "uTailDrive")
         fishLeftFinDriveLocation = GLES30.glGetUniformLocation(fishProgram, "uLeftFinDrive")
         fishRightFinDriveLocation = GLES30.glGetUniformLocation(fishProgram, "uRightFinDrive")
+        fishTurnDriveLocation = GLES30.glGetUniformLocation(fishProgram, "uTurnDrive")
         fishBrakeDriveLocation = GLES30.glGetUniformLocation(fishProgram, "uBrakeDrive")
         fishSeedLocation = GLES30.glGetUniformLocation(fishProgram, "uSeed")
         fishAlphaLocation = GLES30.glGetUniformLocation(fishProgram, "uAlpha")
@@ -538,6 +541,7 @@ private class AquariumEngine {
             tailDrive = 0.36f + random.nextFloat() * 0.12f,
             leftFinDrive = 0.20f + random.nextFloat() * 0.08f,
             rightFinDrive = 0.20f + random.nextFloat() * 0.08f,
+            turnDrive = 0f,
             completedTailStrokes = 0,
             brakeDrive = 0f,
             bank = 0f,
@@ -796,6 +800,8 @@ private class AquariumEngine {
             f.tailDrive += (tailDriveTarget - f.tailDrive) * muscleResponse
             f.leftFinDrive += (leftFinTarget - f.leftFinDrive) * muscleResponse
             f.rightFinDrive += (rightFinTarget - f.rightFinDrive) * muscleResponse
+            f.turnDrive += (turnDemand - f.turnDrive) *
+                    (dt * if (feeding) 14f else 7f).coerceIn(0f, 1f)
             f.brakeDrive += (brakeDemand - f.brakeDrive) * muscleResponse
 
             val tailBeatHz = tailBeatHzForDrive(f.tailDrive)
@@ -848,12 +854,21 @@ private class AquariumEngine {
             val yawTorque = turnDemand *
                     (tailSteering * 2.35f + pairedFinSteering) * feedingTurnGain +
                     differentialFinTorque
+            // A tight C-turn is released by the first completed caudal power stroke. This is an
+            // angular impulse from the same visible tail event, not a direct heading assignment.
+            val fastTurnAmount = smoothStep01((abs(turnDemand) - 0.38f) / 0.57f)
+            if (completedPowerStroke && fastTurnAmount > 0f) {
+                f.angularSpeed += turnDemand * fastTurnAmount * f.tailDrive *
+                        (if (feeding) 2.65f else 0.72f)
+            }
+            val turnStop = 1f - smoothStep01(abs(turnDemand) / 0.34f)
             val angularAcceleration = yawTorque -
-                    f.angularSpeed * (2.15f + f.brakeDrive * 0.65f)
+                    f.angularSpeed *
+                    (2.15f + f.brakeDrive * 0.65f + turnStop * 6.8f)
             f.angularSpeed = (f.angularSpeed + angularAcceleration * dt)
                 .coerceIn(
-                    if (feeding) -4.20f else -2.35f,
-                    if (feeding) 4.20f else 2.35f
+                    if (feeding) -8.80f else -3.20f,
+                    if (feeding) 8.80f else 3.20f
                 )
             f.heading = wrapAngle(f.heading + f.angularSpeed * dt)
             val targetBank = (f.angularSpeed / 2.35f).coerceIn(-1f, 1f) * 0.25f
@@ -925,7 +940,7 @@ private class AquariumEngine {
 
     private fun finBeatHzForDrive(drive: Float): Float {
         val burst = smoothStep01((drive - 0.20f) / 0.80f)
-        return 0.90f + burst * 4.20f
+        return 0.70f + burst * 1.55f
     }
 
     private fun smoothStep01(value: Float): Float {
@@ -993,6 +1008,7 @@ private class AquariumEngine {
             GLES30.glUniform1f(fishTailDriveLocation, f.tailDrive)
             GLES30.glUniform1f(fishLeftFinDriveLocation, f.leftFinDrive)
             GLES30.glUniform1f(fishRightFinDriveLocation, f.rightFinDrive)
+            GLES30.glUniform1f(fishTurnDriveLocation, f.turnDrive)
             GLES30.glUniform1f(fishBrakeDriveLocation, f.brakeDrive)
             GLES30.glUniform1f(fishSeedLocation, f.seed)
             GLES30.glUniform1f(fishAlphaLocation, 0.72f + f.depth * 0.24f)
@@ -1101,26 +1117,35 @@ private class AquariumEngine {
                 )
             }
         }
-        fun ribbon(
-            outer: Array<Pair<Float, Float>>,
-            inner: Array<Pair<Float, Float>>,
-            z: Float,
-            kind: Float
-        ) {
-            check(outer.size == inner.size)
-            for (i in 0 until outer.lastIndex) {
-                triangle(
-                    outer[i].first, outer[i].second,
-                    inner[i].first, inner[i].second,
-                    outer[i + 1].first, outer[i + 1].second,
-                    z, kind
+        fun tailMembrane() {
+            val columnsX = floatArrayOf(-0.52f, -0.72f, -0.94f, -1.16f, -1.36f, -1.48f)
+            val halfSpans = floatArrayOf(0.075f, 0.145f, 0.275f, 0.425f, 0.490f, 0.405f)
+            val lateralRows = floatArrayOf(-1f, -0.5f, 0f, 0.5f, 1f)
+            fun tailVertex(column: Int, row: Int) {
+                val lateral = lateralRows[row]
+                // A shallow central notch preserves a goldfish tail silhouette without
+                // splitting the membrane into two independently flapping wing shapes.
+                val trailingNotch = if (column == columnsX.lastIndex) {
+                    (1f - abs(lateral)) * 0.10f
+                } else {
+                    0f
+                }
+                vertex(
+                    columnsX[column] + trailingNotch,
+                    halfSpans[column] * lateral,
+                    0.008f * (1f - abs(lateral)),
+                    1f
                 )
-                triangle(
-                    outer[i + 1].first, outer[i + 1].second,
-                    inner[i].first, inner[i].second,
-                    inner[i + 1].first, inner[i + 1].second,
-                    z, kind
-                )
+            }
+            for (column in 0 until columnsX.lastIndex) {
+                for (row in 0 until lateralRows.lastIndex) {
+                    tailVertex(column, row)
+                    tailVertex(column, row + 1)
+                    tailVertex(column + 1, row)
+                    tailVertex(column + 1, row)
+                    tailVertex(column, row + 1)
+                    tailVertex(column + 1, row + 1)
+                }
             }
         }
         val segments = 32
@@ -1132,49 +1157,10 @@ private class AquariumEngine {
             vertex(0.09f + cos(a1).toFloat() * 0.68f, sin(a1).toFloat() * 0.24f, 0.025f, 0f)
         }
 
-        // Two flexible membrane ribbons form one continuous forked caudal fin. Unlike a fan
-        // triangulated around a single hub, the columns below give the shader a real root-to-tip
-        // axis, so curvature can propagate rearward instead of rotating two rigid wing shapes.
-        ribbon(
-            arrayOf(
-                -0.52f to 0.075f,
-                -0.72f to 0.145f,
-                -0.94f to 0.275f,
-                -1.16f to 0.425f,
-                -1.36f to 0.490f,
-                -1.48f to 0.405f
-            ),
-            arrayOf(
-                -0.52f to 0.012f,
-                -0.72f to 0.018f,
-                -0.94f to 0.030f,
-                -1.16f to 0.050f,
-                -1.36f to 0.085f,
-                -1.48f to 0.150f
-            ),
-            -0.025f,
-            1f
-        )
-        ribbon(
-            arrayOf(
-                -0.52f to -0.075f,
-                -0.72f to -0.145f,
-                -0.94f to -0.275f,
-                -1.16f to -0.425f,
-                -1.36f to -0.490f,
-                -1.48f to -0.405f
-            ),
-            arrayOf(
-                -0.52f to -0.012f,
-                -0.72f to -0.018f,
-                -0.94f to -0.030f,
-                -1.16f to -0.050f,
-                -1.36f to -0.085f,
-                -1.48f to -0.150f
-            ),
-            -0.025f,
-            1f
-        )
+        // One continuous veil-like tail, subdivided both lengthwise and laterally. Every vertex
+        // participates in the same bend field; there are no left/right lobes that can flap as
+        // a symmetric pair of wings.
+        tailMembrane()
 
         // One flowing pectoral-fin pair with a rounded trailing edge.
         fan(
@@ -1402,6 +1388,7 @@ private class AquariumEngine {
             uniform float uTailDrive;
             uniform float uLeftFinDrive;
             uniform float uRightFinDrive;
+            uniform float uTurnDrive;
             uniform float uBrakeDrive;
             uniform float uAspect;
             uniform float uSpeed;
@@ -1425,24 +1412,42 @@ private class AquariumEngine {
                 // of the body like insect wings.
                 float beatPhase = uSwimPhase - tailProgress * 1.34;
                 float travellingWave = sin(beatPhase);
-                float bodyEffort = tailDrive;
                 // Keep the torso and head rigid. Locomotion is readable at the articulated
                 // caudal and pectoral fins; the fish body translates and steers as one solid
                 // mass instead of visibly wobbling with the tail phase.
                 float tailAmplitude = mix(0.130, 0.400, tailDrive);
                 float rootBend = sin(uSwimPhase) *
                                  mix(0.018, 0.052, tailDrive);
-                local.y += tailWeight * (
+                float tailLateral = aPosition.y + tailWeight * (
                     rootBend * tailProgress +
                     travellingWave * tailMotionWeight * tailAmplitude
                 );
-                // Membrane shortening and twist are secondary to the horizontal tail sweep.
-                // Opposite lobe signs create a soft cup instead of moving the two lobes as one
-                // rigid plane around Z, which was the dragonfly-like motion.
-                local.x -= (1.0 - cos(beatPhase)) * tailMotionWeight *
-                           mix(0.006, 0.020, tailDrive);
-                local.z += cos(beatPhase - 0.42) * tailMotionWeight *
-                           sign(aPosition.y) * mix(0.012, 0.048, bodyEffort);
+                // A large heading error coils the continuous caudal membrane into a C-turn.
+                // Curvature grows from the fixed peduncle to the tip and may approach one full
+                // turn. The membrane narrows while cupped so a broad veil does not become two
+                // crossing wing panels.
+                float curlActivation = smoothstep(0.38, 0.94, abs(uTurnDrive));
+                float maxCurlAngle = -sign(uTurnDrive) * curlActivation *
+                                     mix(3.20, 5.20, uBrakeDrive);
+                if (tailWeight > 0.5 && abs(maxCurlAngle) > 0.025) {
+                    float curvature = maxCurlAngle / 0.96;
+                    float arcAngle = maxCurlAngle * tailProgress;
+                    float centreX = -0.52 - sin(arcAngle) / curvature;
+                    float centreY = (1.0 - cos(arcAngle)) / curvature;
+                    float cup = abs(maxCurlAngle) / 5.20;
+                    float lateral = tailLateral * mix(1.0, 0.58, cup);
+                    local.x = centreX + sin(arcAngle) * lateral;
+                    local.y = centreY + cos(arcAngle) * lateral;
+                } else {
+                    local.y = tailLateral;
+                    local.x -= (1.0 - cos(beatPhase)) * tailMotionWeight *
+                               mix(0.006, 0.020, tailDrive);
+                }
+                // Static membrane camber plus a very small water-loaded flex. There is no
+                // alternating per-lobe Z flap, eliminating the dragonfly-wing silhouette.
+                float membraneCrown = 1.0 - smoothstep(0.0, 0.50, abs(aPosition.y));
+                local.z += tailWeight * tailProgress * membraneCrown *
+                           (0.016 + abs(travellingWave) * 0.010);
 
                 // Positive local Y is the left pectoral fin. Each side uses the exact muscle
                 // drive that contributed to CPU thrust, braking and yaw torque this frame.
@@ -1456,12 +1461,12 @@ private class AquariumEngine {
                 float finSpan = smoothstep(0.10, 0.46, abs(aPosition.y));
                 float finOpening = clamp(finDrive + uBrakeDrive * 0.38, 0.0, 1.0);
                 local.y += finFlutter * finWeight * finLever * finSide *
-                           mix(0.070, 0.235, finOpening);
-                local.x -= finWeight * finSpan * uBrakeDrive * 0.075;
+                           mix(0.026, 0.082, finOpening);
+                local.x -= finWeight * finSpan * uBrakeDrive * 0.052;
                 local.x += cos(uFinPhase + finSide * 0.24) * finWeight * finLever *
-                           mix(0.020, 0.078, finDrive);
+                           mix(0.012, 0.038, finDrive);
                 local.z += finFlutter * finWeight * finLever * finSide *
-                           mix(0.085, 0.295, finOpening);
+                           mix(0.024, 0.082, finOpening);
                 local.z += local.y * uBank * 0.42;
                 float c = cos(uHeading);
                 float s = sin(uHeading);
