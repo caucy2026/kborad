@@ -258,7 +258,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         idleUi.setHideKeyboardIsVoiceInput(useVoiceInput)
         idleUi.hideKeyboardButton.apply {
             setOnClickListener(if (useVoiceInput) null else hideKeyboardCallback)
-            swipeEnabled = !useVoiceInput
+            swipeEnabled = true
             onGestureListener = if (useVoiceInput) {
                 voiceInputGestureCallback
             } else {
@@ -314,7 +314,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             setIconTintColor(
                 if (isEnabled) Color.WHITE else DESKTOP_VOICE_DISABLED_COLOR
             )
-            swipeEnabled = false
+            swipeEnabled = true
             setOnTouchListener(null)
             onGestureListener = CustomGestureView.OnGestureListener { view, event ->
                 when (event.type) {
@@ -446,12 +446,22 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 }
             },
             onFinal = { text ->
+                if (desktopKeyboardMode && view.displayedChild ==
+                    KawaiiBarStateMachine.State.Idle.ordinal
+                ) {
+                    view.visibility = View.VISIBLE
+                }
                 idleUi.showVoiceTranscript(text)
                 voiceCommitJob?.cancel()
                 voiceCommitJob = service.lifecycleScope.launch {
                     delay(VOICE_FINAL_PREVIEW_MS)
                     service.commitText(text)
                     idleUi.hideVoiceTranscript()
+                    if (desktopKeyboardMode && asrClient.state == IflytekAsrClient.State.Idle &&
+                        view.displayedChild == KawaiiBarStateMachine.State.Idle.ordinal
+                    ) {
+                        view.visibility = View.INVISIBLE
+                    }
                 }
             },
             onError = { message ->
@@ -462,7 +472,14 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     Toast.LENGTH_SHORT
                 ).show()
             },
-            onPartial = idleUi::showVoiceTranscript
+            onPartial = { text ->
+                if (desktopKeyboardMode && view.displayedChild ==
+                    KawaiiBarStateMachine.State.Idle.ordinal
+                ) {
+                    view.visibility = View.VISIBLE
+                }
+                idleUi.showVoiceTranscript(text)
+            }
         )
     }
 
@@ -506,23 +523,35 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     asrClient.cancel()
                     idleUi.hideVoiceTranscript()
                     voicePressActive = true
-                    asrClient.start()
+                    voiceStartJob = service.lifecycleScope.launch {
+                        delay(VOICE_HOLD_START_DELAY_MS)
+                        if (voicePressActive) asrClient.start()
+                        voiceStartJob = null
+                    }
                 }
             }
             CustomGestureView.GestureType.Up -> {
                 val wasVoicePressActive = voicePressActive
                 if (wasVoicePressActive) {
                     voicePressActive = false
-                    asrClient.stop()
+                    voiceStartJob?.cancel()
+                    voiceStartJob = null
+                    if (asrClient.state == IflytekAsrClient.State.Idle) {
+                        idleUi.hideVoiceTranscript()
+                    } else {
+                        asrClient.stop()
+                    }
                 }
             }
             CustomGestureView.GestureType.Move -> {
-                if (voiceStartJob?.isActive == true &&
+                if (voicePressActive &&
                     (abs(event.totalX) > VOICE_CANCEL_MOVE_THRESHOLD ||
                         abs(event.totalY) > VOICE_CANCEL_MOVE_THRESHOLD)
                 ) {
+                    voicePressActive = false
                     voiceStartJob?.cancel()
                     voiceStartJob = null
+                    asrClient.cancel()
                     idleUi.hideVoiceTranscript()
                 }
             }
@@ -849,7 +878,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
 
     companion object {
         const val HEIGHT = 48
-        const val VOICE_FINAL_PREVIEW_MS = 300L
+        const val VOICE_FINAL_PREVIEW_MS = 600L
+        const val VOICE_HOLD_START_DELAY_MS = 160L
         const val VOICE_PERMISSION_REQUEST_COOLDOWN_MS = 2_000L
         const val VOICE_CANCEL_MOVE_THRESHOLD = 24f
         const val DESKTOP_VOICE_KEY_COLOR = 0xFF29465C.toInt()

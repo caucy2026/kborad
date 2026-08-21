@@ -218,39 +218,43 @@ object InputFeedbacks {
 
     private fun createRippleSoundTrack(variant: Int): AudioTrack {
         val samples = ShortArray((RIPPLE_SAMPLE_RATE * RIPPLE_DURATION_SECONDS).toInt())
-        val pitch = 0.94 + variant * 0.035
-        val echoDelay = 0.074 + variant * 0.006
+        val pitch = 0.96 + variant * 0.026
+        var noiseState = 0x6D2B79F5 xor (variant * 0x13579B)
+        var lowNoise = 0.0
+        fun nextNoise(): Double {
+            noiseState = noiseState xor (noiseState shl 13)
+            noiseState = noiseState xor (noiseState ushr 17)
+            noiseState = noiseState xor (noiseState shl 5)
+            return (noiseState.toLong() and 0x7fffffffL) / 1073741824.0 - 1.0
+        }
         samples.indices.forEach { index ->
             val t = index.toDouble() / RIPPLE_SAMPLE_RATE
-            val attack = sin(PI * 0.5 * (t / 0.0045).coerceAtMost(1.0))
-            val release = if (t < 0.30) 1.0 else {
-                val tail = ((t - 0.30) / (RIPPLE_DURATION_SECONDS - 0.30)).coerceIn(0.0, 1.0)
+            val attack = sin(PI * 0.5 * (t / 0.0022).coerceAtMost(1.0))
+            val release = if (t < 0.27) 1.0 else {
+                val tail = ((t - 0.27) / (RIPPLE_DURATION_SECONDS - 0.27)).coerceIn(0.0, 1.0)
                 0.5 + 0.5 * kotlin.math.cos(PI * tail)
             }
-            val bubbleSweep = 390.0 * pitch * t + 510.0 *
-                (t - (1.0 - exp(-22.0 * t)) / 22.0)
-            val bubble = sin(2.0 * PI * bubbleSweep + 0.18) * exp(-15.0 * t)
-            val surfaceMode = sin(2.0 * PI * 710.0 * pitch * t) * exp(-24.0 * t)
-            val waterBody = sin(2.0 * PI * 132.0 * pitch * t +
-                0.58 * sin(2.0 * PI * 3.4 * t)) * exp(-8.8 * t)
-            val firstEchoTime = (t - echoDelay).coerceAtLeast(0.0)
-            val firstEcho = if (t >= echoDelay) {
-                sin(2.0 * PI * (620.0 * pitch * firstEchoTime - 220.0 * firstEchoTime * firstEchoTime)) *
-                    exp(-16.0 * firstEchoTime)
+            val whiteNoise = nextNoise()
+            lowNoise += (whiteNoise - lowNoise) * 0.075
+            val surfaceNoise = lowNoise
+            val contactNoise = whiteNoise - lowNoise
+            val contact = contactNoise * (1.0 - exp(-620.0 * t)) * exp(-145.0 * t)
+            val bubblePhase = 2.0 * PI * (
+                430.0 * pitch * t + 1640.0 * t * t - 1850.0 * t * t * t
+                )
+            val bubble = sin(bubblePhase + 0.12) * exp(-31.0 * t)
+            val waterBodyPhase = 2.0 * PI * (168.0 * pitch * t - 42.0 * t * t)
+            val waterBody = sin(waterBodyPhase + 0.38) * exp(-12.5 * t)
+            val sheet = surfaceNoise * (1.0 - exp(-95.0 * t)) * exp(-18.0 * t)
+            val satelliteDelay = 0.086 + variant * 0.004
+            val satelliteTime = t - satelliteDelay
+            val satellite = if (satelliteTime >= 0.0) {
+                sin(2.0 * PI * (520.0 * pitch * satelliteTime +
+                    720.0 * satelliteTime * satelliteTime)) * exp(-38.0 * satelliteTime)
             } else 0.0
-            val secondDelay = echoDelay + 0.082
-            val secondEchoTime = (t - secondDelay).coerceAtLeast(0.0)
-            val secondEcho = if (t >= secondDelay) {
-                sin(2.0 * PI * 330.0 * pitch * secondEchoTime + 0.5) * exp(-13.5 * secondEchoTime)
-            } else 0.0
-            val splashTexture = (
-                sin(2.0 * PI * 1789.0 * t) +
-                    0.58 * sin(2.0 * PI * 2467.0 * t + 0.8) +
-                    0.34 * sin(2.0 * PI * 3251.0 * t + 1.7)
-                ) * exp(-42.0 * t)
             val sample = attack * release * (
-                0.34 * bubble + 0.18 * surfaceMode + 0.24 * waterBody +
-                    0.14 * firstEcho + 0.07 * secondEcho + 0.03 * splashTexture
+                0.20 * contact + 0.38 * bubble + 0.25 * waterBody +
+                    0.11 * sheet + 0.06 * satellite
                 )
             samples[index] = (sample.coerceIn(-1.0, 1.0) * Short.MAX_VALUE).toInt().toShort()
         }
@@ -276,8 +280,8 @@ object InputFeedbacks {
 
     private const val PHYSICAL_KEY_UP_VOLUME_SCALE = 0.38f
     private const val RIPPLE_SAMPLE_RATE = 44_100
-    private const val RIPPLE_DURATION_SECONDS = 0.46
+    private const val RIPPLE_DURATION_SECONDS = 0.42
     private const val RIPPLE_TRACK_COUNT = 4
-    private const val RIPPLE_DEFAULT_VOLUME = 0.62f
+    private const val RIPPLE_DEFAULT_VOLUME = 0.56f
 
 }
