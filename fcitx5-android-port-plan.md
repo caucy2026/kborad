@@ -495,7 +495,8 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 
 - `.63` 为 Android 12/API 31、arm64-v8a、Mali-G52、OpenGL ES 3.2，D0/D2 均为 1920×1280@60Hz；全局键盘内部水面限制到 1440 宽。
 - Release 构建成功不代表 GLSL 可在目标驱动运行。Mali 编译器会拒绝保留标识符 `patch`，首版因此在 `KBoardAquarium` 日志中停止；改用 `koiPatch` 后程序正常链接。
-- 最终 `be056495` Release 在 D0 的内部 surface 为 1440×471，10 条鱼连续 58.5–59.5 FPS，未发生 EGL/GL、`AudioTrack` 或应用崩溃。
+- 当前 `f4da0687` Release 将动画固定为 30Hz；D0 的内部 surface 为 1440×471，10 条鱼连续 29.3–29.9 FPS，未发生 EGL/GL 或应用崩溃。金鱼可进入最下排按键覆盖区；鱼身至尾尖使用振幅递增的单一行波，尾根与身体连续，胸鳍低频独立飘动，转弯加入 Z 轴侧倾；水波使用方向性高度场而不是 Android 圆形 `RippleDrawable`。
+- 全局语音键恢复为底部白色麦克风，语音链恢复 160ms 按住阈值、移动取消、partial 实时字幕、松开校准、final 预览 600ms 后单次提交；真机确认 `RECORD_AUDIO`、`INTERNET`、`ACCESS_NETWORK_STATE` 权限链未被水族界面改动破坏。远程触发会把现场音频发送至讯飞，必须得到该项明确授权后再做完整会话测试。
 - 设备安装与性能验收仍按 Release-only 流程执行；水滴音的听感必须由真机扬声器人工确认，日志只能证明音轨创建和播放路径没有异常。
 
 #### RustDesk/KEMI 远程回车
