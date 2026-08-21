@@ -260,9 +260,19 @@ private class AquariumEngine {
         val scale: Float,
         val phase: Float,
         val seed: Float,
+        val baseColor: FloatArray,
+        val patchColor: FloatArray,
+        val accentColor: FloatArray,
+        val pattern: Float,
         var wanderX: Float,
         var wanderY: Float,
         var nextWanderTime: Float
+    )
+
+    private data class FishPalette(
+        val base: FloatArray,
+        val patch: FloatArray,
+        val accent: FloatArray
     )
 
     private data class Ripple(var x: Float = 0f, var y: Float = 0f, var start: Float = -100f)
@@ -294,6 +304,10 @@ private class AquariumEngine {
     private var fishPhaseLocation = -1
     private var fishSeedLocation = -1
     private var fishAlphaLocation = -1
+    private var fishBaseColorLocation = -1
+    private var fishPatchColorLocation = -1
+    private var fishAccentColorLocation = -1
+    private var fishPatternLocation = -1
     private val rippleUniforms = FloatArray(MAX_RIPPLES * 4)
     private var width = 1
     private var height = 1
@@ -320,6 +334,10 @@ private class AquariumEngine {
         fishPhaseLocation = GLES30.glGetUniformLocation(fishProgram, "uPhase")
         fishSeedLocation = GLES30.glGetUniformLocation(fishProgram, "uSeed")
         fishAlphaLocation = GLES30.glGetUniformLocation(fishProgram, "uAlpha")
+        fishBaseColorLocation = GLES30.glGetUniformLocation(fishProgram, "uBaseColor")
+        fishPatchColorLocation = GLES30.glGetUniformLocation(fishProgram, "uPatchColor")
+        fishAccentColorLocation = GLES30.glGetUniformLocation(fishProgram, "uAccentColor")
+        fishPatternLocation = GLES30.glGetUniformLocation(fishProgram, "uPattern")
         createWaterGeometry()
         createFishGeometry()
         GLES30.glDisable(GLES30.GL_CULL_FACE)
@@ -367,15 +385,20 @@ private class AquariumEngine {
 
     private fun createFish(index: Int): Fish {
         val heading = if (index % 2 == 0) 1f else -1f
+        val palette = FISH_PALETTES[index % FISH_PALETTES.size]
         return Fish(
             x = random.nextFloat() * 1.7f - 0.85f,
             y = random.nextFloat() * 1.55f - 0.78f,
             vx = heading * (0.07f + random.nextFloat() * 0.08f),
             vy = random.nextFloat() * 0.08f - 0.04f,
             depth = random.nextFloat(),
-            scale = 0.085f + random.nextFloat() * 0.045f,
+            scale = FISH_SCALES[index % FISH_SCALES.size],
             phase = random.nextFloat() * (2f * PI.toFloat()),
             seed = random.nextFloat() * 12f,
+            baseColor = palette.base,
+            patchColor = palette.patch,
+            accentColor = palette.accent,
+            pattern = (index % 4).toFloat(),
             wanderX = random.nextFloat() * 1.6f - 0.8f,
             wanderY = random.nextFloat() * 1.4f - 0.7f,
             nextWanderTime = 1f + random.nextFloat() * 3f
@@ -477,6 +500,19 @@ private class AquariumEngine {
             GLES30.glUniform1f(fishPhaseLocation, f.phase)
             GLES30.glUniform1f(fishSeedLocation, f.seed)
             GLES30.glUniform1f(fishAlphaLocation, 0.72f + f.depth * 0.24f)
+            GLES30.glUniform3f(
+                fishBaseColorLocation,
+                f.baseColor[0], f.baseColor[1], f.baseColor[2]
+            )
+            GLES30.glUniform3f(
+                fishPatchColorLocation,
+                f.patchColor[0], f.patchColor[1], f.patchColor[2]
+            )
+            GLES30.glUniform3f(
+                fishAccentColorLocation,
+                f.accentColor[0], f.accentColor[1], f.accentColor[2]
+            )
+            GLES30.glUniform1f(fishPatternLocation, f.pattern)
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, fishVertexCount)
         }
         GLES30.glBindVertexArray(0)
@@ -614,6 +650,24 @@ private class AquariumEngine {
         const val ATTRACTION_SECONDS = 2.4f
         const val PERFORMANCE_REPORT_NS = 5_000_000_000L
 
+        val FISH_SCALES = floatArrayOf(
+            0.072f, 0.112f, 0.086f, 0.145f, 0.066f,
+            0.124f, 0.094f, 0.136f, 0.078f, 0.104f
+        )
+
+        val FISH_PALETTES = arrayOf(
+            FishPalette(floatArrayOf(0.96f, 0.97f, 0.94f), floatArrayOf(0.96f, 0.18f, 0.07f), floatArrayOf(0.08f, 0.09f, 0.12f)),
+            FishPalette(floatArrayOf(0.98f, 0.72f, 0.10f), floatArrayOf(0.94f, 0.30f, 0.04f), floatArrayOf(0.99f, 0.94f, 0.64f)),
+            FishPalette(floatArrayOf(0.90f, 0.94f, 0.98f), floatArrayOf(0.10f, 0.42f, 0.82f), floatArrayOf(0.04f, 0.12f, 0.24f)),
+            FishPalette(floatArrayOf(0.96f, 0.78f, 0.58f), floatArrayOf(0.76f, 0.08f, 0.11f), floatArrayOf(0.20f, 0.04f, 0.06f)),
+            FishPalette(floatArrayOf(0.82f, 0.90f, 0.72f), floatArrayOf(0.24f, 0.60f, 0.18f), floatArrayOf(0.94f, 0.82f, 0.16f)),
+            FishPalette(floatArrayOf(0.96f, 0.90f, 0.82f), floatArrayOf(0.46f, 0.24f, 0.12f), floatArrayOf(0.10f, 0.08f, 0.07f)),
+            FishPalette(floatArrayOf(0.92f, 0.84f, 0.98f), floatArrayOf(0.48f, 0.18f, 0.72f), floatArrayOf(0.18f, 0.06f, 0.28f)),
+            FishPalette(floatArrayOf(0.86f, 0.96f, 0.96f), floatArrayOf(0.04f, 0.62f, 0.64f), floatArrayOf(0.98f, 0.54f, 0.12f)),
+            FishPalette(floatArrayOf(0.98f, 0.82f, 0.88f), floatArrayOf(0.88f, 0.18f, 0.42f), floatArrayOf(0.46f, 0.04f, 0.16f)),
+            FishPalette(floatArrayOf(0.88f, 0.90f, 0.94f), floatArrayOf(0.16f, 0.20f, 0.28f), floatArrayOf(0.92f, 0.34f, 0.08f))
+        )
+
         const val WATER_VERTEX_SHADER = """#version 300 es
             layout(location = 0) in vec2 aPosition;
             out vec2 vUv;
@@ -647,12 +701,15 @@ private class AquariumEngine {
                     delta.x *= aspect;
                     float distanceFromTouch = length(delta);
                     float radius = age * 0.44;
-                    float ring = exp(-abs(distanceFromTouch - radius) * 52.0);
-                    float echo = exp(-abs(distanceFromTouch - radius * 0.66) * 44.0) * 0.45;
+                    float ring = exp(-abs(distanceFromTouch - radius) * 58.0);
+                    float echo = exp(-abs(distanceFromTouch - radius * 0.68) * 46.0) * 0.58;
+                    float softRing = exp(-abs(distanceFromTouch - radius * 0.42) * 38.0) * 0.28;
+                    float touchGlow = exp(-distanceFromTouch * 34.0) *
+                                      (1.0 - smoothstep(0.0, 0.34, age));
                     float alive = step(0.0, age) * (1.0 - smoothstep(0.8, 1.75, age));
-                    rippleLight += (ring + echo) * alive;
+                    rippleLight += (ring + echo + softRing + touchGlow) * alive;
                 }
-                color += vec3(0.20, 0.70, 0.85) * rippleLight * 0.34;
+                color += vec3(0.20, 0.74, 0.92) * rippleLight * 0.46;
                 float vignette = 1.0 - smoothstep(0.20, 1.18, length((uv - 0.5) * vec2(1.0, 0.74)));
                 color *= 0.72 + vignette * 0.28;
                 fragColor = vec4(color, 1.0);
@@ -693,17 +750,29 @@ private class AquariumEngine {
             out vec4 fragColor;
             uniform float uSeed;
             uniform float uAlpha;
+            uniform vec3 uBaseColor;
+            uniform vec3 uPatchColor;
+            uniform vec3 uAccentColor;
+            uniform float uPattern;
             void main() {
-                float patchNoise = sin(vLocal.x * 13.0 + uSeed) +
-                                   sin(vLocal.y * 18.0 - uSeed * 1.7) * 0.72;
-                float koiPatch = smoothstep(0.20, 0.82, patchNoise);
-                vec3 pearl = vec3(0.93, 0.96, 0.97);
-                vec3 vermilion = vec3(1.0, 0.16, 0.055);
-                vec3 ink = vec3(0.055, 0.075, 0.095);
-                vec3 color = mix(pearl, vermilion, koiPatch);
-                float inkPatch = smoothstep(1.20, 1.78,
+                float organic = sin(vLocal.x * 13.0 + uSeed) +
+                                sin(vLocal.y * 18.0 - uSeed * 1.7) * 0.72;
+                float stripes = sin(vLocal.x * 24.0 + vLocal.y * 5.0 + uSeed) * 1.18;
+                float speckles = sin(vLocal.x * 31.0 + uSeed) *
+                                  sin(vLocal.y * 29.0 - uSeed) * 1.55;
+                float saddle = cos((vLocal.x + 0.15) * 8.5 + uSeed) -
+                               abs(vLocal.y) * 1.25;
+                float pattern1 = 1.0 - smoothstep(0.38, 0.62, abs(uPattern - 1.0));
+                float pattern2 = 1.0 - smoothstep(0.38, 0.62, abs(uPattern - 2.0));
+                float pattern3 = 1.0 - smoothstep(0.38, 0.62, abs(uPattern - 3.0));
+                float motif = mix(organic, stripes, pattern1);
+                motif = mix(motif, speckles, pattern2);
+                motif = mix(motif, saddle, pattern3);
+                float colorPatch = smoothstep(0.16, 0.78, motif);
+                vec3 color = mix(uBaseColor, uPatchColor, colorPatch);
+                float accentPatch = smoothstep(1.12, 1.74,
                     sin(vLocal.x * 8.0 - uSeed * 2.3) + sin(vLocal.y * 11.0));
-                color = mix(color, ink, inkPatch * 0.72);
+                color = mix(color, uAccentColor, accentPatch * 0.68);
                 color *= clamp(vHighlight, 0.62, 1.18);
                 float fin = 1.0 - smoothstep(0.18, 0.35, abs(vLocal.y));
                 float alpha = mix(uAlpha * 0.68, uAlpha, fin);

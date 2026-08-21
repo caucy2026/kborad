@@ -114,3 +114,46 @@ fun aquariumGlassKeyBackgroundDrawable(
         addState(intArrayOf(), face(false))
     }
 }
+
+fun aquariumSolidKeyBackgroundDrawable(
+    radius: Float,
+    hMargin: Int,
+    vMargin: Int
+): Drawable {
+    fun face(selected: Boolean): Drawable = LayerDrawable(
+        arrayOf(
+            GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(0xFF020A12.toInt(), 0xFF07121E.toInt())
+            ).apply {
+                cornerRadius = radius
+            },
+            GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                if (selected) {
+                    intArrayOf(0xFF297895.toInt(), 0xFF123B55.toInt())
+                } else {
+                    intArrayOf(0xFF29465C.toInt(), 0xFF102536.toInt())
+                }
+            ).apply {
+                cornerRadius = radius
+                setStroke(1, if (selected) 0xFF75DFFF.toInt() else 0xFF426A84.toInt())
+            },
+            GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(0x4DFFFFFF, 0x00FFFFFF)
+            ).apply {
+                cornerRadius = radius * 0.82f
+            }
+        )
+    ).apply {
+        setLayerInset(0, hMargin, vMargin + 3, hMargin, vMargin)
+        setLayerInset(1, hMargin, vMargin, hMargin, vMargin + 3)
+        setLayerInset(2, hMargin + 2, vMargin + 2, hMargin + 2, vMargin + 8)
+    }
+
+    return StateListDrawable().apply {
+        addState(intArrayOf(android.R.attr.state_selected), face(true))
+        addState(intArrayOf(), face(false))
+    }
+}

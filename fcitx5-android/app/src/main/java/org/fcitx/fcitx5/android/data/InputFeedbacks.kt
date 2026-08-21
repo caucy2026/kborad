@@ -220,17 +220,32 @@ object InputFeedbacks {
         val samples = ShortArray((RIPPLE_SAMPLE_RATE * RIPPLE_DURATION_SECONDS).toInt())
         samples.indices.forEach { index ->
             val t = index.toDouble() / RIPPLE_SAMPLE_RATE
-            val attack = sin(PI * 0.5 * (t / 0.012).coerceAtMost(1.0))
-            val drop = sin(2.0 * PI * (680.0 * t - 520.0 * t * t)) * exp(-15.0 * t)
-            val waterBody = sin(2.0 * PI * 238.0 * t + 0.9 * sin(2.0 * PI * 4.2 * t)) * exp(-10.5 * t)
-            val echoTime = (t - 0.072).coerceAtLeast(0.0)
-            val softEcho = if (t >= 0.072) {
-                sin(2.0 * PI * (410.0 * echoTime - 180.0 * echoTime * echoTime)) *
-                    exp(-16.0 * echoTime)
+            val attack = sin(PI * 0.5 * (t / 0.0045).coerceAtMost(1.0))
+            val release = if (t < 0.30) 1.0 else {
+                val tail = ((t - 0.30) / (RIPPLE_DURATION_SECONDS - 0.30)).coerceIn(0.0, 1.0)
+                0.5 + 0.5 * kotlin.math.cos(PI * tail)
+            }
+            val crystalDrop = sin(2.0 * PI * (1160.0 * t - 910.0 * t * t)) * exp(-21.0 * t)
+            val roundDrop = sin(2.0 * PI * (525.0 * t - 170.0 * t * t) + 0.35) * exp(-13.0 * t)
+            val waterBody = sin(2.0 * PI * 142.0 * t + 0.72 * sin(2.0 * PI * 3.6 * t)) * exp(-7.8 * t)
+            val firstEchoTime = (t - 0.068).coerceAtLeast(0.0)
+            val firstEcho = if (t >= 0.068) {
+                sin(2.0 * PI * (690.0 * firstEchoTime - 310.0 * firstEchoTime * firstEchoTime)) *
+                    exp(-16.0 * firstEchoTime)
             } else 0.0
-            val softSplash = sin(2.0 * PI * 1730.0 * t) *
-                sin(2.0 * PI * 911.0 * t) * exp(-34.0 * t)
-            val sample = attack * (0.31 * drop + 0.25 * waterBody + 0.16 * softEcho + 0.035 * softSplash)
+            val secondEchoTime = (t - 0.142).coerceAtLeast(0.0)
+            val secondEcho = if (t >= 0.142) {
+                sin(2.0 * PI * 360.0 * secondEchoTime + 0.5) * exp(-13.0 * secondEchoTime)
+            } else 0.0
+            val splashTexture = (
+                sin(2.0 * PI * 1789.0 * t) +
+                    0.58 * sin(2.0 * PI * 2467.0 * t + 0.8) +
+                    0.34 * sin(2.0 * PI * 3251.0 * t + 1.7)
+                ) * exp(-42.0 * t)
+            val sample = attack * release * (
+                0.25 * crystalDrop + 0.25 * roundDrop + 0.27 * waterBody +
+                    0.15 * firstEcho + 0.08 * secondEcho + 0.025 * splashTexture
+                )
             samples[index] = (sample.coerceIn(-1.0, 1.0) * Short.MAX_VALUE).toInt().toShort()
         }
         return AudioTrack.Builder()
@@ -255,8 +270,8 @@ object InputFeedbacks {
 
     private const val PHYSICAL_KEY_UP_VOLUME_SCALE = 0.38f
     private const val RIPPLE_SAMPLE_RATE = 44_100
-    private const val RIPPLE_DURATION_SECONDS = 0.32
-    private const val RIPPLE_TRACK_COUNT = 3
-    private const val RIPPLE_DEFAULT_VOLUME = 0.54f
+    private const val RIPPLE_DURATION_SECONDS = 0.42
+    private const val RIPPLE_TRACK_COUNT = 4
+    private const val RIPPLE_DEFAULT_VOLUME = 0.62f
 
 }

@@ -506,11 +506,13 @@ class InputView(
         }
         desktopExitButton.setPhysicalKeyStyle(
             enabled,
-            theme.altKeyBackgroundColor,
-            theme.keyPressHighlightColor
+            if (enabled) DESKTOP_KEY_COLOR else theme.altKeyBackgroundColor,
+            if (enabled) DESKTOP_KEY_HIGHLIGHT_COLOR else theme.keyPressHighlightColor
         )
         desktopExitButton.physicalReleaseSoundEnabled = !enabled
-        desktopExitButton.setIconTintColor(theme.altKeyTextColor)
+        desktopExitButton.setIconTintColor(
+            if (enabled) Color.WHITE else theme.altKeyTextColor
+        )
         if (enabled) {
             bringDesktopButtonsToFront()
             kawaiiBar.view.bringToFront()
@@ -524,12 +526,15 @@ class InputView(
             updateFloatingKeyboardLayout()
         }
         kawaiiBar.view.setBackgroundColor(
-            if (enabled) theme.barColor
+            if (enabled) DESKTOP_SURFACE_COLOR
             else if (keyBorder) Color.TRANSPARENT else theme.barColor
         )
-        keyboardView.setBackgroundColor(if (enabled) theme.keyboardColor else Color.TRANSPARENT)
+        desktopOperationArea.setBackgroundColor(
+            if (enabled) DESKTOP_SURFACE_COLOR else Color.TRANSPARENT
+        )
+        keyboardView.setBackgroundColor(if (enabled) DESKTOP_SURFACE_COLOR else Color.TRANSPARENT)
         customBackground.imageDrawable = if (enabled) {
-            ColorDrawable(theme.keyboardColor)
+            ColorDrawable(DESKTOP_SURFACE_COLOR)
         } else {
             theme.backgroundDrawable(keyBorder)
         }
@@ -890,12 +895,15 @@ class InputView(
         const val DESKTOP_OPERATION_HEIGHT_DP = 64
         const val DESKTOP_OPERATION_BUTTON_SIZE_DP = 56
         const val DESKTOP_PREEDIT_GAP_DP = 0
-        const val DESKTOP_SIDE_PADDING_DP = 12
+        const val DESKTOP_SIDE_PADDING_DP = 0
         const val DESKTOP_VERTICAL_INSET_DP = 20
         const val DESKTOP_ROW_COUNT = 6f
         const val DESKTOP_LAYOUT_WIDTH_UNITS = 15f
         const val DESKTOP_MIN_HEIGHT_PERCENT = 35
         const val DESKTOP_MAX_HEIGHT_PERCENT = 72
+        const val DESKTOP_SURFACE_COLOR = 0xFF061827.toInt()
+        const val DESKTOP_KEY_COLOR = 0xFF29465C.toInt()
+        const val DESKTOP_KEY_HIGHLIGHT_COLOR = 0xFF4EC7E8.toInt()
         const val FLOATING_KEYBOARD_RADIUS_DP = 24
         const val FLOATING_RESIZE_CORNER_SIZE_DP = 48
         const val FLOATING_RESIZE_CORNER_PADDING_DP = 8

@@ -236,9 +236,30 @@ abstract class KeyView(
         }
     }
 
+    fun setAquariumSolidStyle(enabled: Boolean) {
+        if (!enabled) return
+        appearanceView.background = aquariumSolidKeyBackgroundDrawable(
+            radius = radius,
+            hMargin = hMargin,
+            vMargin = vMargin
+        )
+        appearanceView.foreground = RippleDrawable(
+            ColorStateList.valueOf(0x9957D8F5.toInt()),
+            null,
+            highlightMaskDrawable(Color.WHITE)
+        )
+        appearanceView.allViews.forEach { child ->
+            when (child) {
+                is android.widget.TextView -> child.setTextColor(0xFFF4F8FC.toInt())
+                is ImageView -> child.imageTintList = ColorStateList.valueOf(0xFFF4F8FC.toInt())
+            }
+        }
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                appearanceView.drawableHotspotChanged(event.x, event.y)
                 appearanceView.animate().cancel()
                 if (physicalKeyStyleEnabled) {
                     appearanceView.animate()

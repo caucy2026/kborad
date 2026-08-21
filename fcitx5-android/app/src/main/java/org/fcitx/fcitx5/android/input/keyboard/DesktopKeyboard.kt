@@ -34,7 +34,7 @@ class DesktopKeyboard private constructor(
         theme,
         Layout,
         compositionHeader,
-        KeyVisualMetrics(horizontalMarginDp = 3, verticalMarginDp = 3, radiusDp = 10f)
+        KeyVisualMetrics(horizontalMarginDp = 2, verticalMarginDp = 2, radiusDp = 8f)
     ) {
 
     constructor(context: Context, theme: Theme) : this(
@@ -56,10 +56,11 @@ class DesktopKeyboard private constructor(
                 ConstraintLayout.LayoutParams.MATCH_PARENT
             )
         )
-        setPadding(0, context.dp(4), 0, context.dp(10))
+        setBackgroundColor(DESKTOP_DECK_COLOR)
+        setPadding(0, 0, 0, 0)
         allViews.filterIsInstance<KeyView>().forEach {
             it.setPhysicalKeyStyle(true)
-            it.setAquariumGlassStyle(true)
+            it.setAquariumSolidStyle(true)
             it.keyDownSoundEnabled = false
             it.physicalReleaseSoundEnabled = false
             it.onTouchDownFeedback = ::onAquariumKeyDown
@@ -82,6 +83,7 @@ class DesktopKeyboard private constructor(
     companion object {
         const val Name = "Desktop"
         private const val LayoutWidthInKeyUnits = 15f
+        private const val DESKTOP_DECK_COLOR = 0xFF061827.toInt()
 
         private fun Context.dp(value: Int) =
             (value * resources.displayMetrics.density).roundToInt()
@@ -345,8 +347,8 @@ class DesktopKeyboard private constructor(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        val topPadding = context.dp(4)
-        val bottomPadding = context.dp(10)
+        val topPadding = 0
+        val bottomPadding = 0
         val horizontalPadding = 0
         val availableHeight = h - topPadding - bottomPadding
         val rowHeight = (w - horizontalPadding * 2) / LayoutWidthInKeyUnits
