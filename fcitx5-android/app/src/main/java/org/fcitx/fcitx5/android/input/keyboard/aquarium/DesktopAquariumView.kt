@@ -1312,6 +1312,8 @@ private class AquariumEngine {
                 float waveEnergy = 0.0;
                 float rippleCrest = 0.0;
                 float rippleShadow = 0.0;
+                float contactDimple = 0.0;
+                float contactGlint = 0.0;
                 for (int i = 0; i < 4; ++i) {
                     float age = uTime - uRipples[i].z;
                     vec2 delta = uv - uRipples[i].xy;
@@ -1355,9 +1357,38 @@ private class AquariumEngine {
                     vec2 radialInCurrent = currentSpace / rawDistance;
                     vec2 radial = currentAxis * radialInCurrent.x * 0.95 +
                                   currentNormal * radialInCurrent.y * 1.05;
+                    // The travelling wave is almost flat on its first frame. Add the small
+                    // asymmetric depression and offset reflection that are visible the instant
+                    // a fingertip breaks the surface, then fade them before the wake takes over.
+                    // Current-space scaling plus angular perturbation keeps this from becoming
+                    // a synthetic circular ring.
+                    float contactLifetime = step(0.0, age) *
+                                            (1.0 - smoothstep(0.16, 0.30, age));
+                    vec2 contactSpace = vec2(
+                        currentSpace.x * 1.16 + currentSpace.y * 0.10,
+                        currentSpace.y * 0.84
+                    );
+                    float contactDistance = max(length(contactSpace), 0.001);
+                    float contactAngle = atan(contactSpace.y, contactSpace.x);
+                    float irregularContactDistance = contactDistance * (
+                        1.0 + sin(contactAngle * 3.0 + currentAngle) * 0.075 +
+                        sin(contactAngle * 5.0 - currentAngle) * 0.035
+                    );
+                    float dimple = exp(-irregularContactDistance * irregularContactDistance * 190.0) *
+                                   contactLifetime;
+                    vec2 glintOffset = contactSpace - vec2(-0.021, 0.015);
+                    float glint = exp(-dot(glintOffset, glintOffset) * 560.0) *
+                                  contactLifetime;
+                    float contactFront = 0.013 + age * 0.12;
+                    float contactBandDistance =
+                        (irregularContactDistance - contactFront) / 0.020;
+                    float contactBand = exp(-contactBandDistance * contactBandDistance) *
+                                        contactLifetime;
                     waveHeight += height;
                     waveEnergy += abs(height);
-                    waveSlope += radial * cos(phase) * envelope * 0.54;
+                    waveSlope += radial * (cos(phase) * envelope * 0.54 - dimple * 0.32);
+                    contactDimple += dimple;
+                    contactGlint += glint * 0.92 + contactBand * 0.52;
                     // A broad highlight and its offset shadow expose the surface displacement
                     // through translucent keys. Both inherit the current-stretched, irregular
                     // distance field above, so the result is a soft pond ripple rather than a
@@ -1385,6 +1416,10 @@ private class AquariumEngine {
                 color += vec3(0.12, 0.48, 0.66) * min(rippleCrest, 1.3) * 0.095;
                 color -= vec3(0.02, 0.10, 0.15) *
                          (trough * 0.070 + min(rippleShadow, 1.2) * 0.030);
+                // Keep the contact cue legible below the translucent keycaps. Its highlight is
+                // deliberately offset from the shallow blue depression like a real water dimple.
+                color -= vec3(0.04, 0.14, 0.20) * min(contactDimple, 1.0) * 0.34;
+                color += vec3(0.34, 0.78, 0.94) * min(contactGlint, 1.25) * 0.24;
                 float vignette = 1.0 - smoothstep(0.20, 1.18, length((uv - 0.5) * vec2(1.0, 0.74)));
                 color *= 0.72 + vignette * 0.28;
                 fragColor = vec4(color, 1.0);
