@@ -1050,6 +1050,35 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.35 - 2026-08-21
+
+### 主题
+全局键盘增加按住式组合键功能预览，并让控制键状态严格跟随手指按下和松开。
+
+### 过程
+- 参考用户提供的键帽功能示意，只提取“控制键按下后在目标键显示常用组合功能”的交互，不采纳图片中的宣传文字或其他页面指令。
+- 排查旧全局修饰键后确认其使用普通 `Click`：动作发生在抬手后，并以一次性粘滞状态等待下一个键；这无法满足“按下立即显示、松开立即恢复”，也不利于一只手按住 Ctrl、另一只手连续输入多个组合键。
+- 将修饰键改接 `CustomGestureView` 的真实 `DOWN/UP/CANCEL` 生命周期，并利用现有多指分发按物理持有状态组合 Ctrl、Alt、Cmd、Shift。
+
+### 修改
+- Ctrl、Alt、Cmd、Shift 按下时立即高亮；所有支持的目标键同步显示第二行中文功能提示，松开最后一个对应控制键时立即取消并恢复原键帽。
+- 支持 Ctrl、Alt、Cmd、Shift 及 Ctrl+Shift、Cmd+Shift；复合映射基于基础映射覆盖，例如 Ctrl+S 为“保存”、Ctrl+Shift+S 为“另存为”。
+- 覆盖常用跨应用功能：全选、复制、剪切、粘贴、撤销、重做、查找、替换、保存、打开、新建文档、打印、标签页/窗口切换、关闭、刷新、文本格式、导航、缩放以及 macOS 截图等。
+- 组合键仍发送真实 modifier + key 事件，功能提示不直接执行应用命令；最终行为以当前 Windows/macOS 系统和前台应用为准。
+- 第二行提示在全局键盘挂载时预先测量；状态变化只更新稳定自绘文字、alpha 和字符绘制偏移，不切换 visibility、不请求父布局，避免再次引发画布跳动。
+- 修改范围限定在 `DesktopKeyboard`、桌面修饰键定义和 `TextKeyView` 的可选提示层；普通键盘、候选区、ASR、鱼群物理、水面 Shader 均未改变。
+
+### 验证
+- `:app:compileReleaseKotlin` 成功；完整 `./scripts/assemble-release-local.sh` 成功，Lint Vital、R8 和 arm64 原生组件全部通过，只构建 Release。
+- 正式 Release `versionName=e1d14853`、`versionCode=102`、包名 `org.fcitx.fcitx5.android`；APK v1/v2 签名有效，平台证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- APK 位于 `fcitx5-android/build/kboard.apk`，SHA-256 为 `b5b243d78902f0e1d9ca450ccef0c9a9f08480fe949e5efb6b3b158748c17f21`；覆盖安装到 `192.168.3.63:5555` 返回 `Success`，设备查询为 `versionName=e1d14853`。
+
+### 待办
+- 本轮按用户一贯要求只推送正式包，没有代替用户操作组合键。现场应重点确认：按下即显示、控制键保持按住时连续 C/V 都有效、松开即恢复、Ctrl+Shift 覆盖文案正确。
+- 快捷键含义存在应用差异，例如 Ctrl+B 在编辑器通常是粗体、在其他软件可能有不同用途；KBoard 显示通用约定并发送真实键值，不伪造应用能力。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

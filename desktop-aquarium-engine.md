@@ -159,6 +159,14 @@ V1.27 不再让目标点直接控制位置或朝向。每帧固定经过以下�
 - 中文当前态显示“中/英”，英文当前态显示“英/中”，当前语言始终位于首字符并标为 `#4285F4`。该逐字符颜色由稳定自绘实现，因为 `AutoScaleTextView` 的手动 `Canvas.drawText()` 不读取 `Spannable` 颜色。
 - 面向其他项目的完整复刻规范位于 `kemi-rd/gm/KBoard摸鱼水族键盘复刻设计.md`；其中固定了源码/资源哈希、全部关键参数、移植步骤和验收矩阵，应作为跨项目实现入口。
 
+## 按住式组合键功能预览（V1.35）
+
+- 全局 Ctrl、Alt、Cmd、Shift 不再使用抬手后的粘滞切换；`DOWN` 加入当前物理持有集合，`UP/CANCEL` 移除，提示和真实组合键状态具有同一生命周期。
+- 多点触摸由 `BaseKeyboard` 原有 pointer-to-key 分发保留，因此按住 Ctrl 时可以连续按 C、V；目标键释放不会清除 Ctrl，只有 Ctrl 手指释放才恢复键帽。
+- Ctrl+Shift 与 Cmd+Shift 使用“基础表 + 复合覆盖表”，未覆盖键仍显示基础功能，覆盖键显示更具体的组合功能。
+- 每个全局文字键预创建一个固定测量的第二行提示层。按压期间只修改稳定绘制文本、alpha 和主字符 translation；不得动态 add/remove、切换 visibility 或 requestLayout。
+- 提示只是跨应用通用语义，输入链仍发送真实 modifier + key；前台 Windows/macOS 应用保留最终解释权。普通键盘不创建或更新这套提示。
+
 ## 验收
 
 - 只使用签名 Release APK 安装到 63，不安装 Debug。

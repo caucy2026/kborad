@@ -1,7 +1,7 @@
 # KBoard 摸鱼水族键盘可复刻设计规范
 
 > 文档状态：可交付 / 可复刻  
-> 对应源码版本：`bf7a8e13`  
+> 对应源码版本：`e1d14853`
 > 目标设备基线：Android 12、arm64-v8a、Mali-G52、OpenGL ES 3.2、1920×1280  
 > 目标效果：全局键盘下方是一整块沉浸式池塘；金鱼依靠尾鳍和胸鳍真实游动，触摸后争先恐后游向手指，滑动时持续跟随，松手后散开并恢复巡游、跟随和玩耍；触点产生轻微非圆涟漪和一次真实水滴声；持续渲染稳定在 30Hz。
 
@@ -9,11 +9,12 @@
 
 若项目也是 Android View + OpenGL ES，最可靠的复刻方法不是重新估算参数，而是复制下列源码与资源，再按第 3 节接入。本文后续章节解释每个参数为什么存在，便于移植到 Compose、Flutter Texture、Qt、Unity 原生插件或其他 GLES 容器。
 
-| 文件 | 用途 | SHA-256（`bf7a8e13`） |
+| 文件 | 用途 | SHA-256（`e1d14853`） |
 |---|---|---|
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/aquarium/DesktopAquariumView.kt` | EGL、30Hz 渲染线程、水面 Shader、鱼体网格、鱼群行为和水动力 | `e8fb548b74ead4abdaf64b7efab53b3be623461adaf4bd29c50def02cf0dbfb4` |
-| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/DesktopKeyboard.kt` | 水族层和原生按键层组合、触摸观察、底部水域 | `02d380129824cdc1f5276880076890bab17f552a77e825823cd11e60ae38d5a7` |
-| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyView.kt` | 半透明景深键帽、按压行程和无圆形 Ripple | `58df1e69677f7601e5e62507406df8b94ba8c8258cbdd648591878d4ddbd96c6` |
+| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/DesktopKeyboard.kt` | 水族层和原生按键层组合、触摸观察、底部水域、组合键提示映射 | `60b495f5ebd8e911050d27d2cf6d9c130da735d7a8967a7ef8f626c47f4d0b18` |
+| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyView.kt` | 半透明景深键帽、按压行程、无圆形 Ripple、稳定提示层 | `1b5984d9e3b8bcf381cbdb5da2ece3e1d6d1ce09c0b3293e1636e11e573a279d` |
+| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyDefPreset.kt` | 全局修饰键的按住式定义 | `e6b8b09a074c47cab241dd6fef70a0f864e5268d438132786ab8c0c868a5751e` |
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyDrawable.kt` | 键帽分层渐变、描边和透明度 | 以同一提交为准 |
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/data/InputFeedbacks.kt` | SoundPool 预加载、单次水滴播放和音量控制 | `eb3f55664b0ce829d131e946e82b4b59103b07c4141ae5260ad8c080a657d318` |
 | `fcitx5-android/scripts/prepare-aquarium-water-touch.py` | 从原始 CC0 录音生成四个低延迟切片 | `50ee17f1488cb0f16ac853d45c908c22e5f65eb49d2f0e9a85d08d243091f47c` |
@@ -392,6 +393,35 @@ mat2(cosH, sinH, -sinH, cosH) * local.xy
 水族按键禁用 Android `RippleDrawable`，因为规则圆形反馈会与水面 Shader 冲突。按键本身仍是原生 View；`dispatchTouchEvent()` 先把事件镜像给水族，再调用 `super.dispatchTouchEvent()`，不能消费或改写事件。
 
 底部操作条和语音键不在键盘 View 内时，要用不消费事件的 listener 镜像触摸。水族 Surface 铺到最底边，但六行按键通过真实 44dp bottom inset 避开操作条，不能只设置 padding。
+
+### 14.1 按住式组合键功能预览
+
+全局键盘的 Ctrl、Alt、Cmd、Shift 必须按物理按住语义工作，不能做成点击一次锁定、再点一次解除：
+
+1. 修饰键本身不绑定普通 `Click` 行为；其 `GestureType.Down` 把当前键加入 `heldModifierKeys`，`Up/Cancel` 移除。
+2. 每次集合改变，都从仍被手指持有的键重新生成 `modifierStates`。两枚 Shift 同时按住时，松开其中一枚不能清除另一枚。
+3. `BaseKeyboard` 保持 pointer-to-key 多指分发。一只手按住 Ctrl，另一只手释放 C 后，Ctrl 仍留在状态集合，因此可以继续按 V；只有控制键手指释放才取消提示。
+4. 普通目标键动作复制当前 `modifierStates` 到真实 Fcitx 键事件。提示层不直接调用复制、保存等 Android API，前台 Windows/macOS 应用负责解释组合键。
+5. Ctrl+Space 是本键盘明确接管的语言切换；其他组合键保持透明转发。
+
+提示映射按“基础表 + 复合覆盖表”组织：
+
+| 按住状态 | 代表性提示 |
+|---|---|
+| Ctrl | A 全选、C 复制、X 剪切、V 粘贴、Z 撤销、Y 重做、F 查找、H 替换、S 保存、N 新建文档、O 打开、P 打印、T 新标签、W 关闭、R 刷新 |
+| Ctrl+Shift | 在 Ctrl 表基础上覆盖 S 另存为、V 纯文本粘贴、T 恢复标签、N 无痕窗口、Z 重做、Tab 上一标签 |
+| Cmd | macOS 常用的全选、复制、剪切、粘贴、撤销、保存、打开、打印、退出、最小化、切换应用、系统搜索及行首/行尾导航 |
+| Cmd+Shift | 在 Cmd 表基础上覆盖 3 全屏截图、4 区域截图、5 截图工具、S 另存为、N 新建文件夹、T 恢复标签 |
+| Alt | Tab 切换窗口、F4 关闭窗口、Enter 属性、方向键后退/前进/上一级/展开菜单、Space 窗口菜单 |
+| Shift | Tab 反向切换、Enter 换行、F10 右键菜单；字母大写和数字符号仍沿用键盘原有 Shift 变换 |
+
+为防止第一次按修饰键造成 IME 或池塘画布跳动，每个 `TextKeyView` 在全局键盘挂载时就创建并测量第二行 `AutoScaleTextView`。状态切换只能：
+
+- 用 `setLayoutStableText()` 改变绘制内容；
+- 用 `alpha=0/1` 隐藏或显示；
+- 把主字符向上平移固定 7dp，松开后回到 0。
+
+禁止在按压时创建/删除 View、切换 `visibility`、更改 LayoutParams 或调用普通 `setText()`。提示层只由 `DesktopKeyboard` 使用，所以普通键盘、数字键盘、候选栏和语音流程不会变化。
 
 ## 15. 真实水滴声音
 
