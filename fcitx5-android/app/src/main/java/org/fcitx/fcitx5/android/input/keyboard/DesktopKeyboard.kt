@@ -7,6 +7,7 @@ package org.fcitx.fcitx5.android.input.keyboard
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
+import android.view.MotionEvent
 import android.view.View
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.allViews
@@ -44,9 +45,6 @@ class DesktopKeyboard private constructor(
         createHeader(context)
     )
 
-    private val aquariumLocation = IntArray(2)
-    private val keyLocation = IntArray(2)
-
     init {
         addView(
             aquariumView,
@@ -58,32 +56,54 @@ class DesktopKeyboard private constructor(
         )
         setBackgroundColor(DESKTOP_DECK_COLOR)
         setPadding(0, 0, 0, 0)
+        aquariumView.isClickable = true
         allViews.filterIsInstance<KeyView>().forEach {
             it.setPhysicalKeyStyle(true)
             it.setAquariumDepthStyle(true)
             it.keyDownSoundEnabled = false
             it.physicalReleaseSoundEnabled = false
-            it.onTouchDownFeedback = ::onAquariumKeyDown
         }
         InputFeedbacks.prepareRippleSoundAsync()
     }
 
-    private fun onAquariumKeyDown(view: View, x: Float, y: Float) {
-        aquariumView.getLocationInWindow(aquariumLocation)
-        view.getLocationInWindow(keyLocation)
-        val localX = keyLocation[0] - aquariumLocation[0] + x
-        val localY = keyLocation[1] - aquariumLocation[1] + y
-        aquariumView.feedAt(
-            localX / aquariumView.width.coerceAtLeast(1),
-            localY / aquariumView.height.coerceAtLeast(1)
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        handleAquariumTouch(
+            event,
+            event.x / width.coerceAtLeast(1),
+            event.y / height.coerceAtLeast(1)
         )
-        InputFeedbacks.rippleSound()
+        // Observation only: key hit testing, gestures, repeat and text input keep their original
+        // event stream. The clickable aquarium consumes otherwise-empty pond space.
+        return super.dispatchTouchEvent(event)
+    }
+
+    fun onExternalPondTouch(event: MotionEvent): Boolean {
+        val location = IntArray(2)
+        aquariumView.getLocationOnScreen(location)
+        handleAquariumTouch(
+            event,
+            (event.rawX - location[0]) / aquariumView.width.coerceAtLeast(1),
+            (event.rawY - location[1]) / aquariumView.height.coerceAtLeast(1)
+        )
+        return true
+    }
+
+    private fun handleAquariumTouch(event: MotionEvent, normalizedX: Float, normalizedY: Float) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                aquariumView.touchDownAt(normalizedX, normalizedY)
+                InputFeedbacks.rippleSound()
+            }
+            MotionEvent.ACTION_MOVE -> aquariumView.moveTouchTo(normalizedX, normalizedY)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> aquariumView.releaseTouch()
+        }
     }
 
     companion object {
         const val Name = "Desktop"
         private const val LayoutWidthInKeyUnits = 15f
         private const val DESKTOP_DECK_COLOR = 0xFF061827.toInt()
+        private const val DESKTOP_OPERATION_WATER_HEIGHT_DP = 64
 
         private fun Context.dp(value: Int) =
             (value * resources.displayMetrics.density).roundToInt()
@@ -348,7 +368,9 @@ class DesktopKeyboard private constructor(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         val topPadding = 0
-        val bottomPadding = 0
+        // InputView overlays the desktop operation buttons on the bottom of this view. Keep the
+        // key rows above them while the aquarium itself continues through the reserved water.
+        val bottomPadding = context.dp(DESKTOP_OPERATION_WATER_HEIGHT_DP)
         val horizontalPadding = 0
         val availableHeight = h - topPadding - bottomPadding
         val rowHeight = (w - horizontalPadding * 2) / LayoutWidthInKeyUnits
@@ -360,4 +382,11 @@ class DesktopKeyboard private constructor(
         }
         setPadding(horizontalPadding, topPadding, horizontalPadding, bottomPadding)
     }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        // ConstraintLayout respects the key-row bottom padding, but the pond must cover it.
+        aquariumView.layout(0, 0, right - left, bottom - top)
+    }
+
 }

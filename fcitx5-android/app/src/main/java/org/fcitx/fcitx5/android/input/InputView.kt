@@ -435,6 +435,9 @@ class InputView(
         }
 
         updateKeyboardSize()
+        desktopOperationArea.setOnTouchListener { _, event ->
+            keyboardWindow.onDesktopPondTouch(event)
+        }
         kawaiiBar.setDesktopVoiceButton(desktopVoiceButton)
         windowManager.view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateDesktopCompositionPosition()
@@ -530,7 +533,7 @@ class InputView(
             else if (keyBorder) Color.TRANSPARENT else theme.barColor
         )
         desktopOperationArea.setBackgroundColor(
-            if (enabled) DESKTOP_SURFACE_COLOR else Color.TRANSPARENT
+            Color.TRANSPARENT
         )
         keyboardView.setBackgroundColor(if (enabled) DESKTOP_SURFACE_COLOR else Color.TRANSPARENT)
         customBackground.imageDrawable = if (enabled) {
@@ -764,7 +767,10 @@ class InputView(
         windowManager.view.updateLayoutParams<LayoutParams> {
             if (desktopKeyboardMode) {
                 bottomToTop = unset
-                above(desktopOperationArea)
+                // The aquarium is owned by DesktopKeyboard. Let that single surface continue
+                // behind the operation buttons so koi can swim through the complete pond. The
+                // desktop keyboard reserves this button height internally for its key rows.
+                bottomOfParent()
             } else if (floatingKeyboard.getValue()) {
                 bottomToTop = unset
                 above(floatingWindowHandle)

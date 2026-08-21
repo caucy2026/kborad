@@ -6,6 +6,7 @@ package org.fcitx.fcitx5.android.input.keyboard
 
 import android.text.InputType
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
@@ -189,6 +190,9 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
 
     fun desktopOperationButtonCentersOnScreen(): Pair<Int, Int>? =
         (currentKeyboard as? DesktopKeyboard)?.operationButtonCentersOnScreen()
+
+    fun onDesktopPondTouch(event: MotionEvent): Boolean =
+        (currentKeyboard as? DesktopKeyboard)?.onExternalPondTouch(event) ?: false
 
     override fun onImeUpdate(ime: InputMethodEntry) {
         currentKeyboard?.onInputMethodUpdate(ime)

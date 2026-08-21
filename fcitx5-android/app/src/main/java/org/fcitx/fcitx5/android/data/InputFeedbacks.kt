@@ -6,8 +6,7 @@ package org.fcitx.fcitx5.android.data
 
 import android.media.AudioManager
 import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioTrack
+import android.media.SoundPool
 import android.os.Build
 import android.os.VibrationEffect
 import android.provider.Settings
@@ -21,9 +20,6 @@ import org.fcitx.fcitx5.android.utils.audioManager
 import org.fcitx.fcitx5.android.utils.getSystemSettings
 import org.fcitx.fcitx5.android.utils.vibrator
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.PI
-import kotlin.math.exp
-import kotlin.math.sin
 import timber.log.Timber
 
 object InputFeedbacks {
@@ -167,26 +163,53 @@ object InputFeedbacks {
     }
 
     @Volatile
-    private var rippleSoundTracks: Array<AudioTrack>? = null
+    private var rippleSoundPool: SoundPool? = null
+    @Volatile
+    private var rippleSoundIds = IntArray(0)
+    @Volatile
+    private var rippleSoundsReady = false
     private val rippleSoundPrepareStarted = AtomicBoolean(false)
-    private var nextRippleTrack = 0
+    private var nextRippleSound = 0
+    private var activeRippleStream = 0
 
     /**
-     * Warm the small static PCM buffers before the first desktop-aquarium key press.
-     * Generation is procedural so the APK does not need to decode an audio asset on the input path.
+     * Decode the short CC0 field recordings before the first desktop-aquarium key press. SoundPool
+     * keeps the samples resident and exposes a low-latency path without synthesizing an electronic
+     * chirp on the interaction thread.
      */
     fun prepareRippleSound() {
-        if (!soundEffectsEnabled() || rippleSoundTracks != null) return
+        if (!soundEffectsEnabled() || rippleSoundPool != null) return
         if (!rippleSoundPrepareStarted.compareAndSet(false, true)) return
-        rippleSoundTracks = runCatching {
-            Array(RIPPLE_TRACK_COUNT) { createRippleSoundTrack(it) }
+        runCatching {
+            val pool = SoundPool.Builder()
+                .setMaxStreams(2)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                .build()
+            var loadedCount = 0
+            pool.setOnLoadCompleteListener { _, _, status ->
+                if (status == 0 && ++loadedCount == RIPPLE_SOUND_RESOURCES.size) {
+                    rippleSoundsReady = true
+                }
+            }
+            rippleSoundPool = pool
+            rippleSoundIds = RIPPLE_SOUND_RESOURCES.map { pool.load(appContext, it, 1) }
+                .toIntArray()
         }.onFailure {
+            rippleSoundPool?.release()
+            rippleSoundPool = null
+            rippleSoundIds = IntArray(0)
+            rippleSoundPrepareStarted.set(false)
             Timber.w(it, "Failed to prepare aquarium ripple sound")
-        }.getOrNull()
+        }
     }
 
     fun prepareRippleSoundAsync() {
-        if (rippleSoundTracks != null || rippleSoundPrepareStarted.get()) return
+        if (rippleSoundPool != null || rippleSoundPrepareStarted.get()) return
         Thread({ prepareRippleSound() }, "kboard-ripple-audio").apply {
             isDaemon = true
             start()
@@ -196,92 +219,42 @@ object InputFeedbacks {
     @Synchronized
     fun rippleSound() {
         if (!soundEffectsEnabled() || physicalKeyboardSoundSuppressed) return
-        val tracks = rippleSoundTracks ?: run {
+        val pool = rippleSoundPool ?: run {
             prepareRippleSoundAsync()
             return
         }
-        val track = tracks[nextRippleTrack]
-        nextRippleTrack = (nextRippleTrack + 1) % tracks.size
+        if (!rippleSoundsReady || rippleSoundIds.isEmpty()) return
+        val soundIndex = nextRippleSound
+        nextRippleSound = (nextRippleSound + 1) % rippleSoundIds.size
         runCatching {
-            if (track.playState == AudioTrack.PLAYSTATE_PLAYING) track.stop()
-            track.reloadStaticData()
+            // One water contact per key-down. Stop the preceding tail before playing the next
+            // sample so rapid typing never turns into layered noise or a second release sound.
+            if (activeRippleStream != 0) pool.stop(activeRippleStream)
             val configuredVolume = soundOnKeyPressVolume
             val volume = if (configuredVolume == 0) {
                 RIPPLE_DEFAULT_VOLUME
             } else {
                 configuredVolume / 100f * RIPPLE_DEFAULT_VOLUME
             }
-            track.setVolume(volume)
-            track.play()
-        }
-    }
-
-    private fun createRippleSoundTrack(variant: Int): AudioTrack {
-        val samples = ShortArray((RIPPLE_SAMPLE_RATE * RIPPLE_DURATION_SECONDS).toInt())
-        val pitch = 0.96 + variant * 0.026
-        var noiseState = 0x6D2B79F5 xor (variant * 0x13579B)
-        var lowNoise = 0.0
-        fun nextNoise(): Double {
-            noiseState = noiseState xor (noiseState shl 13)
-            noiseState = noiseState xor (noiseState ushr 17)
-            noiseState = noiseState xor (noiseState shl 5)
-            return (noiseState.toLong() and 0x7fffffffL) / 1073741824.0 - 1.0
-        }
-        samples.indices.forEach { index ->
-            val t = index.toDouble() / RIPPLE_SAMPLE_RATE
-            val attack = sin(PI * 0.5 * (t / 0.0022).coerceAtMost(1.0))
-            val release = if (t < 0.27) 1.0 else {
-                val tail = ((t - 0.27) / (RIPPLE_DURATION_SECONDS - 0.27)).coerceIn(0.0, 1.0)
-                0.5 + 0.5 * kotlin.math.cos(PI * tail)
-            }
-            val whiteNoise = nextNoise()
-            lowNoise += (whiteNoise - lowNoise) * 0.075
-            val surfaceNoise = lowNoise
-            val contactNoise = whiteNoise - lowNoise
-            val contact = contactNoise * (1.0 - exp(-620.0 * t)) * exp(-145.0 * t)
-            val bubblePhase = 2.0 * PI * (
-                430.0 * pitch * t + 1640.0 * t * t - 1850.0 * t * t * t
-                )
-            val bubble = sin(bubblePhase + 0.12) * exp(-31.0 * t)
-            val waterBodyPhase = 2.0 * PI * (168.0 * pitch * t - 42.0 * t * t)
-            val waterBody = sin(waterBodyPhase + 0.38) * exp(-12.5 * t)
-            val sheet = surfaceNoise * (1.0 - exp(-95.0 * t)) * exp(-18.0 * t)
-            val satelliteDelay = 0.086 + variant * 0.004
-            val satelliteTime = t - satelliteDelay
-            val satellite = if (satelliteTime >= 0.0) {
-                sin(2.0 * PI * (520.0 * pitch * satelliteTime +
-                    720.0 * satelliteTime * satelliteTime)) * exp(-38.0 * satelliteTime)
-            } else 0.0
-            val sample = attack * release * (
-                0.20 * contact + 0.38 * bubble + 0.25 * waterBody +
-                    0.11 * sheet + 0.06 * satellite
-                )
-            samples[index] = (sample.coerceIn(-1.0, 1.0) * Short.MAX_VALUE).toInt().toShort()
-        }
-        return AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
+            activeRippleStream = pool.play(
+                rippleSoundIds[soundIndex],
+                volume,
+                volume,
+                1,
+                0,
+                RIPPLE_PLAYBACK_RATES[soundIndex]
             )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(RIPPLE_SAMPLE_RATE)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build()
-            )
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .setBufferSizeInBytes(samples.size * Short.SIZE_BYTES)
-            .build()
-            .also { it.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING) }
+        }
     }
 
     private const val PHYSICAL_KEY_UP_VOLUME_SCALE = 0.38f
-    private const val RIPPLE_SAMPLE_RATE = 44_100
-    private const val RIPPLE_DURATION_SECONDS = 0.42
-    private const val RIPPLE_TRACK_COUNT = 4
-    private const val RIPPLE_DEFAULT_VOLUME = 0.56f
+    private const val RIPPLE_DEFAULT_VOLUME = 0.30f
+    private val RIPPLE_SOUND_RESOURCES = intArrayOf(
+        R.raw.aquarium_water_touch_1,
+        R.raw.aquarium_water_touch_2,
+        R.raw.aquarium_water_touch_3,
+        R.raw.aquarium_water_touch_4
+    )
+    private val RIPPLE_PLAYBACK_RATES = floatArrayOf(0.98f, 1.01f, 0.96f, 1.03f)
 
 }
