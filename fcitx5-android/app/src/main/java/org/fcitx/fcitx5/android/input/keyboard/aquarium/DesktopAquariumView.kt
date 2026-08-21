@@ -176,7 +176,7 @@ private class AquariumRenderThread(
     private companion object {
         const val TAG = "KBoardAquarium"
         const val MAX_RENDER_WIDTH = 1440
-        const val TARGET_FRAME_NS = 16_666_667L
+        const val TARGET_FRAME_NS = 33_333_334L
     }
 }
 
@@ -415,10 +415,21 @@ private class AquariumEngine {
                 f.nextWanderTime = time + 2.5f + random.nextFloat() * 4f
             }
             val offsetAngle = f.seed * 2.1f
-            val targetX = if (feeding) attractionX + cos(offsetAngle) * 0.10f else f.wanderX
-            val targetY = if (feeding) attractionY + sin(offsetAngle) * 0.08f else f.wanderY
-            var ax = (targetX - f.x) * if (feeding) 1.9f else 0.32f
-            var ay = (targetY - f.y) * if (feeding) 1.9f else 0.32f
+            val urgency = 0.86f + (f.seed % 1f) * 0.42f
+            val targetX = if (feeding) attractionX + cos(offsetAngle) * 0.055f else f.wanderX
+            val targetY = if (feeding) attractionY + sin(offsetAngle) * 0.045f else f.wanderY
+            val attractionStrength = if (feeding) 3.15f * urgency else 0.32f
+            var ax = (targetX - f.x) * attractionStrength
+            var ay = (targetY - f.y) * attractionStrength
+            if (feeding) {
+                val targetDx = targetX - f.x
+                val targetDy = targetY - f.y
+                val targetDistance = sqrt(targetDx * targetDx + targetDy * targetDy)
+                    .coerceAtLeast(0.001f)
+                val scramble = sin(time * (8.5f + urgency) + f.phase) * 0.13f
+                ax += -targetDy / targetDistance * scramble
+                ay += targetDx / targetDistance * scramble
+            }
             for (otherIndex in 0 until activeFishCount) {
                 if (otherIndex == index) continue
                 val other = fish[otherIndex]
@@ -426,7 +437,8 @@ private class AquariumEngine {
                 val dy = f.y - other.y
                 val distance2 = dx * dx + dy * dy
                 if (distance2 in 0.0001f..0.025f) {
-                    val separation = (0.025f - distance2) * 0.9f / distance2
+                    val separationStrength = if (feeding) 0.34f else 0.9f
+                    val separation = (0.025f - distance2) * separationStrength / distance2
                     ax += dx * separation
                     ay += dy * separation
                 }
@@ -435,13 +447,13 @@ private class AquariumEngine {
             ay += cos(time * 0.61f + f.phase) * 0.018f
             f.vx += ax * dt
             f.vy += ay * dt
-            val maxSpeed = if (feeding) 0.52f else 0.24f
+            val maxSpeed = if (feeding) 0.64f + urgency * 0.10f else 0.24f
             val speed = sqrt(f.vx * f.vx + f.vy * f.vy).coerceAtLeast(0.0001f)
             if (speed > maxSpeed) {
                 f.vx *= maxSpeed / speed
                 f.vy *= maxSpeed / speed
             }
-            val damping = exp((-if (feeding) 0.45f else 0.7f) * dt)
+            val damping = exp((-if (feeding) 0.28f else 0.7f) * dt)
             f.vx *= damping
             f.vy *= damping
             f.x += f.vx * dt
@@ -524,15 +536,15 @@ private class AquariumEngine {
         if (elapsed < PERFORMANCE_REPORT_NS) return
         val fps = reportFrames * 1_000_000_000f / elapsed
         when {
-            fps < 32f && activeFishCount > MIN_FISH -> {
+            fps < 21f && activeFishCount > MIN_FISH -> {
                 activeFishCount = MIN_FISH
                 healthyReports = 0
             }
-            fps < 44f && activeFishCount > MEDIUM_FISH -> {
+            fps < 26f && activeFishCount > MEDIUM_FISH -> {
                 activeFishCount = MEDIUM_FISH
                 healthyReports = 0
             }
-            fps > 55f -> {
+            fps > 28.5f -> {
                 healthyReports++
                 if (healthyReports >= 2 && activeFishCount < MAX_FISH) {
                     activeFishCount = min(MAX_FISH, activeFishCount + 1)
@@ -701,22 +713,34 @@ private class AquariumEngine {
                 vec3 shallow = vec3(0.018, 0.22, 0.30);
                 vec3 color = mix(deep, shallow, uv.y * 0.72 + caustic * 0.10);
                 float rippleLight = 0.0;
+                float rippleShadow = 0.0;
                 for (int i = 0; i < 4; ++i) {
                     float age = uTime - uRipples[i].z;
                     vec2 delta = uv - uRipples[i].xy;
                     delta.x *= aspect;
                     float distanceFromTouch = length(delta);
-                    float radius = age * 0.44;
-                    float ring = exp(-abs(distanceFromTouch - radius) * 62.0);
-                    float echo = exp(-abs(distanceFromTouch - radius * 0.70) * 48.0) * 0.62;
-                    float softRing = exp(-abs(distanceFromTouch - radius * 0.43) * 38.0) * 0.32;
-                    float innerShadow = exp(-abs(distanceFromTouch - radius * 0.91) * 68.0);
+                    float angle = atan(delta.y, delta.x);
+                    float angularWarp = sin(angle * 5.0 + age * 3.7 + uRipples[i].x * 9.0) * 0.018 +
+                                        sin(angle * 11.0 - age * 2.4 + uRipples[i].y * 7.0) * 0.008;
+                    float surfaceWarp = sin(delta.x * 13.0 + delta.y * 9.0 + uTime * 1.6) * 0.006;
+                    float warpedDistance = distanceFromTouch +
+                        (angularWarp + surfaceWarp) * (1.0 - smoothstep(0.08, 0.86, distanceFromTouch));
+                    float front = age * 0.43;
+                    float distanceToFront = warpedDistance - front;
+                    float packet = exp(-abs(distanceToFront) * 8.5) *
+                                   (1.0 - smoothstep(0.72, 1.28, warpedDistance));
+                    float carrier = sin(distanceToFront * 76.0 +
+                                        sin(angle * 3.0 + age * 2.0) * 0.9);
+                    float secondary = sin(distanceToFront * 43.0 - angle * 2.0 + age * 1.4) * 0.34;
                     float touchGlow = exp(-distanceFromTouch * 34.0) *
                                       (1.0 - smoothstep(0.0, 0.34, age));
-                    float alive = step(0.0, age) * (1.0 - smoothstep(0.8, 1.75, age));
-                    rippleLight += (ring + echo + softRing + touchGlow - innerShadow * 0.20) * alive;
+                    float alive = step(0.0, age) * (1.0 - smoothstep(0.72, 1.68, age));
+                    float wave = (carrier + secondary) * packet * alive;
+                    rippleLight += max(wave, 0.0) + touchGlow * alive;
+                    rippleShadow += max(-wave, 0.0);
                 }
-                color += vec3(0.20, 0.74, 0.92) * rippleLight * 0.46;
+                color += vec3(0.20, 0.74, 0.92) * rippleLight * 0.43;
+                color -= vec3(0.02, 0.11, 0.16) * rippleShadow * 0.38;
                 float vignette = 1.0 - smoothstep(0.20, 1.18, length((uv - 0.5) * vec2(1.0, 0.74)));
                 color *= 0.72 + vignette * 0.28;
                 fragColor = vec4(color, 1.0);

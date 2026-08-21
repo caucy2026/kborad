@@ -124,16 +124,16 @@ fun aquariumDepthKeyBackgroundDrawable(
         arrayOf(
             GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(0x9A020A12.toInt(), 0x8807121E.toInt())
+                intArrayOf(0x4A020A12, 0x3D07121E)
             ).apply {
                 cornerRadius = radius
             },
             GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 if (selected) {
-                    intArrayOf(0xB8297895.toInt(), 0xA1123B55.toInt())
+                    intArrayOf(0x8F297895.toInt(), 0x78123B55)
                 } else {
-                    intArrayOf(0xA829465C.toInt(), 0x8F102536.toInt())
+                    intArrayOf(0x7329465C, 0x5C102536)
                 }
             ).apply {
                 cornerRadius = radius
@@ -141,7 +141,7 @@ fun aquariumDepthKeyBackgroundDrawable(
             },
             GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(0x4DFFFFFF, 0x00FFFFFF)
+                intArrayOf(0x24FFFFFF, 0x00FFFFFF)
             ).apply {
                 cornerRadius = radius * 0.82f
             }
