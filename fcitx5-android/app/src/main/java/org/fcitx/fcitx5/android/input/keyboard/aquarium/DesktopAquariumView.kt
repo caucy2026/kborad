@@ -306,6 +306,8 @@ private class AquariumEngine {
     private var attractionX = 0f
     private var attractionY = 0f
     private var attractionUntil = -1f
+    private var attractionStartedAt = -1f
+    private var nextFeedReportAt = -1f
     private var activeFishCount = MAX_FISH
 
     private var waterProgram = 0
@@ -395,7 +397,26 @@ private class AquariumEngine {
         nextRipple = (nextRipple + 1) % ripples.size
         attractionX = x * 2f - 1f
         attractionY = 1f - y * 2f
+        attractionStartedAt = now
         attractionUntil = now + ATTRACTION_SECONDS
+        nextFeedReportAt = now
+        // A tap is a school-wide feeding cue. Prime the muscles immediately, but never
+        // teleport or rotate a fish: a fish facing away must visibly brake and turn with its
+        // paired pectoral fins before the caudal burst can carry it toward the touch point.
+        for (index in 0 until activeFishCount) {
+            val f = fish[index]
+            val targetHeading = atan2(attractionY - f.y, attractionX - f.x)
+            val headingError = wrapAngle(targetHeading - f.heading)
+            val forwardAlignment = ((cos(headingError) + 1f) * 0.5f).coerceIn(0f, 1f)
+            f.tailDrive = max(f.tailDrive, 0.62f + forwardAlignment * 0.32f)
+            val turnKick = (abs(headingError) / PI.toFloat()).coerceIn(0f, 1f)
+            if (headingError >= 0f) {
+                f.leftFinDrive = max(f.leftFinDrive, 0.54f + turnKick * 0.42f)
+            } else {
+                f.rightFinDrive = max(f.rightFinDrive, 0.54f + turnKick * 0.42f)
+            }
+            f.brakeDrive = max(f.brakeDrive, (1f - forwardAlignment) * 0.82f)
+        }
     }
 
     fun draw(frameNanos: Long) {
@@ -504,7 +525,7 @@ private class AquariumEngine {
                 val offsetAngle = f.seed * 2.1f
                 targetX = attractionX + cos(offsetAngle) * 0.060f
                 targetY = attractionY + sin(offsetAngle) * 0.050f
-                desiredSpeed = 0.50f + (f.seed % 1f) * 0.12f
+                desiredSpeed = 0.80f + (f.seed % 1f) * 0.12f
             } else {
                 when (f.behavior) {
                     FishBehavior.ROUTE -> Unit
@@ -584,9 +605,10 @@ private class AquariumEngine {
                     }
                 }
             }
-            intentX += separationX * 1.55f
-            intentY += separationY * 1.55f
-            if (schoolNeighbours > 0) {
+            val separationGain = if (feeding) 0.52f else 1.55f
+            intentX += separationX * separationGain
+            intentY += separationY * separationGain
+            if (!feeding && schoolNeighbours > 0) {
                 val inverseCount = 1f / schoolNeighbours
                 intentX += (cohesionX * inverseCount - f.x) * 0.42f +
                         alignmentX * inverseCount * 0.22f
@@ -619,45 +641,76 @@ private class AquariumEngine {
             }
             if (feeding) {
                 val scramble = sin(time * (7.4f + (f.seed % 1f) * 1.8f) + f.phase)
-                intentX += -targetDy / targetDistance * scramble * 0.16f
-                intentY += targetDx / targetDistance * scramble * 0.16f
+                intentX += -targetDy / targetDistance * scramble * 0.045f
+                intentY += targetDx / targetDistance * scramble * 0.045f
             }
 
             val desiredHeading = atan2(intentY, intentX)
             val headingError = wrapAngle(desiredHeading - f.heading)
             val turnDemand = (headingError / 1.15f).coerceIn(-1f, 1f)
-            val arrivalBrake = if (targetDistance < 0.14f) {
-                (1f - targetDistance / 0.14f).coerceIn(0f, 1f)
+            val forwardAlignment = ((cos(headingError) + 1f) * 0.5f).coerceIn(0f, 1f)
+            val arrivalRadius = if (feeding) {
+                0.20f + f.forwardSpeed * 0.34f
+            } else {
+                0.14f
+            }
+            val arrivalBrake = if (targetDistance < arrivalRadius) {
+                (1f - targetDistance / arrivalRadius).coerceIn(0f, 1f)
             } else {
                 0f
             }
-            val brakeDemand = max(max(crowdingBrake, edgeBrake), arrivalBrake)
+            val feedingTurnBrake = if (feeding) {
+                ((abs(headingError) - 0.72f) / 1.75f).coerceIn(0f, 1f) * 0.72f
+            } else {
+                0f
+            }
+            val brakeDemand = max(
+                max(max(crowdingBrake, edgeBrake), arrivalBrake),
+                feedingTurnBrake
+            )
                 .coerceIn(0f, 1f)
-            desiredSpeed *= 1f - arrivalBrake * 0.55f
+            desiredSpeed *= if (feeding) {
+                (targetDistance / arrivalRadius).coerceIn(0.08f, 1f)
+            } else {
+                1f - arrivalBrake * 0.55f
+            }
+            if (feeding) {
+                // Turning fish show energetic strokes without sliding rapidly sideways or
+                // backwards. Large displacement is unlocked only after the body points toward
+                // the food, so visible tail frequency and forward travel stay coupled.
+                desiredSpeed *= 0.24f + forwardAlignment * 0.76f
+            }
 
             // Navigation stops here. It may set muscle targets but cannot alter the fish pose.
             val speedError = desiredSpeed - f.forwardSpeed
+            val feedingTailBoost = if (feeding) {
+                (0.30f + sqrt(forwardAlignment) * 0.36f) *
+                        (1f - arrivalBrake * 0.78f)
+            } else {
+                0f
+            }
             val tailDriveTarget = (
-                    0.28f + max(speedError, 0f) * 2.15f +
+                    0.16f + max(speedError, 0f) * 1.72f +
                             abs(turnDemand) * 0.12f +
-                            (if (feeding) 0.18f else 0f) - brakeDemand * 0.24f
+                            feedingTailBoost - brakeDemand * 0.20f
                     ).coerceIn(0.12f, 1f)
             val finBaseTarget = (
                     0.17f + max(speedError, 0f) * 0.42f +
-                            abs(turnDemand) * 0.10f + brakeDemand * 0.56f
+                            abs(turnDemand) * 0.14f + brakeDemand * 0.60f +
+                            (if (feeding) 0.10f else 0f)
                     ).coerceIn(0.12f, 0.86f)
-            val leftFinTarget = (finBaseTarget + max(turnDemand, 0f) * 0.58f)
+            val leftFinTarget = (finBaseTarget + max(turnDemand, 0f) * 0.76f)
                 .coerceIn(0.12f, 1f)
-            val rightFinTarget = (finBaseTarget + max(-turnDemand, 0f) * 0.58f)
+            val rightFinTarget = (finBaseTarget + max(-turnDemand, 0f) * 0.76f)
                 .coerceIn(0.12f, 1f)
-            val muscleResponse = (dt * 4.2f).coerceIn(0f, 1f)
+            val muscleResponse = (dt * if (feeding) 9.2f else 4.5f).coerceIn(0f, 1f)
             f.tailDrive += (tailDriveTarget - f.tailDrive) * muscleResponse
             f.leftFinDrive += (leftFinTarget - f.leftFinDrive) * muscleResponse
             f.rightFinDrive += (rightFinTarget - f.rightFinDrive) * muscleResponse
             f.brakeDrive += (brakeDemand - f.brakeDrive) * muscleResponse
 
-            val tailBeatHz = 0.58f + f.tailDrive * 0.98f
-            val finBeatHz = 0.36f + max(f.leftFinDrive, f.rightFinDrive) * 0.54f
+            val tailBeatHz = 0.70f + f.tailDrive * 1.62f
+            val finBeatHz = 0.52f + max(f.leftFinDrive, f.rightFinDrive) * 1.08f
             f.swimPhase = wrapPhase(f.swimPhase + TWO_PI * tailBeatHz * dt)
             f.finPhase = wrapPhase(f.finPhase + TWO_PI * finBeatHz * dt)
             // Sample propulsion at the caudal-fin section of the travelling body wave.
@@ -668,9 +721,14 @@ private class AquariumEngine {
             val finExtension = 0.34f + abs(sin(f.finPhase)) * 0.66f
 
             // Caudal and paired-fin forces are the only source of linear acceleration.
-            val tailThrust = f.tailDrive * tailStrokePower * 1.10f
+            // Open pectoral fins redirect most caudal thrust into a tight body turn. This
+            // prevents a fish that initially faces away from visibly sliding farther away while
+            // its tail and side fins are working hard to reorient it.
+            val redirectedTailThrust = 1f - f.brakeDrive * 0.92f
+            val tailThrust = f.tailDrive * tailStrokePower * 2.25f *
+                    redirectedTailThrust.coerceIn(0.08f, 1f)
             val pairedFinThrust = (f.leftFinDrive + f.rightFinDrive) *
-                    finStrokePower * (1f - f.brakeDrive * 0.88f) * 0.18f
+                    finStrokePower * (1f - f.brakeDrive * 0.88f) * 0.16f
             val waterDrag = f.forwardSpeed * 0.90f +
                     f.forwardSpeed * f.forwardSpeed * 0.72f
             val pectoralBrake = f.brakeDrive * finExtension *
@@ -678,7 +736,7 @@ private class AquariumEngine {
             val forwardAcceleration = tailThrust + pairedFinThrust -
                     waterDrag - pectoralBrake
             f.forwardSpeed = (f.forwardSpeed + forwardAcceleration * dt)
-                .coerceIn(0f, 0.72f)
+                .coerceIn(0f, 0.94f)
 
             // Tail sweep and differential pectoral-fin drag create yaw torque. Heading is
             // integrated from angular velocity; routes, neighbours and walls cannot rotate it.
@@ -687,12 +745,17 @@ private class AquariumEngine {
                     finExtension * 0.55f
             val differentialFinTorque = (f.leftFinDrive - f.rightFinDrive) *
                     finExtension * 1.65f
-            val yawTorque = turnDemand * (tailSteering * 2.35f + pairedFinSteering) +
+            val feedingTurnGain = if (feeding) 2.15f else 1f
+            val yawTorque = turnDemand *
+                    (tailSteering * 2.35f + pairedFinSteering) * feedingTurnGain +
                     differentialFinTorque
             val angularAcceleration = yawTorque -
                     f.angularSpeed * (2.15f + f.brakeDrive * 0.65f)
             f.angularSpeed = (f.angularSpeed + angularAcceleration * dt)
-                .coerceIn(-2.35f, 2.35f)
+                .coerceIn(
+                    if (feeding) -4.20f else -2.35f,
+                    if (feeding) 4.20f else 2.35f
+                )
             f.heading = wrapAngle(f.heading + f.angularSpeed * dt)
             val targetBank = (f.angularSpeed / 2.35f).coerceIn(-1f, 1f) * 0.25f
             f.bank += (targetBank - f.bank) * (dt * 4f).coerceIn(0f, 1f)
@@ -709,6 +772,35 @@ private class AquariumEngine {
                 f.y = f.y.coerceIn(-0.98f, 0.94f)
                 f.forwardSpeed *= 0.12f
             }
+        }
+        if (feeding && time >= nextFeedReportAt) {
+            var distanceSum = 0f
+            var distanceMax = 0f
+            var speedSum = 0f
+            var tailDriveSum = 0f
+            var finDriveSum = 0f
+            for (index in 0 until activeFishCount) {
+                val f = fish[index]
+                val dx = attractionX - f.x
+                val dy = attractionY - f.y
+                val distance = sqrt(dx * dx + dy * dy)
+                distanceSum += distance
+                distanceMax = max(distanceMax, distance)
+                speedSum += f.forwardSpeed
+                tailDriveSum += f.tailDrive
+                finDriveSum += (f.leftFinDrive + f.rightFinDrive) * 0.5f
+            }
+            val divisor = activeFishCount.coerceAtLeast(1).toFloat()
+            Log.i(
+                TAG,
+                "feed age=${"%.2f".format(time - attractionStartedAt)} " +
+                        "avgDistance=${"%.3f".format(distanceSum / divisor)} " +
+                        "maxDistance=${"%.3f".format(distanceMax)} " +
+                        "avgSpeed=${"%.3f".format(speedSum / divisor)} " +
+                        "tail=${"%.2f".format(tailDriveSum / divisor)} " +
+                        "fin=${"%.2f".format(finDriveSum / divisor)}"
+            )
+            nextFeedReportAt = time + FEED_REPORT_SECONDS
         }
     }
 
@@ -1004,7 +1096,8 @@ private class AquariumEngine {
         const val MEDIUM_FISH = 7
         const val MIN_FISH = 5
         const val MAX_RIPPLES = 4
-        const val ATTRACTION_SECONDS = 2.4f
+        const val ATTRACTION_SECONDS = 4.6f
+        const val FEED_REPORT_SECONDS = 0.75f
         const val PERFORMANCE_REPORT_NS = 5_000_000_000L
         const val TWO_PI = 6.2831855f
         const val TAIL_FORCE_PHASE = 2.55f
@@ -1054,46 +1147,51 @@ private class AquariumEngine {
                     float age = uTime - uRipples[i].z;
                     vec2 delta = uv - uRipples[i].xy;
                     delta.x *= aspect;
+                    // A touch makes a shallow, drifting surface disturbance. Keep the outline
+                    // slightly irregular so it feels like pond water, but avoid bright rings or
+                    // a large lens-like distortion over the keyboard.
                     vec2 flowDrift = vec2(
                         sin(uRipples[i].x * 17.0 + uRipples[i].y * 5.0),
                         cos(uRipples[i].y * 13.0 - uRipples[i].x * 4.0)
-                    ) * age * 0.018;
+                    ) * age * 0.006;
                     delta -= flowDrift;
                     float currentAngle = uRipples[i].x * 7.3 + uRipples[i].y * 11.1;
                     vec2 currentAxis = vec2(cos(currentAngle), sin(currentAngle));
                     vec2 currentNormal = vec2(-currentAxis.y, currentAxis.x);
                     float alongCurrent = dot(delta, currentAxis);
                     float acrossCurrent = dot(delta, currentNormal);
-                    vec2 currentSpace = vec2(alongCurrent * 0.84, acrossCurrent * 1.16);
+                    vec2 currentSpace = vec2(alongCurrent * 0.95, acrossCurrent * 1.05);
                     float rawDistance = max(length(currentSpace), 0.001);
                     float angle = atan(currentSpace.y, currentSpace.x);
                     float directionalStretch = 1.0 +
-                        sin(angle * 2.0 + uRipples[i].x * 6.0) * 0.13 +
-                        sin(angle * 3.0 - uRipples[i].y * 7.0 + age * 0.7) * 0.065;
-                    float edgeVariation = sin(angle * 5.0 + uRipples[i].x * 8.0 + age) * 0.011 +
-                                          sin(angle * 9.0 - uRipples[i].y * 9.0) * 0.006;
+                        sin(angle * 2.0 + uRipples[i].x * 6.0) * 0.045 +
+                        sin(angle * 3.0 - uRipples[i].y * 7.0 + age * 0.34) * 0.022;
+                    float edgeVariation = sin(angle * 5.0 + uRipples[i].x * 8.0 + age * 0.42) * 0.004;
                     float distanceFromTouch = rawDistance * directionalStretch + edgeVariation;
-                    float waveFront = age * 0.30;
+                    float waveFront = age * 0.19;
                     float wake = waveFront - distanceFromTouch;
-                    float arrived = smoothstep(-0.032, 0.046, wake);
+                    float normalizedWake = wake / 0.074;
+                    float frontBand = exp(-normalizedWake * normalizedWake);
+                    float innerWake = smoothstep(0.0, 0.055, wake) *
+                                      exp(-max(wake, 0.0) * 5.4);
                     float lifetime = step(0.0, age) *
-                                     (1.0 - smoothstep(1.18, 1.82, age));
-                    float damping = exp(-max(wake, 0.0) * 2.65) * exp(-age * 0.68);
-                    float envelope = arrived * lifetime * damping;
-                    float phase = wake * 39.0;
-                    float impact = exp(-rawDistance * rawDistance * 310.0) *
-                                   exp(-age * 3.8) * sin(age * 15.0);
-                    float height = (sin(phase) * 0.82 + sin(phase * 0.53 + 0.7) * 0.18) *
-                                   envelope + impact * lifetime * 0.72;
+                                     (1.0 - smoothstep(1.55, 2.35, age));
+                    float envelope = (frontBand * 0.64 + innerWake * 0.36) *
+                                     lifetime * exp(-age * 0.82);
+                    float phase = wake * 34.0;
+                    float impact = exp(-rawDistance * rawDistance * 380.0) *
+                                   exp(-age * 5.2) * sin(age * 11.0);
+                    float height = (sin(phase) * 0.76 + sin(phase * 0.58 + 0.8) * 0.24) *
+                                   envelope * 0.24 + impact * lifetime * 0.12;
                     vec2 radialInCurrent = currentSpace / rawDistance;
-                    vec2 radial = currentAxis * radialInCurrent.x * 0.84 +
-                                  currentNormal * radialInCurrent.y * 1.16;
+                    vec2 radial = currentAxis * radialInCurrent.x * 0.95 +
+                                  currentNormal * radialInCurrent.y * 1.05;
                     waveHeight += height;
                     waveEnergy += abs(height);
-                    waveSlope += radial * cos(phase) * envelope;
+                    waveSlope += radial * cos(phase) * envelope * 0.22;
                 }
 
-                vec2 refractedUv = clamp(uv + waveSlope * vec2(0.0055, 0.0080), 0.0, 1.0);
+                vec2 refractedUv = clamp(uv + waveSlope * vec2(0.0012, 0.0017), 0.0, 1.0);
                 float flowA = sin((refractedUv.x * 8.0 + refractedUv.y * 5.0) + uTime * 0.52);
                 float flowB = sin((refractedUv.x * -11.0 + refractedUv.y * 7.0) + uTime * 0.39);
                 float caustic = smoothstep(0.58, 0.98, 0.5 + 0.25 * flowA + 0.25 * flowB);
@@ -1105,8 +1203,9 @@ private class AquariumEngine {
                 float waveHighlight = pow(max(dot(waterNormal, lightDirection), 0.0), 18.0);
                 float crest = max(waveHeight, 0.0);
                 float trough = max(-waveHeight, 0.0);
-                color += vec3(0.30, 0.78, 0.92) * (waveHighlight * waveEnergy * 0.72 + crest * 0.10);
-                color -= vec3(0.02, 0.10, 0.15) * trough * 0.14;
+                color += vec3(0.30, 0.78, 0.92) *
+                         (waveHighlight * waveEnergy * 0.24 + crest * 0.035);
+                color -= vec3(0.02, 0.10, 0.15) * trough * 0.045;
                 float vignette = 1.0 - smoothstep(0.20, 1.18, length((uv - 0.5) * vec2(1.0, 0.74)));
                 color *= 0.72 + vignette * 0.28;
                 fragColor = vec4(color, 1.0);
@@ -1146,7 +1245,7 @@ private class AquariumEngine {
                 float travellingWave = sin(beatPhase);
                 float rearBody = smoothstep(0.25, 1.10, 0.72 - local.x);
                 float bodyEffort = max(tailDrive, motion * 0.72);
-                float bodyAmplitude = mix(0.007, 0.052, bodyEffort) *
+                float bodyAmplitude = mix(0.012, 0.075, bodyEffort) *
                                       rearBody * rearBody;
                 local.y += travellingWave * bodyAmplitude *
                            (bodyWeight + tailWeight * (1.0 - tailMotionWeight) * 0.90);
@@ -1157,28 +1256,31 @@ private class AquariumEngine {
                            mix(0.002, 0.010, tailDrive);
                 local.z += cos(beatPhase - 0.38) * rearBody * bodyWeight *
                            mix(0.008, 0.034, bodyEffort);
-                float tailAmplitude = mix(0.085, 0.295, tailDrive);
+                float tailAmplitude = mix(0.125, 0.390, tailDrive);
                 local.y += travellingWave * tailMotionWeight * tailAmplitude;
                 local.x += cos(beatPhase - 0.62) * tailMotionWeight *
-                           mix(0.012, 0.034, tailDrive);
+                           mix(0.018, 0.052, tailDrive);
                 local.z += sin(beatPhase - 0.95) * tailMotionWeight *
-                           mix(0.030, 0.092, bodyEffort);
+                           mix(0.044, 0.128, bodyEffort);
 
                 // Positive local Y is the left pectoral fin. Each side uses the exact muscle
                 // drive that contributed to CPU thrust, braking and yaw torque this frame.
                 float finSide = sign(local.y);
                 float finDrive = mix(uRightFinDrive, uLeftFinDrive,
                                      step(0.0, local.y));
-                float finFlutter = sin(uFinPhase + local.x * 0.62);
-                float finSpan = smoothstep(0.12, 0.50, abs(aPosition.y));
+                vec2 finRoot = vec2(-0.02, finSide * 0.22);
+                float finLever = smoothstep(0.035, 0.43,
+                                            length(aPosition.xy - finRoot));
+                float finFlutter = sin(uFinPhase + finSide * 0.34 + finLever * 0.58);
+                float finSpan = smoothstep(0.10, 0.46, abs(aPosition.y));
                 float finOpening = clamp(finDrive + uBrakeDrive * 0.38, 0.0, 1.0);
-                local.y += finFlutter * finWeight * finSide *
-                           mix(0.035, 0.135, finOpening);
+                local.y += finFlutter * finWeight * finLever * finSide *
+                           mix(0.070, 0.235, finOpening);
                 local.x -= finWeight * finSpan * uBrakeDrive * 0.075;
-                local.x += cos(uFinPhase) * finWeight *
-                           mix(0.010, 0.038, finDrive);
-                local.z += finFlutter * finWeight * sign(local.y) *
-                           mix(0.045, 0.165, finOpening);
+                local.x += cos(uFinPhase + finSide * 0.24) * finWeight * finLever *
+                           mix(0.020, 0.078, finDrive);
+                local.z += finFlutter * finWeight * finLever * finSide *
+                           mix(0.085, 0.295, finOpening);
                 local.z += local.y * uBank * 0.42;
                 float c = cos(uHeading);
                 float s = sin(uHeading);
