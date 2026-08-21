@@ -295,6 +295,7 @@ private class AquariumEngine {
         var leftFinDrive: Float,
         var rightFinDrive: Float,
         var turnDrive: Float,
+        var fastTurnLatched: Boolean,
         var completedTailStrokes: Int,
         var brakeDrive: Float,
         var bank: Float,
@@ -542,6 +543,7 @@ private class AquariumEngine {
             leftFinDrive = 0.20f + random.nextFloat() * 0.08f,
             rightFinDrive = 0.20f + random.nextFloat() * 0.08f,
             turnDrive = 0f,
+            fastTurnLatched = false,
             completedTailStrokes = 0,
             brakeDrive = 0f,
             bank = 0f,
@@ -801,7 +803,7 @@ private class AquariumEngine {
             f.leftFinDrive += (leftFinTarget - f.leftFinDrive) * muscleResponse
             f.rightFinDrive += (rightFinTarget - f.rightFinDrive) * muscleResponse
             f.turnDrive += (turnDemand - f.turnDrive) *
-                    (dt * if (feeding) 14f else 7f).coerceIn(0f, 1f)
+                    (dt * if (feeding) 32f else 9f).coerceIn(0f, 1f)
             f.brakeDrive += (brakeDemand - f.brakeDrive) * muscleResponse
 
             val tailBeatHz = tailBeatHzForDrive(f.tailDrive)
@@ -854,6 +856,19 @@ private class AquariumEngine {
             val yawTorque = turnDemand *
                     (tailSteering * 2.35f + pairedFinSteering) * feedingTurnGain +
                     differentialFinTorque
+            // Do not wait as long as half an idle beat before a newly requested C-turn becomes
+            // visible. The one-shot preparatory curl rotates the body as the tail coils; the
+            // latch prevents this onset impulse from becoming direct per-frame steering.
+            val initialTurnAmount = smoothStep01((abs(turnDemand) - 0.52f) / 0.38f)
+            if (feeding && initialTurnAmount > 0f && !f.fastTurnLatched) {
+                f.fastTurnLatched = true
+                f.turnDrive = turnDemand
+                f.forwardSpeed *= 0.42f
+                f.angularSpeed += turnDemand * initialTurnAmount *
+                        (2.80f + f.tailDrive * 2.20f)
+            } else if (abs(turnDemand) < 0.24f || !feeding) {
+                f.fastTurnLatched = false
+            }
             // A tight C-turn is released by the first completed caudal power stroke. This is an
             // angular impulse from the same visible tail event, not a direct heading assignment.
             val fastTurnAmount = smoothStep01((abs(turnDemand) - 0.38f) / 0.57f)
