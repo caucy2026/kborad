@@ -1152,10 +1152,11 @@ KEMI 设置页品牌化与动态名称中文化。
 - `aapt` 确认包名 `org.fcitx.fcitx5.android`、`versionCode=112`、`versionName=d24ea522`、ABI 仅 `arm64-v8a`。
 - `apksigner` 确认 v1/v2 签名有效，平台证书 SHA-256 仍为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
 - APK SHA-256：`c47a06fb00ae67a0955445b5985ee0613236b3b5494fc99520f257c12bb21d1a`，`bin` 副本与构建输出一致。
+- `adb install -r` 覆盖安装到 `192.168.3.63:5555` 返回 `Success`，未清除应用数据；设备查询确认 `versionCode=112`、`versionName=d24ea522`。
 
 ### 待办
-- 本轮用户只要求版本加一并重新发布，没有覆盖安装或远程交互测试；如需部署，应只使用本节记录的 0.1.3 Release APK。
-- GitHub 远程为 `git@github.com:caucy2026/kborad.git`；安全策略要求用户明确确认该具体目标后才能推送。
+- 按用户要求只部署正式包，不代替用户做键盘交互测试；63 上的按键、组合键提示、语音和水族动画体验由用户现场验收。
+- 后续发布继续使用 `versionCode=baseVersionCode*10+abiId` 规则，不得把 arm64 的 112 直接改为 113，否则会与 x86 ABI 编号冲突。
 
 ---
 
