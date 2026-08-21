@@ -253,8 +253,9 @@ private class AquariumEngine {
     private data class Fish(
         var x: Float,
         var y: Float,
-        var vx: Float,
-        var vy: Float,
+        var heading: Float,
+        var forwardSpeed: Float,
+        var swimPhase: Float,
         var bank: Float,
         val depth: Float,
         val scale: Float,
@@ -296,12 +297,12 @@ private class AquariumEngine {
     private var waterTimeLocation = -1
     private var waterResolutionLocation = -1
     private var waterRipplesLocation = -1
-    private var fishTimeLocation = -1
     private var fishAspectLocation = -1
     private var fishPositionLocation = -1
     private var fishHeadingLocation = -1
     private var fishScaleLocation = -1
     private var fishPhaseLocation = -1
+    private var fishSwimPhaseLocation = -1
     private var fishSeedLocation = -1
     private var fishAlphaLocation = -1
     private var fishActivityLocation = -1
@@ -329,12 +330,12 @@ private class AquariumEngine {
         waterTimeLocation = GLES30.glGetUniformLocation(waterProgram, "uTime")
         waterResolutionLocation = GLES30.glGetUniformLocation(waterProgram, "uResolution")
         waterRipplesLocation = GLES30.glGetUniformLocation(waterProgram, "uRipples[0]")
-        fishTimeLocation = GLES30.glGetUniformLocation(fishProgram, "uTime")
         fishAspectLocation = GLES30.glGetUniformLocation(fishProgram, "uAspect")
         fishPositionLocation = GLES30.glGetUniformLocation(fishProgram, "uPosition")
         fishHeadingLocation = GLES30.glGetUniformLocation(fishProgram, "uHeading")
         fishScaleLocation = GLES30.glGetUniformLocation(fishProgram, "uScale")
         fishPhaseLocation = GLES30.glGetUniformLocation(fishProgram, "uPhase")
+        fishSwimPhaseLocation = GLES30.glGetUniformLocation(fishProgram, "uSwimPhase")
         fishSeedLocation = GLES30.glGetUniformLocation(fishProgram, "uSeed")
         fishAlphaLocation = GLES30.glGetUniformLocation(fishProgram, "uAlpha")
         fishActivityLocation = GLES30.glGetUniformLocation(fishProgram, "uActivity")
@@ -390,7 +391,7 @@ private class AquariumEngine {
     }
 
     private fun createFish(index: Int): Fish {
-        val heading = if (index % 2 == 0) 1f else -1f
+        val initialHeading = if (index % 2 == 0) 0f else PI.toFloat()
         val palette = FISH_PALETTES[index % FISH_PALETTES.size]
         val initialY = if (index % 3 == 0) {
             // Keep several fish visibly roaming under the bottom keyboard rows.
@@ -401,8 +402,9 @@ private class AquariumEngine {
         return Fish(
             x = random.nextFloat() * 1.7f - 0.85f,
             y = initialY,
-            vx = heading * (0.07f + random.nextFloat() * 0.08f),
-            vy = random.nextFloat() * 0.08f - 0.04f,
+            heading = initialHeading + random.nextFloat() * 0.34f - 0.17f,
+            forwardSpeed = 0.055f + random.nextFloat() * 0.045f,
+            swimPhase = random.nextFloat() * (2f * PI.toFloat()),
             bank = 0f,
             depth = random.nextFloat(),
             scale = FISH_SCALES[index % FISH_SCALES.size],
@@ -459,43 +461,66 @@ private class AquariumEngine {
             ax += sin(time * 0.73f + f.phase) * 0.025f
             ay += cos(time * 0.61f + f.phase) * 0.018f
 
-            // A fish first turns its head, then gains forward speed from its tail beat.
-            // Keeping velocity aligned with the curved heading removes sideways sliding.
-            val currentHeading = atan2(f.vy, f.vx)
-            val desiredHeading = atan2(ay + f.vy * 0.58f, ax + f.vx * 0.58f)
-            val headingDelta = atan2(
-                sin(desiredHeading - currentHeading),
-                cos(desiredHeading - currentHeading)
+            // The CPU locomotion and GPU body deformation share this oscillator. Thrust is
+            // generated while the tail crosses the centre line; at either stroke end there is
+            // only a short inertial glide. This makes translation a result of visible swimming.
+            val activity = ((attractionUntil - time) / ATTRACTION_SECONDS).coerceIn(0f, 1f)
+            val tailBeatHz = if (feeding) {
+                0.98f + urgency * 0.22f + activity * 0.18f
+            } else {
+                0.58f + f.depth * 0.18f
+            }
+            f.swimPhase = (f.swimPhase + TWO_PI * tailBeatHz * dt) % TWO_PI
+            val tailAngularSpeed = abs(cos(f.swimPhase))
+            val strokePower = tailAngularSpeed * tailAngularSpeed
+
+            // Water flow can turn the fish only while its tail or pectoral fins are working.
+            val desiredHeading = atan2(
+                ay + sin(f.heading) * f.forwardSpeed * 0.42f,
+                ax + cos(f.heading) * f.forwardSpeed * 0.42f
             )
-            val maxTurn = (if (feeding) 4.2f else 1.75f) *
-                    (0.82f + urgency * 0.18f) * dt
-            val curvedHeading = currentHeading + headingDelta.coerceIn(-maxTurn, maxTurn)
-            val targetBank = (headingDelta / 0.9f).coerceIn(-1f, 1f) *
+            val headingDelta = atan2(
+                sin(desiredHeading - f.heading),
+                cos(desiredHeading - f.heading)
+            )
+            val steeringGrip = 0.14f + strokePower * 0.86f
+            val maxTurn = (if (feeding) 4.0f else 1.55f) *
+                    (0.82f + urgency * 0.18f) * steeringGrip * dt
+            val appliedTurn = headingDelta.coerceIn(-maxTurn, maxTurn)
+            f.heading += appliedTurn
+            val targetBank = (appliedTurn / dt.coerceAtLeast(0.001f) / 3.8f)
+                .coerceIn(-1f, 1f) *
                     if (feeding) 0.24f else 0.16f
             f.bank += (targetBank - f.bank) * (dt * 3.2f).coerceIn(0f, 1f)
-            val currentSpeed = sqrt(f.vx * f.vx + f.vy * f.vy).coerceAtLeast(0.035f)
-            val tailBeatHz = if (feeding) 1.18f + urgency * 0.16f else 0.62f + f.depth * 0.22f
-            val tailPulse = 0.96f +
-                    sin(time * 2f * PI.toFloat() * tailBeatHz + f.phase) * 0.04f
-            val desiredSpeed = if (feeding) {
-                min(0.68f + urgency * 0.08f, 0.20f + targetDistance * 1.25f) * tailPulse
+
+            val thrustPerSecond = if (feeding) {
+                (0.62f + urgency * 0.23f + activity * 0.20f) *
+                        (targetDistance / 0.16f).coerceIn(0.18f, 1f)
             } else {
-                (0.105f + f.depth * 0.075f + min(targetDistance, 0.35f) * 0.18f) * tailPulse
+                (0.30f + f.depth * 0.09f) *
+                        (targetDistance / 0.12f).coerceIn(0.22f, 1f)
             }
-            val propulsionResponse = if (feeding) 5.2f else 2.0f
-            val propelledSpeed = currentSpeed +
-                    (desiredSpeed - currentSpeed) * (propulsionResponse * dt).coerceIn(0f, 1f)
-            f.vx = cos(curvedHeading) * propelledSpeed
-            f.vy = sin(curvedHeading) * propelledSpeed
-            f.x += f.vx * dt
-            f.y += f.vy * dt
+            f.forwardSpeed += thrustPerSecond * strokePower * dt
+            val dragPerSecond = if (feeding) 1.18f else 1.62f
+            f.forwardSpeed *= (1f - dragPerSecond * dt).coerceAtLeast(0f)
+            val maximumSpeed = if (feeding) 0.64f else 0.19f
+            f.forwardSpeed = f.forwardSpeed.coerceIn(0.018f, maximumSpeed)
+
+            // Stroke power also modulates the distance covered in this frame. The small base
+            // term is the water inertia between two strokes, not an independent glide animation.
+            val strokeAdvance = 0.08f + strokePower * 0.92f
+            val distance = f.forwardSpeed * strokeAdvance * dt
+            f.x += cos(f.heading) * distance
+            f.y += sin(f.heading) * distance
             if (f.x < -1.05f || f.x > 1.05f) {
                 f.x = f.x.coerceIn(-1.05f, 1.05f)
-                f.vx = -f.vx
+                f.heading = PI.toFloat() - f.heading
+                f.forwardSpeed *= 0.48f
             }
             if (f.y < -0.97f || f.y > 0.93f) {
                 f.y = f.y.coerceIn(-0.97f, 0.93f)
-                f.vy = -f.vy
+                f.heading = -f.heading
+                f.forwardSpeed *= 0.48f
             }
         }
     }
@@ -534,7 +559,6 @@ private class AquariumEngine {
 
     private fun drawFish(time: Float) {
         GLES30.glUseProgram(fishProgram)
-        GLES30.glUniform1f(fishTimeLocation, time)
         GLES30.glUniform1f(
             fishActivityLocation,
             ((attractionUntil - time) / ATTRACTION_SECONDS).coerceIn(0f, 1f)
@@ -546,16 +570,16 @@ private class AquariumEngine {
         GLES30.glBindVertexArray(fishVao)
         for (index in 0 until activeFishCount) {
             val f = fish[index]
-            val heading = atan2(f.vy, f.vx)
             GLES30.glUniform2f(fishPositionLocation, f.x, f.y)
-            GLES30.glUniform1f(fishHeadingLocation, heading)
+            GLES30.glUniform1f(fishHeadingLocation, f.heading)
             GLES30.glUniform1f(fishScaleLocation, f.scale * (0.75f + f.depth * 0.35f))
             GLES30.glUniform1f(fishPhaseLocation, f.phase)
+            GLES30.glUniform1f(fishSwimPhaseLocation, f.swimPhase)
             GLES30.glUniform1f(fishSeedLocation, f.seed)
             GLES30.glUniform1f(fishAlphaLocation, 0.72f + f.depth * 0.24f)
             GLES30.glUniform1f(
                 fishSpeedLocation,
-                sqrt(f.vx * f.vx + f.vy * f.vy)
+                f.forwardSpeed
             )
             GLES30.glUniform1f(fishBankLocation, f.bank)
             GLES30.glUniform3f(
@@ -778,6 +802,7 @@ private class AquariumEngine {
         const val MAX_RIPPLES = 4
         const val ATTRACTION_SECONDS = 2.4f
         const val PERFORMANCE_REPORT_NS = 5_000_000_000L
+        const val TWO_PI = 6.2831855f
 
         val FISH_SCALES = floatArrayOf(
             0.052f, 0.075f, 0.061f, 0.092f, 0.048f,
@@ -891,7 +916,7 @@ private class AquariumEngine {
             uniform float uHeading;
             uniform float uScale;
             uniform float uPhase;
-            uniform float uTime;
+            uniform float uSwimPhase;
             uniform float uAspect;
             uniform float uActivity;
             uniform float uSpeed;
@@ -908,8 +933,7 @@ private class AquariumEngine {
                 float tailMotionWeight = tailWeight *
                     (1.0 - smoothstep(-1.42, -0.56, local.x));
                 float motion = clamp(uSpeed / 0.62, 0.12, 1.0);
-                float beatHz = mix(0.62 + motion * 0.42, 1.42, uActivity);
-                float beatPhase = uTime * 6.2831853 * beatHz + uPhase - local.x * 2.05;
+                float beatPhase = uSwimPhase - local.x * 2.05;
                 float travellingWave = sin(beatPhase);
                 float rearBody = smoothstep(0.25, 1.10, 0.72 - local.x);
                 float bodyAmplitude = mix(0.010, 0.042, motion) * rearBody * rearBody;
@@ -919,12 +943,11 @@ private class AquariumEngine {
                 local.y += travellingWave * tailMotionWeight * tailAmplitude;
                 local.x += cos(beatPhase - 0.62) * tailMotionWeight * 0.026;
                 local.z += sin(beatPhase - 0.95) * tailMotionWeight * 0.045;
-                float finHz = 0.36 + motion * 0.18 + uActivity * 0.16;
-                float finFlutter = sin(uTime * 6.2831853 * finHz + uPhase * 0.72 +
+                float finFlutter = sin(uSwimPhase * 0.64 + uPhase * 0.72 +
                                        local.x * 2.4 + sign(local.y) * 1.28);
                 local.y += finFlutter * finWeight * sign(local.y) *
                            mix(0.060, 0.105, max(motion, uActivity));
-                local.x += cos(uTime * 6.2831853 * finHz + uPhase +
+                local.x += cos(uSwimPhase * 0.64 + uPhase +
                                sign(local.y) * 0.82) * finWeight * 0.032;
                 local.z += finFlutter * finWeight * sign(local.y) *
                            mix(0.075, 0.145, max(uActivity, motion));
