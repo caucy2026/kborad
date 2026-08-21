@@ -1106,6 +1106,32 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.37 - 2026-08-21
+
+### 主题
+将全局键盘组合功能预览、初始化崩溃修复和白色居中提示正式归档到 `bin/`，并备份到 GitHub 根仓库 `main`。
+
+### 过程
+- 正式归档复用已经在 62、63 覆盖安装并完成真机验证的同一份 `e5ec4f17` Release APK，不因随后的纯文档提交号改变二进制版本。
+- 63 恢复上线后重新连接 ADB：已安装 `versionName=e5ec4f17`、`versionCode=102`，输入法进程 PID 28709 存活，最近 300 行日志无新的 `FATAL EXCEPTION`。
+- 62 的 Ctrl 按住/松开回归已确认：按住时功能文字以白色在各自键帽内居中，松开后全部取消并恢复原键帽。
+
+### 修改
+- 新增正式 APK：`bin/KEMI-e5ec4f17-arm64-v8a-release.apk`。
+- 新增独立校验文件：`bin/KEMI-e5ec4f17-SHA256SUMS.txt`。
+- 源码实现、崩溃根因、白色居中视觉规则和风险边界已分别固化在 V1.35、V1.36、`desktop-aquarium-engine.md` 和 `kemi-rd/gm/KBoard摸鱼水族键盘复刻设计.md`。
+
+### 验证
+- APK SHA-256：`89cd6861c6b3f7256c0e83f47b9b76b88d79785be13e2584200c1a8a6d9b673e`，与 62、63 已安装验证包完全一致。
+- `aapt` 确认包名 `org.fcitx.fcitx5.android`、`versionCode=102`、`versionName=e5ec4f17`、ABI 仅 `arm64-v8a`。
+- `apksigner` 确认 v1/v2 签名均有效，签名证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+
+### 待办
+- 应用对 Ctrl/Alt/Cmd/Shift 组合键的解释可能不同；KBoard 发送真实键值并展示通用语义，不伪造目标应用未提供的功能。
+- 继续遵守只发布 Release 的约定，不将 Debug 包加入 `bin/` 或推送到设备。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。
