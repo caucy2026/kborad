@@ -813,10 +813,10 @@ private class AquariumEngine {
             // model directly and the speed visibly pulses in step with the tail.
             val completedPowerStroke = previousTailSweep * currentTailSweep <= 0f &&
                     abs(previousTailSweep - currentTailSweep) > 0.015f
-            val tailAmplitude = 0.160f + (0.550f - 0.160f) * f.tailDrive
+            val tailAmplitude = 0.130f + (0.400f - 0.130f) * f.tailDrive
             val tailStrokeImpulse = if (completedPowerStroke) {
                 f.completedTailStrokes++
-                tailAmplitude * (0.090f + tailBeatHz * 0.016f)
+                tailAmplitude * (0.115f + tailBeatHz * 0.020f)
             } else {
                 0f
             }
@@ -920,7 +920,7 @@ private class AquariumEngine {
 
     private fun tailBeatHzForDrive(drive: Float): Float {
         val burst = smoothStep01((drive - 0.20f) / 0.80f)
-        return 1.45f + burst * 5.75f
+        return 1.60f + burst * 3.80f
     }
 
     private fun finBeatHzForDrive(drive: Float): Float {
@@ -1101,41 +1101,79 @@ private class AquariumEngine {
                 )
             }
         }
+        fun ribbon(
+            outer: Array<Pair<Float, Float>>,
+            inner: Array<Pair<Float, Float>>,
+            z: Float,
+            kind: Float
+        ) {
+            check(outer.size == inner.size)
+            for (i in 0 until outer.lastIndex) {
+                triangle(
+                    outer[i].first, outer[i].second,
+                    inner[i].first, inner[i].second,
+                    outer[i + 1].first, outer[i + 1].second,
+                    z, kind
+                )
+                triangle(
+                    outer[i + 1].first, outer[i + 1].second,
+                    inner[i].first, inner[i].second,
+                    inner[i + 1].first, inner[i + 1].second,
+                    z, kind
+                )
+            }
+        }
         val segments = 32
         for (i in 0 until segments) {
             val a0 = 2.0 * PI * i / segments
             val a1 = 2.0 * PI * (i + 1) / segments
-            vertex(0.08f, 0f, 0.15f, 0f)
-            vertex(0.08f + cos(a0).toFloat() * 0.64f, sin(a0).toFloat() * 0.225f, 0.025f, 0f)
-            vertex(0.08f + cos(a1).toFloat() * 0.64f, sin(a1).toFloat() * 0.225f, 0.025f, 0f)
+            vertex(0.09f, 0f, 0.15f, 0f)
+            vertex(0.09f + cos(a0).toFloat() * 0.68f, sin(a0).toFloat() * 0.24f, 0.025f, 0f)
+            vertex(0.09f + cos(a1).toFloat() * 0.68f, sin(a1).toFloat() * 0.24f, 0.025f, 0f)
         }
 
-        // Goldfish proportions: a compact body and a long, broad, double-lobed caudal fin. The
-        // two overlapping membrane fans keep a narrow articulated root but expose a much larger
-        // trailing surface, making every power stroke legible at keyboard scale.
-        fan(
-            -0.94f, 0.10f, -0.025f, 1f,
+        // Two flexible membrane ribbons form one continuous forked caudal fin. Unlike a fan
+        // triangulated around a single hub, the columns below give the shader a real root-to-tip
+        // axis, so curvature can propagate rearward instead of rotating two rigid wing shapes.
+        ribbon(
             arrayOf(
-                -0.49f to 0.08f,
-                -0.86f to 0.15f,
-                -1.27f to 0.34f,
-                -1.55f to 0.58f,
-                -1.66f to 0.50f,
-                -1.53f to 0.24f,
-                -1.13f to 0.015f
-            )
+                -0.52f to 0.075f,
+                -0.72f to 0.145f,
+                -0.94f to 0.275f,
+                -1.16f to 0.425f,
+                -1.36f to 0.490f,
+                -1.48f to 0.405f
+            ),
+            arrayOf(
+                -0.52f to 0.012f,
+                -0.72f to 0.018f,
+                -0.94f to 0.030f,
+                -1.16f to 0.050f,
+                -1.36f to 0.085f,
+                -1.48f to 0.150f
+            ),
+            -0.025f,
+            1f
         )
-        fan(
-            -0.94f, -0.10f, -0.025f, 1f,
+        ribbon(
             arrayOf(
-                -0.49f to -0.08f,
-                -0.86f to -0.15f,
-                -1.27f to -0.34f,
-                -1.55f to -0.58f,
-                -1.66f to -0.50f,
-                -1.53f to -0.24f,
-                -1.13f to -0.015f
-            )
+                -0.52f to -0.075f,
+                -0.72f to -0.145f,
+                -0.94f to -0.275f,
+                -1.16f to -0.425f,
+                -1.36f to -0.490f,
+                -1.48f to -0.405f
+            ),
+            arrayOf(
+                -0.52f to -0.012f,
+                -0.72f to -0.018f,
+                -0.94f to -0.030f,
+                -1.16f to -0.050f,
+                -1.36f to -0.085f,
+                -1.48f to -0.150f
+            ),
+            -0.025f,
+            1f
         )
 
         // One flowing pectoral-fin pair with a rounded trailing edge.
@@ -1227,7 +1265,9 @@ private class AquariumEngine {
         const val FEED_REPORT_SECONDS = 0.75f
         const val PERFORMANCE_REPORT_NS = 5_000_000_000L
         const val TWO_PI = 6.2831855f
-        const val TAIL_PROPULSION_PHASE = 2.72f
+        // Representative phase of the visible caudal membrane around 72% of its length.
+        // The vertex shader applies a posterior delay of 1.34 rad from root to tip.
+        const val TAIL_PROPULSION_PHASE = -0.96f
         val FISH_SCALES = floatArrayOf(
             0.045f, 0.064f, 0.053f, 0.079f, 0.042f,
             0.070f, 0.057f, 0.075f, 0.048f, 0.061f
@@ -1375,21 +1415,34 @@ private class AquariumEngine {
                 float tailWeight = 1.0 - step(0.5, abs(aKind - 1.0));
                 float finWeight = 1.0 - step(0.5, abs(aKind - 2.0));
                 float bodyWeight = 1.0 - clamp(tailWeight + finWeight, 0.0, 1.0);
+                float tailProgress = clamp((-local.x - 0.52) / 0.96, 0.0, 1.0);
                 float tailMotionWeight = tailWeight *
-                    (1.0 - smoothstep(-1.62, -0.49, local.x));
+                    smoothstep(0.0, 1.0, tailProgress);
                 float tailDrive = clamp(uTailDrive, 0.0, 1.0);
-                float beatPhase = uSwimPhase - local.x * 2.18;
+                // The caudal peduncle initiates the bend and the compliant membrane follows.
+                // Increasing tailProgress subtracts phase, giving the tip a visible delay. The
+                // previous expression added phase toward the tip and made both lobes snap ahead
+                // of the body like insect wings.
+                float beatPhase = uSwimPhase - tailProgress * 1.34;
                 float travellingWave = sin(beatPhase);
                 float bodyEffort = tailDrive;
                 // Keep the torso and head rigid. Locomotion is readable at the articulated
                 // caudal and pectoral fins; the fish body translates and steers as one solid
                 // mass instead of visibly wobbling with the tail phase.
-                float tailAmplitude = mix(0.160, 0.550, tailDrive);
-                local.y += travellingWave * tailMotionWeight * tailAmplitude;
-                local.x += cos(beatPhase - 0.62) * tailMotionWeight *
-                           mix(0.022, 0.072, tailDrive);
-                local.z += sin(beatPhase - 0.95) * tailMotionWeight *
-                           mix(0.052, 0.158, bodyEffort);
+                float tailAmplitude = mix(0.130, 0.400, tailDrive);
+                float rootBend = sin(uSwimPhase) *
+                                 mix(0.018, 0.052, tailDrive);
+                local.y += tailWeight * (
+                    rootBend * tailProgress +
+                    travellingWave * tailMotionWeight * tailAmplitude
+                );
+                // Membrane shortening and twist are secondary to the horizontal tail sweep.
+                // Opposite lobe signs create a soft cup instead of moving the two lobes as one
+                // rigid plane around Z, which was the dragonfly-like motion.
+                local.x -= (1.0 - cos(beatPhase)) * tailMotionWeight *
+                           mix(0.006, 0.020, tailDrive);
+                local.z += cos(beatPhase - 0.42) * tailMotionWeight *
+                           sign(aPosition.y) * mix(0.012, 0.048, bodyEffort);
 
                 // Positive local Y is the left pectoral fin. Each side uses the exact muscle
                 // drive that contributed to CPU thrust, braking and yaw torque this frame.
