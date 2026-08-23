@@ -339,10 +339,22 @@ private class AquariumEngine {
 
     private data class Ripple(var x: Float = 0f, var y: Float = 0f, var start: Float = -100f)
 
+    private data class PlantPatch(
+        var x: Float = 0f,
+        var y: Float = 0f,
+        var start: Float = -100f,
+        var lifespan: Float = 0f,
+        var seed: Float = 0f,
+        var interestUntil: Float = -1f
+    )
+
     private val random = Random(0x4B4F49)
     private val fish = MutableList(MAX_FISH) { index -> createFish(index) }
     private val ripples = Array(MAX_RIPPLES) { Ripple() }
+    private val plants = Array(MAX_PLANTS) { PlantPatch() }
     private var nextRipple = 0
+    private var nextPlant = 0
+    private var newestPlantIndex = -1
     private var attractionX = 0f
     private var attractionY = 0f
     private var attractionUntil = -1f
@@ -360,15 +372,26 @@ private class AquariumEngine {
     private var nextSparkleAt = 1.2f
 
     private var waterProgram = 0
+    private var plantProgram = 0
     private var fishProgram = 0
     private var waterVao = 0
     private var waterVbo = 0
+    private var plantVao = 0
+    private var plantVbo = 0
     private var fishVao = 0
     private var fishVbo = 0
     private var fishVertexCount = 0
+    private var plantVertexCount = 0
     private var waterTimeLocation = -1
     private var waterResolutionLocation = -1
     private var waterRipplesLocation = -1
+    private var plantAspectLocation = -1
+    private var plantPositionLocation = -1
+    private var plantScaleLocation = -1
+    private var plantTimeLocation = -1
+    private var plantAgeLocation = -1
+    private var plantSeedLocation = -1
+    private var plantAlphaLocation = -1
     private var fishAspectLocation = -1
     private var fishPositionLocation = -1
     private var fishHeadingLocation = -1
@@ -404,10 +427,18 @@ private class AquariumEngine {
         previousNanos = startNanos
         reportStartNanos = startNanos
         waterProgram = createProgram(WATER_VERTEX_SHADER, WATER_FRAGMENT_SHADER)
+        plantProgram = createProgram(PLANT_VERTEX_SHADER, PLANT_FRAGMENT_SHADER)
         fishProgram = createProgram(FISH_VERTEX_SHADER, FISH_FRAGMENT_SHADER)
         waterTimeLocation = GLES30.glGetUniformLocation(waterProgram, "uTime")
         waterResolutionLocation = GLES30.glGetUniformLocation(waterProgram, "uResolution")
         waterRipplesLocation = GLES30.glGetUniformLocation(waterProgram, "uRipples[0]")
+        plantAspectLocation = GLES30.glGetUniformLocation(plantProgram, "uAspect")
+        plantPositionLocation = GLES30.glGetUniformLocation(plantProgram, "uPosition")
+        plantScaleLocation = GLES30.glGetUniformLocation(plantProgram, "uScale")
+        plantTimeLocation = GLES30.glGetUniformLocation(plantProgram, "uTime")
+        plantAgeLocation = GLES30.glGetUniformLocation(plantProgram, "uAge")
+        plantSeedLocation = GLES30.glGetUniformLocation(plantProgram, "uSeed")
+        plantAlphaLocation = GLES30.glGetUniformLocation(plantProgram, "uAlpha")
         fishAspectLocation = GLES30.glGetUniformLocation(fishProgram, "uAspect")
         fishPositionLocation = GLES30.glGetUniformLocation(fishProgram, "uPosition")
         fishHeadingLocation = GLES30.glGetUniformLocation(fishProgram, "uHeading")
@@ -430,6 +461,7 @@ private class AquariumEngine {
         fishTimeLocation = GLES30.glGetUniformLocation(fishProgram, "uTime")
         fishSparkleLocation = GLES30.glGetUniformLocation(fishProgram, "uSparkle")
         createWaterGeometry()
+        createPlantGeometry()
         createFishGeometry()
         GLES30.glDisable(GLES30.GL_CULL_FACE)
         GLES30.glEnable(GLES30.GL_BLEND)
@@ -453,6 +485,19 @@ private class AquariumEngine {
         updateTouchTarget(x, y, now)
         attractionX = x * 2f - 1f
         attractionY = 1f - y * 2f
+        newestPlantIndex = nextPlant
+        plants[newestPlantIndex].apply {
+            this.x = attractionX.coerceIn(-0.88f, 0.88f)
+            // The mesh grows upward from its root. Keep the whole clump inside the pond even
+            // when a bottom-row or top-row key was touched.
+            this.y = attractionY.coerceIn(-0.93f, 0.70f)
+            start = now
+            lifespan = PLANT_LIFETIME_MIN_SECONDS +
+                    random.nextFloat() * PLANT_LIFETIME_RANGE_SECONDS
+            seed = random.nextFloat() * 19f + newestPlantIndex * 2.7f
+            interestUntil = now + PLANT_INTEREST_SECONDS
+        }
+        nextPlant = (nextPlant + 1) % plants.size
         attractionStartedAt = now
         attractionUntil = now + ATTRACTION_SECONDS
         touchHeld = true
@@ -490,6 +535,11 @@ private class AquariumEngine {
             }
             f.brakeDrive = max(f.brakeDrive, (1f - forwardAlignment) * 0.94f)
         }
+        Log.i(
+            TAG,
+            "plant index=$newestPlantIndex position=${"%.2f".format(attractionX)}," +
+                    "${"%.2f".format(attractionY)}"
+        )
     }
 
     fun touchMove(x: Float, y: Float) {
@@ -541,16 +591,20 @@ private class AquariumEngine {
         updateFish(time, dt)
         updateSparkle(time)
         drawWater(time)
+        drawPlants(time)
         drawFish(time)
         reportPerformance(frameNanos)
     }
 
     fun destroy() {
         if (waterVbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(waterVbo), 0)
+        if (plantVbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(plantVbo), 0)
         if (fishVbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(fishVbo), 0)
         if (waterVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(waterVao), 0)
+        if (plantVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(plantVao), 0)
         if (fishVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(fishVao), 0)
         if (waterProgram != 0) GLES30.glDeleteProgram(waterProgram)
+        if (plantProgram != 0) GLES30.glDeleteProgram(plantProgram)
         if (fishProgram != 0) GLES30.glDeleteProgram(fishProgram)
     }
 
@@ -623,8 +677,20 @@ private class AquariumEngine {
         val feeding = touchHeld || time < attractionUntil
         val scattering = !feeding && time < scatterUntil
         val rapidFeedReaction = feeding && time - attractionStartedAt < FEED_REACTION_SECONDS
+        val focusPlant = if (newestPlantIndex in plants.indices) {
+            plants[newestPlantIndex].takeIf {
+                time >= it.start && time < min(it.interestUntil, it.start + it.lifespan)
+            }
+        } else {
+            null
+        }
         for (index in 0 until activeFishCount) {
             val f = fish[index]
+            // Half the school investigates the newest plant while the other half keeps the pond
+            // alive by scattering or following its usual route. Touch-down still calls every fish
+            // to the food cue; after release these visitors settle into collision-safe orbit slots.
+            val plantVisiting = !feeding && focusPlant != null &&
+                    (index + newestPlantIndex) % 2 == 0
             if (!feeding && time >= f.behaviorUntil) {
                 f.behaviorStep++
                 f.behavior = behaviorForStep(f.behaviorStep)
@@ -664,6 +730,20 @@ private class AquariumEngine {
                 targetY = attractionY + offsetY
                 desiredSpeed = (f.cruiseSpeed * (4.55f + (f.seed % 1f) * 0.70f))
                     .coerceAtMost(f.maxForwardSpeed)
+            } else if (plantVisiting) {
+                val plant = checkNotNull(focusPlant)
+                val orbitDirection = if ((index + newestPlantIndex) % 4 < 2) 1f else -1f
+                val orbitAngle = index * FEED_GOLDEN_ANGLE + f.seed * 0.23f +
+                        (time - plant.start) * orbitDirection *
+                        (0.34f + (f.seed % 1f) * 0.18f)
+                // Derive the slot from the rendered body/tail envelope, not from fish count.
+                // Large fish therefore receive more clearance and cannot stack over small fish.
+                val orbitRadius = 0.115f + collisionRadius(f) * 1.15f +
+                        (index % 3) * 0.035f
+                targetX = plant.x + cos(orbitAngle) * orbitRadius
+                targetY = plant.y + 0.055f + sin(orbitAngle) * orbitRadius * 0.72f
+                desiredSpeed = (f.cruiseSpeed * (1.52f + (f.seed % 1f) * 0.46f))
+                    .coerceAtMost(f.maxForwardSpeed * 0.60f)
             } else if (scattering) {
                 targetX = scatterTargetX[index]
                 targetY = scatterTargetY[index]
@@ -691,22 +771,54 @@ private class AquariumEngine {
                             fromPartnerX * fromPartnerX + fromPartnerY * fromPartnerY
                         ).coerceAtLeast(0.03f)
                         val orbitSide = if (index % 2 == 0) 1f else -1f
-                        val orbitRadius = 0.16f + (f.seed % 1f) * 0.055f
-                        targetX = partner.x - fromPartnerY / partnerDistance *
-                                orbitRadius * orbitSide + cos(partner.heading) * 0.075f
-                        targetY = partner.y + fromPartnerX / partnerDistance *
-                                orbitRadius * orbitSide + sin(partner.heading) * 0.075f
-                        desiredSpeed = max(
-                            f.cruiseSpeed,
-                            f.cruiseSpeed * (1.28f + (f.seed % 1f) * 0.34f)
-                        ).coerceAtMost(f.maxForwardSpeed * 0.54f)
+                        val safePairSpacing = collisionRadius(f) + collisionRadius(partner) + 0.025f
+                        // A PLAY interval is not one endless orbit. The pair alternates between
+                        // circling, a tail-chase, and side-by-side weaving. All three produce only
+                        // navigation targets; fins and tail strokes still create the actual pose.
+                        when (((time / PLAY_STYLE_SECONDS).toInt() + index / 2) % 3) {
+                            0 -> {
+                                val orbitRadius = max(
+                                    safePairSpacing,
+                                    0.14f + (f.seed % 1f) * 0.055f
+                                )
+                                targetX = partner.x - fromPartnerY / partnerDistance *
+                                        orbitRadius * orbitSide + cos(partner.heading) * 0.068f
+                                targetY = partner.y + fromPartnerX / partnerDistance *
+                                        orbitRadius * orbitSide + sin(partner.heading) * 0.068f
+                                desiredSpeed = f.cruiseSpeed *
+                                        (1.22f + (f.seed % 1f) * 0.30f)
+                            }
+                            1 -> {
+                                val chaseSpacing = safePairSpacing + 0.035f
+                                val tease = sin(time * 1.36f + f.phase) * 0.038f
+                                targetX = partner.x - cos(partner.heading) * chaseSpacing -
+                                        sin(partner.heading) * tease
+                                targetY = partner.y - sin(partner.heading) * chaseSpacing +
+                                        cos(partner.heading) * tease
+                                desiredSpeed = partner.forwardSpeed * 0.74f +
+                                        f.cruiseSpeed * (0.82f + (f.seed % 1f) * 0.24f)
+                            }
+                            else -> {
+                                val weaveSide = orbitSide * (safePairSpacing + 0.018f) *
+                                        (0.82f + sin(time * 1.18f + f.phase) * 0.18f)
+                                val lead = 0.055f + cos(time * 0.82f + f.phase) * 0.030f
+                                targetX = partner.x + cos(partner.heading) * lead -
+                                        sin(partner.heading) * weaveSide
+                                targetY = partner.y + sin(partner.heading) * lead +
+                                        cos(partner.heading) * weaveSide
+                                desiredSpeed = partner.forwardSpeed * 0.62f +
+                                        f.cruiseSpeed * 0.72f
+                            }
+                        }
+                        desiredSpeed = max(f.cruiseSpeed * 0.90f, desiredSpeed)
+                            .coerceAtMost(f.maxForwardSpeed * 0.58f)
                     }
                 }
             }
 
             // Four fish keep a genuine lower-pond territory even while following or playing.
             // They remain social but do not all migrate above the operation-water strip.
-            if (!feeding && !scattering && f.routeCenterY < -0.60f) {
+            if (!feeding && !scattering && !plantVisiting && f.routeCenterY < -0.60f) {
                 targetY = min(targetY, -0.67f)
             }
 
@@ -729,6 +841,7 @@ private class AquariumEngine {
             var crowdingBrake = 0f
             val forwardX = cos(f.heading)
             val forwardY = sin(f.heading)
+            val selfCollisionRadius = collisionRadius(f)
             for (otherIndex in 0 until activeFishCount) {
                 if (otherIndex == index) continue
                 val other = fish[otherIndex]
@@ -737,8 +850,10 @@ private class AquariumEngine {
                 val distance2 = awayX * awayX + awayY * awayY
                 if (distance2 <= 0.0001f) continue
                 val distanceToOther = sqrt(distance2)
-                if (distanceToOther < 0.155f) {
-                    val separationWeight = (0.155f - distanceToOther) / 0.155f
+                val collisionDistance = selfCollisionRadius + collisionRadius(other)
+                if (distanceToOther < collisionDistance) {
+                    val separationWeight = (collisionDistance - distanceToOther) /
+                            collisionDistance.coerceAtLeast(0.001f)
                     separationX += awayX / distanceToOther * separationWeight
                     separationY += awayY / distanceToOther * separationWeight
                     val aheadDot = (-awayX * forwardX - awayY * forwardY) / distanceToOther
@@ -754,6 +869,25 @@ private class AquariumEngine {
                         cohesionX += other.x
                         cohesionY += other.y
                         schoolNeighbours++
+                    }
+                }
+            }
+            // Water grass bends, so it is not a hard wall, but fish avoid pushing their torso
+            // through the root cluster. The clearance again includes this fish's rendered size.
+            for (plant in plants) {
+                if (time < plant.start || time >= plant.start + plant.lifespan) continue
+                val awayX = f.x - plant.x
+                val awayY = f.y - (plant.y + 0.045f)
+                val distance2 = awayX * awayX + awayY * awayY
+                val plantClearance = selfCollisionRadius + PLANT_CORE_RADIUS
+                if (distance2 > 0.0001f && distance2 < plantClearance * plantClearance) {
+                    val distanceToPlant = sqrt(distance2)
+                    val weight = (plantClearance - distanceToPlant) / plantClearance
+                    separationX += awayX / distanceToPlant * weight * 0.78f
+                    separationY += awayY / distanceToPlant * weight * 0.78f
+                    val aheadDot = (-awayX * forwardX - awayY * forwardY) / distanceToPlant
+                    if (aheadDot > 0.42f) {
+                        crowdingBrake = max(crowdingBrake, weight * aheadDot * 0.72f)
                     }
                 }
             }
@@ -1074,6 +1208,14 @@ private class AquariumEngine {
         else -> FishBehavior.PLAY
     }
 
+    private fun collisionRadius(f: Fish): Float {
+        val renderedScale = f.scale * (0.75f + f.depth * 0.35f)
+        // The torso is shorter than the veil, but a small tail allowance prevents two large fish
+        // from visually clipping while turning. This keeps small fish from reserving the same
+        // oversized fixed circle as the largest fish.
+        return 0.025f + renderedScale * 0.88f
+    }
+
     private fun tailBeatHzForDrive(drive: Float, tempo: Float): Float {
         val burst = smoothStep01((drive - 0.20f) / 0.80f)
         return (1.60f + burst * 3.80f) * tempo
@@ -1129,6 +1271,30 @@ private class AquariumEngine {
         )
         GLES30.glBindVertexArray(waterVao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
+        GLES30.glBindVertexArray(0)
+    }
+
+    private fun drawPlants(time: Float) {
+        GLES30.glUseProgram(plantProgram)
+        GLES30.glUniform1f(plantTimeLocation, time)
+        GLES30.glUniform1f(
+            plantAspectLocation,
+            width.toFloat() / height.coerceAtLeast(1)
+        )
+        GLES30.glBindVertexArray(plantVao)
+        for (plant in plants) {
+            val age = time - plant.start
+            if (age < 0f || age >= plant.lifespan) continue
+            val growth = smoothStep01(age / PLANT_GROW_SECONDS)
+            val fade = smoothStep01((plant.lifespan - age) / PLANT_FADE_SECONDS)
+            val scale = PLANT_BASE_SCALE * (0.86f + (plant.seed % 1f) * 0.24f)
+            GLES30.glUniform2f(plantPositionLocation, plant.x, plant.y)
+            GLES30.glUniform1f(plantScaleLocation, scale * growth)
+            GLES30.glUniform1f(plantAgeLocation, age)
+            GLES30.glUniform1f(plantSeedLocation, plant.seed)
+            GLES30.glUniform1f(plantAlphaLocation, fade * growth)
+            GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, plantVertexCount)
+        }
         GLES30.glBindVertexArray(0)
     }
 
@@ -1226,6 +1392,81 @@ private class AquariumEngine {
         GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, vertices.size * 4, buffer, GLES30.GL_STATIC_DRAW)
         GLES30.glEnableVertexAttribArray(0)
         GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 2 * 4, 0)
+        GLES30.glBindVertexArray(0)
+    }
+
+    private fun createPlantGeometry() {
+        val vertices = mutableListOf<Float>()
+        fun vertex(x: Float, y: Float, id: Float, kind: Float, edge: Float) {
+            vertices += x
+            vertices += y
+            vertices += id
+            vertices += kind
+            vertices += edge
+        }
+        fun bladeVertex(x: Float, y: Float, id: Int, edge: Float) {
+            vertex(x, y, id.toFloat(), 0f, edge)
+        }
+        val bladeCount = 7
+        val segments = 5
+        for (blade in 0 until bladeCount) {
+            val baseX = (blade - (bladeCount - 1) * 0.5f) * 0.105f +
+                    sin(blade * 2.17f) * 0.025f
+            val bladeHeight = 0.74f + (blade % 4) * 0.115f
+            val bladeWidth = 0.048f + (blade % 3) * 0.008f
+            for (segment in 0 until segments) {
+                val p0 = segment.toFloat() / segments
+                val p1 = (segment + 1).toFloat() / segments
+                val y0 = bladeHeight * p0
+                val y1 = bladeHeight * p1
+                val staticCurve0 = sin(p0 * PI.toFloat() * 0.86f + blade * 0.71f) *
+                        p0 * 0.055f
+                val staticCurve1 = sin(p1 * PI.toFloat() * 0.86f + blade * 0.71f) *
+                        p1 * 0.055f
+                val halfWidth0 = bladeWidth * (1f - p0 * 0.72f)
+                val halfWidth1 = bladeWidth * (1f - p1 * 0.72f)
+                val x0Left = baseX + staticCurve0 - halfWidth0
+                val x0Right = baseX + staticCurve0 + halfWidth0
+                val x1Left = baseX + staticCurve1 - halfWidth1
+                val x1Right = baseX + staticCurve1 + halfWidth1
+                bladeVertex(x0Left, y0, blade, -1f)
+                bladeVertex(x0Right, y0, blade, 1f)
+                bladeVertex(x1Left, y1, blade, -1f)
+                bladeVertex(x1Left, y1, blade, -1f)
+                bladeVertex(x0Right, y0, blade, 1f)
+                bladeVertex(x1Right, y1, blade, 1f)
+            }
+        }
+        // Three tiny quads become slowly rising bubbles in the vertex shader. They share the
+        // plant draw call and add no CPU particles or per-frame allocation.
+        for (bubble in 0 until 3) {
+            val size = 0.020f + bubble * 0.004f
+            vertex(-size, -size, bubble.toFloat(), 1f, -1f)
+            vertex(size, -size, bubble.toFloat(), 1f, 1f)
+            vertex(-size, size, bubble.toFloat(), 1f, -1f)
+            vertex(-size, size, bubble.toFloat(), 1f, -1f)
+            vertex(size, -size, bubble.toFloat(), 1f, 1f)
+            vertex(size, size, bubble.toFloat(), 1f, 1f)
+        }
+        plantVertexCount = vertices.size / 5
+        val data = vertices.toFloatArray()
+        val ids = IntArray(1)
+        GLES30.glGenVertexArrays(1, ids, 0)
+        plantVao = ids[0]
+        GLES30.glGenBuffers(1, ids, 0)
+        plantVbo = ids[0]
+        GLES30.glBindVertexArray(plantVao)
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, plantVbo)
+        GLES30.glBufferData(
+            GLES30.GL_ARRAY_BUFFER,
+            data.size * 4,
+            floatBuffer(data),
+            GLES30.GL_STATIC_DRAW
+        )
+        GLES30.glEnableVertexAttribArray(0)
+        GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 5 * 4, 0)
+        GLES30.glEnableVertexAttribArray(1)
+        GLES30.glVertexAttribPointer(1, 3, GLES30.GL_FLOAT, false, 5 * 4, 2 * 4)
         GLES30.glBindVertexArray(0)
     }
 
@@ -1395,12 +1636,21 @@ private class AquariumEngine {
         const val MEDIUM_FISH = 7
         const val MIN_FISH = 5
         const val MAX_RIPPLES = 4
+        const val MAX_PLANTS = 4
         const val ATTRACTION_SECONDS = 4.6f
         const val TOUCH_EVENT_TIMEOUT_SECONDS = 1.0f
         const val FEED_GOLDEN_ANGLE = 2.3999632f
         const val SCATTER_SECONDS = 3.4f
+        const val PLAY_STYLE_SECONDS = 3.8f
         const val FEED_REPORT_SECONDS = 0.75f
         const val FEED_REACTION_SECONDS = 0.46f
+        const val PLANT_GROW_SECONDS = 0.52f
+        const val PLANT_FADE_SECONDS = 3.2f
+        const val PLANT_LIFETIME_MIN_SECONDS = 22f
+        const val PLANT_LIFETIME_RANGE_SECONDS = 10f
+        const val PLANT_INTEREST_SECONDS = 9.5f
+        const val PLANT_BASE_SCALE = 0.135f
+        const val PLANT_CORE_RADIUS = 0.055f
         const val SPARKLE_DURATION_MIN_SECONDS = 1.15f
         const val SPARKLE_DURATION_RANGE_SECONDS = 0.95f
         const val SPARKLE_PAUSE_MIN_SECONDS = 1.40f
@@ -1570,6 +1820,87 @@ private class AquariumEngine {
                 float vignette = 1.0 - smoothstep(0.20, 1.18, length((uv - 0.5) * vec2(1.0, 0.74)));
                 color *= 0.72 + vignette * 0.28;
                 fragColor = vec4(color, 1.0);
+            }
+        """
+
+        const val PLANT_VERTEX_SHADER = """#version 300 es
+            layout(location = 0) in vec2 aPosition;
+            layout(location = 1) in vec3 aMeta;
+            uniform vec2 uPosition;
+            uniform float uScale;
+            uniform float uAspect;
+            uniform float uTime;
+            uniform float uAge;
+            uniform float uSeed;
+            out float vProgress;
+            out float vEdge;
+            out float vKind;
+            out vec2 vBubbleLocal;
+            void main() {
+                float item = aMeta.x;
+                float kind = aMeta.y;
+                vec2 local = aPosition;
+                vKind = kind;
+                vEdge = aMeta.z;
+                vBubbleLocal = vec2(0.0);
+                if (kind < 0.5) {
+                    float progress = clamp(local.y / 1.20, 0.0, 1.0);
+                    float waterCurrent = sin(uTime * (0.72 + fract(item * 0.37) * 0.22) +
+                                             uSeed + item * 1.31);
+                    float trailingFlex = sin(local.y * 3.10 - uTime * 0.46 +
+                                             uSeed * 0.61 + item) * 0.032;
+                    local.x += waterCurrent * pow(progress, 1.55) *
+                               (0.075 + fract(item * 0.63) * 0.035) +
+                               trailingFlex * progress;
+                    vProgress = progress;
+                } else {
+                    float bubbleSize = 0.020 + item * 0.004;
+                    float rise = fract(uAge * (0.105 + item * 0.018) +
+                                       fract(uSeed * 0.19 + item * 0.31));
+                    vec2 centre = vec2(
+                        -0.25 + item * 0.25 + sin(uTime * 0.74 + uSeed + item) * 0.045,
+                        0.16 + rise * 1.06
+                    );
+                    local = centre + aPosition;
+                    vProgress = rise;
+                    vBubbleLocal = aPosition / bubbleSize;
+                }
+                vec2 world = uPosition + vec2(local.x, local.y * uAspect) * uScale;
+                gl_Position = vec4(world, 0.0, 1.0);
+            }
+        """
+
+        const val PLANT_FRAGMENT_SHADER = """#version 300 es
+            precision mediump float;
+            in float vProgress;
+            in float vEdge;
+            in float vKind;
+            in vec2 vBubbleLocal;
+            uniform float uSeed;
+            uniform float uAlpha;
+            out vec4 fragColor;
+            void main() {
+                if (vKind > 0.5) {
+                    float radius = length(vBubbleLocal);
+                    float disc = 1.0 - smoothstep(0.72, 1.0, radius);
+                    float rim = smoothstep(0.42, 0.78, radius) *
+                                (1.0 - smoothstep(0.80, 1.0, radius));
+                    float life = smoothstep(0.0, 0.12, vProgress) *
+                                 (1.0 - smoothstep(0.82, 1.0, vProgress));
+                    vec3 bubble = mix(vec3(0.24, 0.66, 0.72),
+                                      vec3(0.72, 0.94, 0.96), rim);
+                    fragColor = vec4(bubble, (disc * 0.10 + rim * 0.54) * life * uAlpha);
+                    return;
+                }
+                float edgeLight = 1.0 - abs(vEdge);
+                float vein = 0.5 + 0.5 * sin(vProgress * 34.0 + uSeed * 1.7);
+                vec3 root = vec3(0.018, 0.20, 0.16);
+                vec3 tip = vec3(0.18, 0.62, 0.38);
+                vec3 color = mix(root, tip, vProgress * 0.82);
+                color += vec3(0.08, 0.24, 0.13) * edgeLight * 0.38;
+                color += vec3(0.06, 0.16, 0.10) * vein * (0.18 + vProgress * 0.20);
+                float alpha = (0.66 + edgeLight * 0.22) * uAlpha;
+                fragColor = vec4(color, alpha);
             }
         """
 
