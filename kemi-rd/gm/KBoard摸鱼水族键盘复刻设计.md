@@ -1,17 +1,17 @@
 # KBoard 摸鱼水族键盘可复刻设计规范
 
 > 文档状态：可交付 / 可复刻  
-> 对应源码版本：`79a3f763`
+> 对应源码版本：`5dc9bafa`
 > 目标设备基线：Android 12、arm64-v8a、Mali-G52、OpenGL ES 3.2、1920×1280  
-> 目标效果：全局键盘下方是一整块沉浸式池塘；金鱼依靠尾鳍和胸鳍真实游动，触摸后手指下长出一簇跟手水草，松手立即消失；投喂时鱼群分为抢食、顺游、逆游和谨慎四种角色，松手轮换三种散场；空闲时会跟随、追逐、并游和交叉嬉戏；触点产生轻微非圆涟漪和一次真实水滴声；持续渲染稳定在 30Hz。
+> 目标效果：全局键盘下方是一整块沉浸式池塘；入场时 10 条鱼依当天是周一到周日游成数字 1–7，短暂保持后慢速游走；金鱼依靠尾鳍和胸鳍真实游动，触摸后手指下长出一簇跟手水草，松手立即消失；投喂时鱼群分为抢食、顺游、逆游和谨慎四种角色，松手轮换三种散场；空闲时会跟随、追逐、并游和交叉嬉戏；触点产生轻微非圆涟漪和一次真实水滴声；持续渲染稳定在 30Hz。
 
 ## 1. 怎样得到完全一致的效果
 
 若项目也是 Android View + OpenGL ES，最可靠的复刻方法不是重新估算参数，而是复制下列源码与资源，再按第 3 节接入。本文后续章节解释每个参数为什么存在，便于移植到 Compose、Flutter Texture、Qt、Unity 原生插件或其他 GLES 容器。
 
-| 文件 | 用途 | SHA-256（`79a3f763`） |
+| 文件 | 用途 | SHA-256（`5dc9bafa`） |
 |---|---|---|
-| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/aquarium/DesktopAquariumView.kt` | EGL、30Hz 渲染线程、水面/水草/鱼体 Shader、个体速度、随机闪光、触摸角色、三种散场、按尺寸碰撞和水动力 | `40d9d8997ea849caa784f6dd71bb06f316e9778301b7a25f2ab81b76683dd3be` |
+| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/aquarium/DesktopAquariumView.kt` | EGL、30Hz 渲染线程、星期数字入场、水面/水草/鱼体 Shader、个体速度、随机闪光、触摸角色、三种散场、按尺寸碰撞和水动力 | `15806cc3edbbfc955c62ea384c4fc1f810eca9041f7d98edd6278033edb6bc76` |
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/DesktopKeyboard.kt` | 水族层和原生按键层组合、触摸观察、底部水域、组合键提示和桌面功能键 | `5666323c4d2262b332d1345d123fa74745d94f2030b6c411ee0ac99467dbc48c` |
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyView.kt` | 半透明景深键帽、按压行程、无圆形 Ripple、稳定提示层 | `6e9a5bc1b48d04fe5539f702dfb381c5a45795fdadecf50dafc072ab4b10cd76` |
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyDefPreset.kt` | 全局修饰键的按住式定义 | `e6b8b09a074c47cab241dd6fef70a0f864e5268d438132786ab8c0c868a5751e` |
@@ -200,6 +200,41 @@ collisionRadius = 0.025 + renderedScale×0.88
 分离增益：投喂 `0.52`、散开 `1.05`、空闲 `1.55`。空闲时聚合增益 `0.42`，方向协调增益 `0.22`。
 
 边缘预测距离为 `0.20 + forwardSpeed×0.58`。安全边界为 X `[-0.86,0.86]`、Y `[-0.95,0.86]`；预测穿越边界时增加向内意图并制动。最终数值安全夹取是 X `[-1.07,1.07]`、Y `[-1.02,0.94]`，越界只把速度乘 `0.12`，绝不能反射速度或翻转朝向。
+
+### 星期数字入场状态机
+
+每次创建水族渲染引擎时读取设备本地 `Calendar.DAY_OF_WEEK`，按下式转换：
+
+```text
+weekdayDigit = ((calendarDay + 5) mod 7) + 1
+Sunday=1 -> 7
+Monday=2 -> 1
+...
+Saturday=7 -> 6
+```
+
+数字使用七段笔画，范围约为 X `[-0.34,0.34]`、Y `[-0.72,0.72]`。根据当天数字启用的笔画：
+
+```text
+1 = upperRight + lowerRight
+2 = top + upperRight + middle + lowerLeft + bottom
+3 = top + upperRight + middle + lowerRight + bottom
+4 = upperLeft + middle + upperRight + lowerRight
+5 = top + upperLeft + middle + lowerRight + bottom
+6 = top + upperLeft + middle + lowerLeft + lowerRight + bottom
+7 = top + upperRight + lowerRight
+```
+
+10 个槽位均分到启用笔画，采样使用 `(sample+0.5)/count` 避开两段重合端点；相邻采样点沿笔画法线交错偏移 `±0.032`，为大鱼保留厚度。初始用未占用近邻分配鱼到槽位，避免十条鱼大量交叉。
+
+```text
+FORM    最少 1.25s；maxDistance <= 0.145 则提前完成，最长 5.20s
+HOLD    1.45s，继续小幅尾摆与制动保持数字
+DEPART  3.20s，按本鱼独立路线以 ownCruise×0.64..0.80 慢速游走
+DONE    恢复 ROUTE / FOLLOW / PLAY 和随机单鱼闪光
+```
+
+FORM/HOLD 期间取消群聚合、方向协调和底层路线约束，但保留体积碰撞和边界制动。数字目标只进入 `desiredSpeed/turnDemand`；推进仍由完成的可见尾摆产生。任意触摸立即把入场阶段设为 DONE，保留当前鱼速/朝向并执行投喂 C-start，绝不能让数字动画延迟按键。
 
 ## 10. 触摸、跟手与散开状态机
 
@@ -515,6 +550,8 @@ mat2(cosH, sinH, -sinH, cosH) * local.xy
 ### 功能
 
 - 按键输入、长按、连删、修饰键、空格、回车、语音不被水族拦截。
+- 设备本地周一到周日入场分别形成可辨识的 1–7；数字由鱼游成、短暂保持、再慢速游走，没有坐标跳变。
+- FORM/HOLD/DEPART 任意阶段按键都必须立即中断队形并正常输入；重新进入全局键盘时才再触发当天数字。
 - DOWN 有一簇手指水草、一次涟漪和一次声音，MOVE 让水草跟手且无新声音/涟漪，UP 后下一帧水草必须完全消失且无第二声。
 - 手指滑到语音键和底部空白水域，鱼也持续跟随。
 - 连续三次按住可辨识抢食、顺/逆环游、谨慎靠近的角色差异；靠近时每次只有一条随机幸运鱼获得触摸闪光。
@@ -593,3 +630,5 @@ SHA-256     1f4a5e489f5a24c6c87191a2006ec9f63b3c3a6401f02c21d67fba6dceac8fa0
 V1.40 水草互动源码为 `dd5d2700`。无签名环境下的 `:app:assembleRelease`、R8、Lint Vital、arm64 原生组件及 6 个 Shader 等价语法检查均通过，验证包 SHA-256 为 `574f0379eec1c1a08237b7989a66f589095f6c15e5de6cdf1d7ac10e578902d5`，文件名明确包含 `release-unsigned`。它不能安装、发布或替代上述正式 APK。最终复查时 `.62` 已恢复为 ADB `device`、`.63` 仍不在线，但没有新签名包，因此仍须恢复项目原签名环境并完成 Android 12/Mali-G52 真机验收后才能更新正式发布基线。
 
 V1.42 触摸生命期与差异化互动源码为 `79a3f763`：多簇长寿命水草收口为唯一跟手水草，松手下一帧同时移除渲染和碰撞；新增四类投喂角色、单鱼抢食闪光和三种散场，触摸期间暂停空闲随机闪光以保证任意时刻最多一条鱼发光。所有新目标仍只进入肌肉/水动力链路，不直接改世界坐标或朝向。
+
+V1.43 星期数字入场源码为 `5dc9bafa`：按设备本地周一到周日生成七段数字 1–7，把 10 条鱼近邻匹配到独立槽位，通过 FORM/HOLD/DEPART 物理游动形成、保持和解散。任意触摸立即取消入场，不影响键盘命中与投喂交互。`compileReleaseKotlin` 和完整 `assembleRelease` 均成功；无签名验证包为 `org.fcitx.fcitx5.android-5dc9bafa-arm64-v8a-release-unsigned.apk`，SHA-256 为 `1219e71a92c1678ecaa068ba444ad0ce155ac007dc1ff03bda2aa1f31ac10377`，不得安装或作为正式交付。
