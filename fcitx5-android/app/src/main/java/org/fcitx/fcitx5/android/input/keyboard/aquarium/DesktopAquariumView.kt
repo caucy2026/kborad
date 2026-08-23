@@ -343,18 +343,14 @@ private class AquariumEngine {
         var x: Float = 0f,
         var y: Float = 0f,
         var start: Float = -100f,
-        var lifespan: Float = 0f,
-        var seed: Float = 0f,
-        var interestUntil: Float = -1f
+        var seed: Float = 0f
     )
 
     private val random = Random(0x4B4F49)
     private val fish = MutableList(MAX_FISH) { index -> createFish(index) }
     private val ripples = Array(MAX_RIPPLES) { Ripple() }
-    private val plants = Array(MAX_PLANTS) { PlantPatch() }
+    private val touchPlant = PlantPatch()
     private var nextRipple = 0
-    private var nextPlant = 0
-    private var newestPlantIndex = -1
     private var attractionX = 0f
     private var attractionY = 0f
     private var attractionUntil = -1f
@@ -370,6 +366,8 @@ private class AquariumEngine {
     private var sparkleStartedAt = -1f
     private var sparkleUntil = -1f
     private var nextSparkleAt = 1.2f
+    private var interactionVariant = -1
+    private var touchSparkleFishIndex = -1
 
     private var waterProgram = 0
     private var plantProgram = 0
@@ -485,19 +483,16 @@ private class AquariumEngine {
         updateTouchTarget(x, y, now)
         attractionX = x * 2f - 1f
         attractionY = 1f - y * 2f
-        newestPlantIndex = nextPlant
-        plants[newestPlantIndex].apply {
+        touchPlant.apply {
             this.x = attractionX.coerceIn(-0.88f, 0.88f)
             // The mesh grows upward from its root. Keep the whole clump inside the pond even
             // when a bottom-row or top-row key was touched.
             this.y = attractionY.coerceIn(-0.93f, 0.70f)
             start = now
-            lifespan = PLANT_LIFETIME_MIN_SECONDS +
-                    random.nextFloat() * PLANT_LIFETIME_RANGE_SECONDS
-            seed = random.nextFloat() * 19f + newestPlantIndex * 2.7f
-            interestUntil = now + PLANT_INTEREST_SECONDS
+            seed = random.nextFloat() * 19f
         }
-        nextPlant = (nextPlant + 1) % plants.size
+        interactionVariant = (interactionVariant + 1) % FEED_VARIANT_COUNT
+        touchSparkleFishIndex = if (activeFishCount > 0) random.nextInt(activeFishCount) else -1
         attractionStartedAt = now
         attractionUntil = now + ATTRACTION_SECONDS
         touchHeld = true
@@ -537,8 +532,8 @@ private class AquariumEngine {
         }
         Log.i(
             TAG,
-            "plant index=$newestPlantIndex position=${"%.2f".format(attractionX)}," +
-                    "${"%.2f".format(attractionY)}"
+            "touchPlant variant=$interactionVariant luckyFish=$touchSparkleFishIndex " +
+                    "position=${"%.2f".format(attractionX)},${"%.2f".format(attractionY)}"
         )
     }
 
@@ -554,13 +549,32 @@ private class AquariumEngine {
         touchHeld = false
         attractionUntil = now
         scatterUntil = now + SCATTER_SECONDS
-        // Fan the school into individual destinations. The seed preserves personality while a
-        // small random term prevents repeated taps from producing the same formation.
+        // The touch plant belongs to the finger rather than the pond. Removing its start marker
+        // makes the next frame skip both rendering and collision, so ACTION_UP never leaves old
+        // grass behind. Fish keep their momentum and physically swim into one of three rotating
+        // release scenes instead of being teleported when the visual cue disappears.
+        touchPlant.start = -100f
+        touchSparkleFishIndex = -1
         for (index in 0 until activeFishCount) {
             val f = fish[index]
-            val angle = TWO_PI * index / activeFishCount.coerceAtLeast(1) +
-                    f.seed * 0.31f + random.nextFloat() * 0.48f - 0.24f
-            val radius = 0.44f + random.nextFloat() * 0.42f
+            val radialAngle = TWO_PI * index / activeFishCount.coerceAtLeast(1) +
+                    f.seed * 0.31f + random.nextFloat() * 0.34f - 0.17f
+            val (angle, radius) = when (interactionVariant) {
+                0 -> radialAngle to (0.44f + random.nextFloat() * 0.42f)
+                1 -> {
+                    // The two schools peel away in opposite streams with individual spread.
+                    val streamHeading = if (f.schoolId == 0) 0.18f else PI.toFloat() + 0.18f
+                    (streamHeading + (index % 5 - 2) * 0.16f +
+                            random.nextFloat() * 0.16f - 0.08f) to
+                            (0.50f + (index % 3) * 0.10f)
+                }
+                else -> {
+                    // A widening spiral gives every body a separate lane before normal social
+                    // behaviour resumes.
+                    (radialAngle + index * 0.28f) to
+                            (0.34f + index * 0.052f)
+                }
+            }
             scatterTargetX[index] = (attractionX + cos(angle) * radius)
                 .coerceIn(-0.88f, 0.88f)
             val releasedTargetY = (attractionY + sin(angle) * radius)
@@ -570,8 +584,10 @@ private class AquariumEngine {
             } else {
                 releasedTargetY
             }
-            f.behaviorStep += 1 + random.nextInt(3)
-            f.behavior = behaviorForStep(f.behaviorStep)
+            f.behaviorStep += 1 + (index + interactionVariant) % 3
+            // Guarantee a mixture of independent routes, leader following and pair play after
+            // every release; rotating the offset makes the same fish change roles next time.
+            f.behavior = behaviorForStep(index + interactionVariant)
             f.behaviorUntil = scatterUntil + 4f + random.nextFloat() * 6f
         }
     }
@@ -579,6 +595,10 @@ private class AquariumEngine {
     private fun updateTouchTarget(x: Float, y: Float, now: Float) {
         attractionX = x * 2f - 1f
         attractionY = 1f - y * 2f
+        if (touchHeld) {
+            touchPlant.x = attractionX.coerceIn(-0.88f, 0.88f)
+            touchPlant.y = attractionY.coerceIn(-0.93f, 0.70f)
+        }
         // This timeout is only a safety net for a lost ACTION_UP. While held, updateFish keeps
         // attraction active and every move refreshes the target without creating extra ripples.
         attractionUntil = now + TOUCH_EVENT_TIMEOUT_SECONDS
@@ -677,20 +697,8 @@ private class AquariumEngine {
         val feeding = touchHeld || time < attractionUntil
         val scattering = !feeding && time < scatterUntil
         val rapidFeedReaction = feeding && time - attractionStartedAt < FEED_REACTION_SECONDS
-        val focusPlant = if (newestPlantIndex in plants.indices) {
-            plants[newestPlantIndex].takeIf {
-                time >= it.start && time < min(it.interestUntil, it.start + it.lifespan)
-            }
-        } else {
-            null
-        }
         for (index in 0 until activeFishCount) {
             val f = fish[index]
-            // Half the school investigates the newest plant while the other half keeps the pond
-            // alive by scattering or following its usual route. Touch-down still calls every fish
-            // to the food cue; after release these visitors settle into collision-safe orbit slots.
-            val plantVisiting = !feeding && focusPlant != null &&
-                    (index + newestPlantIndex) % 2 == 0
             if (!feeding && time >= f.behaviorUntil) {
                 f.behaviorStep++
                 f.behavior = behaviorForStep(f.behaviorStep)
@@ -714,12 +722,37 @@ private class AquariumEngine {
             var desiredSpeed = f.cruiseSpeed
 
             if (feeding) {
-                // Gather around the finger instead of assigning nearly the same destination to
-                // every fish. Golden-angle slots plus individual radii keep bodies and long tails
-                // separated; near an edge the offset is reflected back into the visible pond so
-                // clamping cannot collapse half the school onto one line.
-                val offsetAngle = index * FEED_GOLDEN_ANGLE + f.seed * 0.37f
-                val offsetRadius = 0.14f + (index % 4) * 0.032f + (f.seed % 1f) * 0.025f
+                // Each touch rotates the cast. Sprinters claim a tight slot, clockwise and
+                // counter-clockwise fish circle the grass, and cautious fish first hold an outer
+                // lane before joining. All roles still target the same touch neighbourhood and
+                // can only travel through the tail/pectoral force integration below.
+                val feedAge = (time - attractionStartedAt).coerceAtLeast(0f)
+                val feedRole = (index + interactionVariant) % 4
+                var offsetAngle = index * FEED_GOLDEN_ANGLE + f.seed * 0.37f
+                val offsetRadius: Float
+                val speedMultiplier: Float
+                when (feedRole) {
+                    0 -> {
+                        offsetRadius = 0.105f + (index % 3) * 0.022f
+                        speedMultiplier = 5.35f
+                    }
+                    1 -> {
+                        offsetAngle += feedAge * (1.08f + (f.seed % 1f) * 0.28f)
+                        offsetRadius = 0.155f + (index % 3) * 0.030f
+                        speedMultiplier = 4.65f
+                    }
+                    2 -> {
+                        offsetAngle -= feedAge * (0.88f + (f.seed % 1f) * 0.24f)
+                        offsetRadius = 0.175f + (index % 2) * 0.035f
+                        speedMultiplier = 4.20f
+                    }
+                    else -> {
+                        val approach = smoothStep01(feedAge / 0.90f)
+                        offsetRadius = 0.285f - approach * 0.115f +
+                                (f.seed % 1f) * 0.025f
+                        speedMultiplier = 3.75f
+                    }
+                }
                 var offsetX = cos(offsetAngle) * offsetRadius
                 var offsetY = sin(offsetAngle) * offsetRadius * 0.76f
                 if (attractionX < -0.70f) offsetX = abs(offsetX)
@@ -728,22 +761,9 @@ private class AquariumEngine {
                 if (attractionY > 0.66f) offsetY = -abs(offsetY)
                 targetX = attractionX + offsetX
                 targetY = attractionY + offsetY
-                desiredSpeed = (f.cruiseSpeed * (4.55f + (f.seed % 1f) * 0.70f))
+                desiredSpeed = (f.cruiseSpeed *
+                        (speedMultiplier + (f.seed % 1f) * 0.42f))
                     .coerceAtMost(f.maxForwardSpeed)
-            } else if (plantVisiting) {
-                val plant = checkNotNull(focusPlant)
-                val orbitDirection = if ((index + newestPlantIndex) % 4 < 2) 1f else -1f
-                val orbitAngle = index * FEED_GOLDEN_ANGLE + f.seed * 0.23f +
-                        (time - plant.start) * orbitDirection *
-                        (0.34f + (f.seed % 1f) * 0.18f)
-                // Derive the slot from the rendered body/tail envelope, not from fish count.
-                // Large fish therefore receive more clearance and cannot stack over small fish.
-                val orbitRadius = 0.115f + collisionRadius(f) * 1.15f +
-                        (index % 3) * 0.035f
-                targetX = plant.x + cos(orbitAngle) * orbitRadius
-                targetY = plant.y + 0.055f + sin(orbitAngle) * orbitRadius * 0.72f
-                desiredSpeed = (f.cruiseSpeed * (1.52f + (f.seed % 1f) * 0.46f))
-                    .coerceAtMost(f.maxForwardSpeed * 0.60f)
             } else if (scattering) {
                 targetX = scatterTargetX[index]
                 targetY = scatterTargetY[index]
@@ -818,7 +838,7 @@ private class AquariumEngine {
 
             // Four fish keep a genuine lower-pond territory even while following or playing.
             // They remain social but do not all migrate above the operation-water strip.
-            if (!feeding && !scattering && !plantVisiting && f.routeCenterY < -0.60f) {
+            if (!feeding && !scattering && f.routeCenterY < -0.60f) {
                 targetY = min(targetY, -0.67f)
             }
 
@@ -872,12 +892,12 @@ private class AquariumEngine {
                     }
                 }
             }
-            // Water grass bends, so it is not a hard wall, but fish avoid pushing their torso
-            // through the root cluster. The clearance again includes this fish's rendered size.
-            for (plant in plants) {
-                if (time < plant.start || time >= plant.start + plant.lifespan) continue
-                val awayX = f.x - plant.x
-                val awayY = f.y - (plant.y + 0.045f)
+            // While the finger is down, grass bends rather than acting as a hard wall, but fish
+            // still avoid pushing their torso through its root. ACTION_UP invalidates touchPlant,
+            // so neither rendering nor this collision survives the finger.
+            if (touchHeld && time >= touchPlant.start) {
+                val awayX = f.x - touchPlant.x
+                val awayY = f.y - (touchPlant.y + 0.045f)
                 val distance2 = awayX * awayX + awayY * awayY
                 val plantClearance = selfCollisionRadius + PLANT_CORE_RADIUS
                 if (distance2 > 0.0001f && distance2 < plantClearance * plantClearance) {
@@ -1275,6 +1295,7 @@ private class AquariumEngine {
     }
 
     private fun drawPlants(time: Float) {
+        if (!touchHeld || touchPlant.start < 0f) return
         GLES30.glUseProgram(plantProgram)
         GLES30.glUniform1f(plantTimeLocation, time)
         GLES30.glUniform1f(
@@ -1282,19 +1303,18 @@ private class AquariumEngine {
             width.toFloat() / height.coerceAtLeast(1)
         )
         GLES30.glBindVertexArray(plantVao)
-        for (plant in plants) {
-            val age = time - plant.start
-            if (age < 0f || age >= plant.lifespan) continue
-            val growth = smoothStep01(age / PLANT_GROW_SECONDS)
-            val fade = smoothStep01((plant.lifespan - age) / PLANT_FADE_SECONDS)
-            val scale = PLANT_BASE_SCALE * (0.86f + (plant.seed % 1f) * 0.24f)
-            GLES30.glUniform2f(plantPositionLocation, plant.x, plant.y)
-            GLES30.glUniform1f(plantScaleLocation, scale * growth)
-            GLES30.glUniform1f(plantAgeLocation, age)
-            GLES30.glUniform1f(plantSeedLocation, plant.seed)
-            GLES30.glUniform1f(plantAlphaLocation, fade * growth)
-            GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, plantVertexCount)
-        }
+        val age = (time - touchPlant.start).coerceAtLeast(0f)
+        // A visible seedling exists on the first rendered frame, then completes its soft growth.
+        // ACTION_UP bypasses this method entirely, so disappearance is synchronous with release.
+        val growth = 0.30f + smoothStep01(age / PLANT_GROW_SECONDS) * 0.70f
+        val scale = PLANT_BASE_SCALE *
+                (0.86f + (touchPlant.seed % 1f) * 0.24f)
+        GLES30.glUniform2f(plantPositionLocation, touchPlant.x, touchPlant.y)
+        GLES30.glUniform1f(plantScaleLocation, scale * growth)
+        GLES30.glUniform1f(plantAgeLocation, age)
+        GLES30.glUniform1f(plantSeedLocation, touchPlant.seed)
+        GLES30.glUniform1f(plantAlphaLocation, growth)
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, plantVertexCount)
         GLES30.glBindVertexArray(0)
     }
 
@@ -1345,7 +1365,18 @@ private class AquariumEngine {
             } else {
                 0f
             }
-            GLES30.glUniform1f(fishSparkleLocation, sparkleFade)
+            val touchPrizeSparkle = if (touchHeld && index == touchSparkleFishIndex) {
+                val dx = f.x - attractionX
+                val dy = f.y - attractionY
+                val proximity = 1f - smoothStep01(
+                    (sqrt(dx * dx + dy * dy) - 0.10f) / 0.24f
+                )
+                val glint = 0.58f + sin(time * 12.6f + f.phase) * 0.42f
+                proximity * glint.coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            GLES30.glUniform1f(fishSparkleLocation, max(sparkleFade, touchPrizeSparkle))
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, fishVertexCount)
         }
         GLES30.glBindVertexArray(0)
@@ -1636,19 +1667,15 @@ private class AquariumEngine {
         const val MEDIUM_FISH = 7
         const val MIN_FISH = 5
         const val MAX_RIPPLES = 4
-        const val MAX_PLANTS = 4
         const val ATTRACTION_SECONDS = 4.6f
         const val TOUCH_EVENT_TIMEOUT_SECONDS = 1.0f
         const val FEED_GOLDEN_ANGLE = 2.3999632f
+        const val FEED_VARIANT_COUNT = 3
         const val SCATTER_SECONDS = 3.4f
         const val PLAY_STYLE_SECONDS = 3.8f
         const val FEED_REPORT_SECONDS = 0.75f
         const val FEED_REACTION_SECONDS = 0.46f
-        const val PLANT_GROW_SECONDS = 0.52f
-        const val PLANT_FADE_SECONDS = 3.2f
-        const val PLANT_LIFETIME_MIN_SECONDS = 22f
-        const val PLANT_LIFETIME_RANGE_SECONDS = 10f
-        const val PLANT_INTEREST_SECONDS = 9.5f
+        const val PLANT_GROW_SECONDS = 0.24f
         const val PLANT_BASE_SCALE = 0.135f
         const val PLANT_CORE_RADIUS = 0.055f
         const val SPARKLE_DURATION_MIN_SECONDS = 1.15f
