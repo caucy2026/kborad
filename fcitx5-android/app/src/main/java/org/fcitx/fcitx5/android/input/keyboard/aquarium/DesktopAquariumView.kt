@@ -18,6 +18,7 @@ import android.view.TextureView
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import java.util.Calendar
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.LockSupport
@@ -290,6 +291,13 @@ private class AquariumEngine {
         PLAY
     }
 
+    private enum class WeekdayIntroPhase {
+        FORM,
+        HOLD,
+        DEPART,
+        DONE
+    }
+
     private data class Fish(
         var x: Float,
         var y: Float,
@@ -346,6 +354,13 @@ private class AquariumEngine {
         var seed: Float = 0f
     )
 
+    private data class DigitStroke(
+        val startX: Float,
+        val startY: Float,
+        val endX: Float,
+        val endY: Float
+    )
+
     private val random = Random(0x4B4F49)
     private val fish = MutableList(MAX_FISH) { index -> createFish(index) }
     private val ripples = Array(MAX_RIPPLES) { Ripple() }
@@ -368,6 +383,11 @@ private class AquariumEngine {
     private var nextSparkleAt = 1.2f
     private var interactionVariant = -1
     private var touchSparkleFishIndex = -1
+    private val weekdayDigit = currentWeekdayDigit()
+    private val weekdayDigitTargets = createWeekdayDigitTargets(weekdayDigit)
+    private val weekdayDigitTargetForFish = IntArray(MAX_FISH) { it }
+    private var weekdayIntroPhase = WeekdayIntroPhase.FORM
+    private var weekdayIntroPhaseStartedAt = 0f
 
     private var waterProgram = 0
     private var plantProgram = 0
@@ -424,6 +444,7 @@ private class AquariumEngine {
         startNanos = System.nanoTime()
         previousNanos = startNanos
         reportStartNanos = startNanos
+        assignWeekdayDigitTargets()
         waterProgram = createProgram(WATER_VERTEX_SHADER, WATER_FRAGMENT_SHADER)
         plantProgram = createProgram(PLANT_VERTEX_SHADER, PLANT_FRAGMENT_SHADER)
         fishProgram = createProgram(FISH_VERTEX_SHADER, FISH_FRAGMENT_SHADER)
@@ -464,6 +485,7 @@ private class AquariumEngine {
         GLES30.glDisable(GLES30.GL_CULL_FACE)
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        Log.i(TAG, "weekdayIntro digit=$weekdayDigit phase=FORM")
     }
 
     fun resize(width: Int, height: Int) {
@@ -474,6 +496,9 @@ private class AquariumEngine {
 
     fun touchDown(x: Float, y: Float) {
         val now = elapsedSeconds(System.nanoTime())
+        // Typing always wins over decoration. The fish retain their current physical state and
+        // immediately use the existing C-start path toward the finger.
+        weekdayIntroPhase = WeekdayIntroPhase.DONE
         ripples[nextRipple].apply {
             this.x = x
             this.y = 1f - y
@@ -704,9 +729,14 @@ private class AquariumEngine {
         val feeding = touchHeld || time < attractionUntil
         val scattering = !feeding && time < scatterUntil
         val rapidFeedReaction = feeding && time - attractionStartedAt < FEED_REACTION_SECONDS
+        val weekdayIntroForming = weekdayIntroPhase == WeekdayIntroPhase.FORM ||
+                weekdayIntroPhase == WeekdayIntroPhase.HOLD
+        val weekdayIntroDeparting = weekdayIntroPhase == WeekdayIntroPhase.DEPART
+        val weekdayIntroActive = weekdayIntroForming || weekdayIntroDeparting
+        var weekdayDigitMaxDistance = 0f
         for (index in 0 until activeFishCount) {
             val f = fish[index]
-            if (!feeding && time >= f.behaviorUntil) {
+            if (!feeding && !weekdayIntroActive && time >= f.behaviorUntil) {
                 f.behaviorStep++
                 f.behavior = behaviorForStep(f.behaviorStep)
                 f.behaviorUntil = time + 6.5f + random.nextFloat() * 6.5f
@@ -771,11 +801,25 @@ private class AquariumEngine {
                 desiredSpeed = (f.cruiseSpeed *
                         (speedMultiplier + (f.seed % 1f) * 0.42f))
                     .coerceAtMost(f.maxForwardSpeed)
+            } else if (weekdayIntroForming) {
+                val digitTarget = weekdayDigitTargets[weekdayDigitTargetForFish[index]]
+                targetX = digitTarget[0]
+                targetY = digitTarget[1]
+                desiredSpeed = if (weekdayIntroPhase == WeekdayIntroPhase.FORM) {
+                    (f.cruiseSpeed * (3.05f + (f.seed % 1f) * 0.34f))
+                        .coerceAtMost(f.maxForwardSpeed * 0.76f)
+                } else {
+                    f.cruiseSpeed * 0.42f
+                }
             } else if (scattering) {
                 targetX = scatterTargetX[index]
                 targetY = scatterTargetY[index]
                 desiredSpeed = (f.cruiseSpeed * (1.85f + (f.seed % 1f) * 0.42f))
                     .coerceAtMost(f.maxForwardSpeed * 0.68f)
+            } else if (weekdayIntroDeparting) {
+                // Route look-ahead already supplies a personal outward path. Keep it deliberately
+                // slow so the digit dissolves as swimming fish instead of exploding apart.
+                desiredSpeed = f.cruiseSpeed * (0.64f + (f.seed % 1f) * 0.16f)
             } else {
                 when (f.behavior) {
                     FishBehavior.ROUTE -> Unit
@@ -845,7 +889,7 @@ private class AquariumEngine {
 
             // Four fish keep a genuine lower-pond territory even while following or playing.
             // They remain social but do not all migrate above the operation-water strip.
-            if (!feeding && !scattering && f.routeCenterY < -0.60f) {
+            if (!feeding && !scattering && !weekdayIntroActive && f.routeCenterY < -0.60f) {
                 targetY = min(targetY, -0.67f)
             }
 
@@ -855,6 +899,9 @@ private class AquariumEngine {
             val targetDy = targetY - f.y
             val targetDistance = sqrt(targetDx * targetDx + targetDy * targetDy)
                 .coerceAtLeast(0.001f)
+            if (weekdayIntroForming) {
+                weekdayDigitMaxDistance = max(weekdayDigitMaxDistance, targetDistance)
+            }
             var intentX = targetDx / targetDistance
             var intentY = targetDy / targetDistance
 
@@ -918,10 +965,15 @@ private class AquariumEngine {
                     }
                 }
             }
-            val separationGain = if (feeding) 0.52f else if (scattering) 1.05f else 1.55f
+            val separationGain = when {
+                feeding -> 0.52f
+                weekdayIntroForming -> 0.86f
+                scattering -> 1.05f
+                else -> 1.55f
+            }
             intentX += separationX * separationGain
             intentY += separationY * separationGain
-            if (!feeding && !scattering && schoolNeighbours > 0) {
+            if (!feeding && !scattering && !weekdayIntroActive && schoolNeighbours > 0) {
                 val inverseCount = 1f / schoolNeighbours
                 intentX += (cohesionX * inverseCount - f.x) * 0.42f +
                         alignmentX * inverseCount * 0.22f
@@ -962,10 +1014,10 @@ private class AquariumEngine {
             val headingError = wrapAngle(desiredHeading - f.heading)
             val turnDemand = (headingError / 1.15f).coerceIn(-1f, 1f)
             val forwardAlignment = ((cos(headingError) + 1f) * 0.5f).coerceIn(0f, 1f)
-            val arrivalRadius = if (feeding) {
-                0.20f + f.forwardSpeed * 0.34f
-            } else {
-                0.14f
+            val arrivalRadius = when {
+                feeding -> 0.20f + f.forwardSpeed * 0.34f
+                weekdayIntroForming -> 0.12f
+                else -> 0.14f
             }
             val arrivalBrake = if (targetDistance < arrivalRadius) {
                 (1f - targetDistance / arrivalRadius).coerceIn(0f, 1f)
@@ -982,10 +1034,11 @@ private class AquariumEngine {
                 feedingTurnBrake
             )
                 .coerceIn(0f, 1f)
-            desiredSpeed *= if (feeding) {
-                (targetDistance / arrivalRadius).coerceIn(0.08f, 1f)
-            } else {
-                1f - arrivalBrake * 0.55f
+            desiredSpeed *= when {
+                feeding -> (targetDistance / arrivalRadius).coerceIn(0.08f, 1f)
+                weekdayIntroForming ->
+                    (targetDistance / arrivalRadius).coerceIn(0.025f, 1f)
+                else -> 1f - arrivalBrake * 0.55f
             }
             if (feeding) {
                 // Turning fish show energetic strokes without sliding rapidly sideways or
@@ -1020,13 +1073,18 @@ private class AquariumEngine {
             val muscleResponse = (dt * when {
                 rapidFeedReaction -> 11.5f
                 feeding -> 7.2f
+                weekdayIntroForming && weekdayIntroPhase == WeekdayIntroPhase.FORM -> 6.2f
                 else -> 4.5f
             }).coerceIn(0f, 1f)
             f.tailDrive += (tailDriveTarget - f.tailDrive) * muscleResponse
             f.leftFinDrive += (leftFinTarget - f.leftFinDrive) * muscleResponse
             f.rightFinDrive += (rightFinTarget - f.rightFinDrive) * muscleResponse
             f.turnDrive += (turnDemand - f.turnDrive) *
-                    (dt * if (feeding) 32f else 9f).coerceIn(0f, 1f)
+                    (dt * when {
+                        feeding -> 32f
+                        weekdayIntroForming -> 13f
+                        else -> 9f
+                    }).coerceIn(0f, 1f)
             f.brakeDrive += (brakeDemand - f.brakeDrive) * muscleResponse
 
             val reactionTempo = if (rapidFeedReaction) 1.22f else 1f
@@ -1145,6 +1203,36 @@ private class AquariumEngine {
                 f.forwardSpeed *= 0.12f
             }
         }
+        when (weekdayIntroPhase) {
+            WeekdayIntroPhase.FORM -> {
+                val settled = time >= INTRO_MIN_FORM_SECONDS &&
+                        weekdayDigitMaxDistance <= INTRO_SETTLED_DISTANCE
+                if (settled || time >= INTRO_FORM_TIMEOUT_SECONDS) {
+                    weekdayIntroPhase = WeekdayIntroPhase.HOLD
+                    weekdayIntroPhaseStartedAt = time
+                    Log.i(
+                        TAG,
+                        "weekdayIntro digit=$weekdayDigit phase=HOLD " +
+                                "maxDistance=${"%.3f".format(weekdayDigitMaxDistance)}"
+                    )
+                }
+            }
+            WeekdayIntroPhase.HOLD -> {
+                if (time - weekdayIntroPhaseStartedAt >= INTRO_HOLD_SECONDS) {
+                    weekdayIntroPhase = WeekdayIntroPhase.DEPART
+                    weekdayIntroPhaseStartedAt = time
+                    Log.i(TAG, "weekdayIntro digit=$weekdayDigit phase=DEPART")
+                }
+            }
+            WeekdayIntroPhase.DEPART -> {
+                if (time - weekdayIntroPhaseStartedAt >= INTRO_DEPART_SECONDS) {
+                    weekdayIntroPhase = WeekdayIntroPhase.DONE
+                    nextSparkleAt = time + SPARKLE_PAUSE_MIN_SECONDS
+                    Log.i(TAG, "weekdayIntro digit=$weekdayDigit phase=DONE")
+                }
+            }
+            WeekdayIntroPhase.DONE -> Unit
+        }
         if (feeding && time >= nextFeedReportAt) {
             var distanceSum = 0f
             var distanceMax = 0f
@@ -1198,7 +1286,7 @@ private class AquariumEngine {
     }
 
     private fun updateSparkle(time: Float) {
-        if (touchHeld) return
+        if (touchHeld || weekdayIntroPhase != WeekdayIntroPhase.DONE) return
         if (sparkleFishIndex >= activeFishCount) {
             previousSparkleFishIndex = sparkleFishIndex
             sparkleFishIndex = -1
@@ -1228,6 +1316,75 @@ private class AquariumEngine {
             TAG,
             "sparkle fish=$sparkleFishIndex duration=${"%.2f".format(sparkleUntil - time)}"
         )
+    }
+
+    private fun assignWeekdayDigitTargets() {
+        val assigned = BooleanArray(weekdayDigitTargets.size)
+        for (index in fish.indices) {
+            val f = fish[index]
+            var nearest = -1
+            var nearestDistance2 = Float.MAX_VALUE
+            for (targetIndex in weekdayDigitTargets.indices) {
+                if (assigned[targetIndex]) continue
+                val target = weekdayDigitTargets[targetIndex]
+                val dx = target[0] - f.x
+                val dy = target[1] - f.y
+                val distance2 = dx * dx + dy * dy
+                if (distance2 < nearestDistance2) {
+                    nearest = targetIndex
+                    nearestDistance2 = distance2
+                }
+            }
+            weekdayDigitTargetForFish[index] = nearest.coerceAtLeast(0)
+            assigned[nearest.coerceAtLeast(0)] = true
+        }
+    }
+
+    private fun currentWeekdayDigit(): Int {
+        val systemDay = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
+        // Calendar uses Sunday=1. Product wording uses Monday=1 ... Sunday=7.
+        return ((systemDay + 5) % 7) + 1
+    }
+
+    private fun createWeekdayDigitTargets(digit: Int): Array<FloatArray> {
+        // Seven-segment strokes are inset at their ends. Sampling segment interiors prevents two
+        // fish from sharing a corner while keeping the number readable through translucent keys.
+        val top = DigitStroke(-0.34f, 0.72f, 0.34f, 0.72f)
+        val upperRight = DigitStroke(0.34f, 0.65f, 0.34f, 0.07f)
+        val lowerRight = DigitStroke(0.34f, -0.07f, 0.34f, -0.65f)
+        val bottom = DigitStroke(0.34f, -0.72f, -0.34f, -0.72f)
+        val lowerLeft = DigitStroke(-0.34f, -0.65f, -0.34f, -0.07f)
+        val upperLeft = DigitStroke(-0.34f, 0.07f, -0.34f, 0.65f)
+        val middle = DigitStroke(-0.34f, 0f, 0.34f, 0f)
+        val strokes = when (digit) {
+            1 -> listOf(upperRight, lowerRight)
+            2 -> listOf(top, upperRight, middle, lowerLeft, bottom)
+            3 -> listOf(top, upperRight, middle, lowerRight, bottom)
+            4 -> listOf(upperLeft, middle, upperRight, lowerRight)
+            5 -> listOf(top, upperLeft, middle, lowerRight, bottom)
+            6 -> listOf(top, upperLeft, middle, lowerLeft, lowerRight, bottom)
+            else -> listOf(top, upperRight, lowerRight)
+        }
+        val targets = ArrayList<FloatArray>(MAX_FISH)
+        val baseCount = MAX_FISH / strokes.size
+        val remainder = MAX_FISH % strokes.size
+        strokes.forEachIndexed { strokeIndex, stroke ->
+            val count = baseCount + if (strokeIndex < remainder) 1 else 0
+            val dx = stroke.endX - stroke.startX
+            val dy = stroke.endY - stroke.startY
+            val length = sqrt(dx * dx + dy * dy).coerceAtLeast(0.001f)
+            repeat(count) { sampleIndex ->
+                val t = (sampleIndex + 0.5f) / count
+                // Alternating thickness gives the largest fish enough room on the dense "1"
+                // while preserving the seven-segment silhouette for every weekday.
+                val thickness = if (sampleIndex % 2 == 0) -0.032f else 0.032f
+                targets += floatArrayOf(
+                    stroke.startX + dx * t - dy / length * thickness,
+                    stroke.startY + dy * t + dx / length * thickness
+                )
+            }
+        }
+        return Array(MAX_FISH) { targets[it] }
     }
 
     private fun behaviorForStep(step: Int): FishBehavior = when ((step % 3 + 3) % 3) {
@@ -1683,6 +1840,11 @@ private class AquariumEngine {
         const val PLAY_STYLE_SECONDS = 3.8f
         const val FEED_REPORT_SECONDS = 0.75f
         const val FEED_REACTION_SECONDS = 0.46f
+        const val INTRO_MIN_FORM_SECONDS = 1.25f
+        const val INTRO_FORM_TIMEOUT_SECONDS = 5.20f
+        const val INTRO_SETTLED_DISTANCE = 0.145f
+        const val INTRO_HOLD_SECONDS = 1.45f
+        const val INTRO_DEPART_SECONDS = 3.20f
         const val PLANT_GROW_SECONDS = 0.24f
         const val PLANT_BASE_SCALE = 0.135f
         const val PLANT_CORE_RADIUS = 0.055f
