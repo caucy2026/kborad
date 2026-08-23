@@ -590,4 +590,4 @@ SHA-256     1f4a5e489f5a24c6c87191a2006ec9f63b3c3a6401f02c21d67fba6dceac8fa0
 
 该 Release 已完成 Kotlin、Lint Vital、R8、arm64 原生组件和 v1/v2 签名构建验证。截至 2026-08-23，`192.168.3.62/.63` 均整机网络不可达，因此新增 Shader 的 Mali-G52 编译、30Hz 性能和真实触控尚未验收，不得将本地构建成功写成真机成功。复刻到其他项目时，应保留源码与音频来源许可，并在实际目标 GPU 上完成全部验收。
 
-V1.40 水草互动源码为 `dd5d2700`。无签名环境下的 `:app:assembleRelease`、R8、Lint Vital、arm64 原生组件及 6 个 Shader 等价语法检查均通过，验证包 SHA-256 为 `574f0379eec1c1a08237b7989a66f589095f6c15e5de6cdf1d7ac10e578902d5`，文件名明确包含 `release-unsigned`。它不能安装、发布或替代上述正式 APK；待恢复项目原签名环境并完成 Android 12/Mali-G52 真机验收后才能更新正式发布基线。
+V1.40 水草互动源码为 `dd5d2700`。无签名环境下的 `:app:assembleRelease`、R8、Lint Vital、arm64 原生组件及 6 个 Shader 等价语法检查均通过，验证包 SHA-256 为 `574f0379eec1c1a08237b7989a66f589095f6c15e5de6cdf1d7ac10e578902d5`，文件名明确包含 `release-unsigned`。它不能安装、发布或替代上述正式 APK。最终复查时 `.62` 已恢复为 ADB `device`、`.63` 仍不在线，但没有新签名包，因此仍须恢复项目原签名环境并完成 Android 12/Mali-G52 真机验收后才能更新正式发布基线。

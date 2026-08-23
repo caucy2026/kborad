@@ -231,4 +231,4 @@ V1.27 不再让目标点直接控制位置或朝向。每帧固定经过以下�
 - 当前水滴声来自 BigSoundBank `Drops of water #1` 的 4 个 CC0 录音切片，由 `SoundPool` 预加载并以 30% 系数播放；只在按下播放一次，移动与释放不播放。来源：https://bigsoundbank.com/drops-of-water-1-s1384.html ，可重复切片脚本为 `fcitx5-android/scripts/prepare-aquarium-water-touch.py`。
 - 2026-08-21 的历史真机基线为 `bf7a8e13`，APK SHA-256：`bbdd0e5af70bf3d0eaf2cd9402afd86ccf3b7edd47bbdfa98c309bcc59b0cf85`，当时已在 `.63` 覆盖安装。
 - V1.39 候选 Release 为 `2ecfa902`、`versionCode=112`，APK SHA-256：`1f4a5e489f5a24c6c87191a2006ec9f63b3c3a6401f02c21d67fba6dceac8fa0`。本地完整 Release 构建通过，但 2026-08-23 的 `.62/.63` 均整机网络不可达，因此尚未进行 Mali Shader、30Hz 和触摸投喂真机验收。
-- V1.40 源码为 `dd5d2700`。无签名环境下的完整 Release 变体构建、R8、Lint Vital、arm64 原生组件和 6 个 Shader 等价语法检查通过；生成的 `*-release-unsigned.apk` 仅供构建验证，不得安装或发布。水草、气泡、按尺寸碰撞和新 PLAY 尚待 Android 12/Mali-G52 真机验收。
+- V1.40 源码为 `dd5d2700`。无签名环境下的完整 Release 变体构建、R8、Lint Vital、arm64 原生组件和 6 个 Shader 等价语法检查通过；生成的 `*-release-unsigned.apk` 仅供构建验证，不得安装或发布。最终复查时 `.62` 已恢复为 ADB `device`、`.63` 仍不在线，但因为没有新签名包，水草、气泡、按尺寸碰撞和新 PLAY 仍未进行 Android 12/Mali-G52 真机验收。
