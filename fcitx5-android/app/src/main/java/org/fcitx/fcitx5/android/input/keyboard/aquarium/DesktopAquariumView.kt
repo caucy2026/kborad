@@ -309,6 +309,9 @@ private class AquariumEngine {
         val depth: Float,
         val scale: Float,
         val cruiseSpeed: Float,
+        val tailTempo: Float,
+        val thrustScale: Float,
+        val maxForwardSpeed: Float,
         val phase: Float,
         val seed: Float,
         val baseColor: FloatArray,
@@ -350,6 +353,11 @@ private class AquariumEngine {
     private val scatterTargetY = FloatArray(MAX_FISH)
     private var nextFeedReportAt = -1f
     private var activeFishCount = MAX_FISH
+    private var sparkleFishIndex = -1
+    private var previousSparkleFishIndex = -1
+    private var sparkleStartedAt = -1f
+    private var sparkleUntil = -1f
+    private var nextSparkleAt = 1.2f
 
     private var waterProgram = 0
     private var fishProgram = 0
@@ -380,6 +388,8 @@ private class AquariumEngine {
     private var fishPatchColorLocation = -1
     private var fishAccentColorLocation = -1
     private var fishPatternLocation = -1
+    private var fishTimeLocation = -1
+    private var fishSparkleLocation = -1
     private val rippleUniforms = FloatArray(MAX_RIPPLES * 4)
     private var width = 1
     private var height = 1
@@ -417,6 +427,8 @@ private class AquariumEngine {
         fishPatchColorLocation = GLES30.glGetUniformLocation(fishProgram, "uPatchColor")
         fishAccentColorLocation = GLES30.glGetUniformLocation(fishProgram, "uAccentColor")
         fishPatternLocation = GLES30.glGetUniformLocation(fishProgram, "uPattern")
+        fishTimeLocation = GLES30.glGetUniformLocation(fishProgram, "uTime")
+        fishSparkleLocation = GLES30.glGetUniformLocation(fishProgram, "uSparkle")
         createWaterGeometry()
         createFishGeometry()
         GLES30.glDisable(GLES30.GL_CULL_FACE)
@@ -446,9 +458,9 @@ private class AquariumEngine {
         touchHeld = true
         scatterUntil = -1f
         nextFeedReportAt = now
-        // A tap is a school-wide feeding cue. Prime only the turning fins. Tail drive is allowed
-        // to ramp through the normal muscle controller below so a visible burst must start
-        // before the fish gains forward momentum.
+        // A tap is a school-wide feeding cue. Prime the turning fins and place the tail just
+        // before a power-stroke crossing; the following update still derives both yaw and
+        // forward travel from the visible articulated fins rather than moving the model directly.
         for (index in 0 until activeFishCount) {
             val f = fish[index]
             f.completedTailStrokes = 0
@@ -456,12 +468,27 @@ private class AquariumEngine {
             val headingError = wrapAngle(targetHeading - f.heading)
             val forwardAlignment = ((cos(headingError) + 1f) * 0.5f).coerceIn(0f, 1f)
             val turnKick = (abs(headingError) / PI.toFloat()).coerceIn(0f, 1f)
-            if (headingError >= 0f) {
-                f.leftFinDrive = max(f.leftFinDrive, 0.54f + turnKick * 0.42f)
+            // A feeding tap triggers a goldfish C-start: the caudal membrane is first coiled,
+            // then crosses its centreline on the next rendered frame. Translation is still
+            // produced by that visible power stroke; this only removes the arbitrary wait for
+            // whichever idle tail phase the fish happened to have before the tap.
+            val reactionLead = 0.050f + (index % 4) * 0.012f
+            f.swimPhase = wrapPhase(-TAIL_PROPULSION_PHASE - reactionLead)
+            f.tailDrive = max(f.tailDrive, 0.88f + (f.tailTempo - 1f) * 0.42f)
+            f.turnDrive = if (abs(headingError) > 0.04f) {
+                if (headingError > 0f) 1f else -1f
             } else {
-                f.rightFinDrive = max(f.rightFinDrive, 0.54f + turnKick * 0.42f)
+                0f
             }
-            f.brakeDrive = max(f.brakeDrive, (1f - forwardAlignment) * 0.82f)
+            f.fastTurnLatched = false
+            if (headingError >= 0f) {
+                f.leftFinDrive = max(f.leftFinDrive, 0.72f + turnKick * 0.28f)
+                f.rightFinDrive = max(f.rightFinDrive, 0.28f)
+            } else {
+                f.rightFinDrive = max(f.rightFinDrive, 0.72f + turnKick * 0.28f)
+                f.leftFinDrive = max(f.leftFinDrive, 0.28f)
+            }
+            f.brakeDrive = max(f.brakeDrive, (1f - forwardAlignment) * 0.94f)
         }
     }
 
@@ -512,8 +539,9 @@ private class AquariumEngine {
         val dt = ((frameNanos - previousNanos) / 1_000_000_000f).coerceIn(0.001f, 0.05f)
         previousNanos = frameNanos
         updateFish(time, dt)
+        updateSparkle(time)
         drawWater(time)
-        drawFish()
+        drawFish(time)
         reportPerformance(frameNanos)
     }
 
@@ -529,6 +557,8 @@ private class AquariumEngine {
     private fun createFish(index: Int): Fish {
         val initialHeading = if (index % 2 == 0) 0f else PI.toFloat()
         val palette = FISH_PALETTES[index % FISH_PALETTES.size]
+        val speedPersonality = FISH_SPEED_PERSONALITIES[index % FISH_SPEED_PERSONALITIES.size]
+        val cruiseSpeed = 0.175f * speedPersonality
         val initialY = if (index % 3 == 0) {
             // Keep several fish visibly roaming under the bottom keyboard rows.
             -0.92f + random.nextFloat() * 0.62f
@@ -542,11 +572,11 @@ private class AquariumEngine {
             x = random.nextFloat() * 1.7f - 0.85f,
             y = initialY,
             heading = initialHeading + random.nextFloat() * 0.34f - 0.17f,
-            forwardSpeed = 0.14f + random.nextFloat() * 0.065f,
+            forwardSpeed = cruiseSpeed * (0.72f + random.nextFloat() * 0.10f),
             angularSpeed = 0f,
             swimPhase = random.nextFloat() * (2f * PI.toFloat()),
             finPhase = random.nextFloat() * (2f * PI.toFloat()),
-            tailDrive = 0.36f + random.nextFloat() * 0.12f,
+            tailDrive = 0.27f + speedPersonality * 0.12f + random.nextFloat() * 0.055f,
             leftFinDrive = 0.20f + random.nextFloat() * 0.08f,
             rightFinDrive = 0.20f + random.nextFloat() * 0.08f,
             turnDrive = 0f,
@@ -556,7 +586,10 @@ private class AquariumEngine {
             bank = 0f,
             depth = random.nextFloat(),
             scale = FISH_SCALES[index % FISH_SCALES.size],
-            cruiseSpeed = 0.17f + random.nextFloat() * 0.09f,
+            cruiseSpeed = cruiseSpeed,
+            tailTempo = 0.82f + speedPersonality * 0.24f,
+            thrustScale = 0.73f + speedPersonality * 0.31f,
+            maxForwardSpeed = 0.72f + speedPersonality * 0.38f,
             phase = random.nextFloat() * (2f * PI.toFloat()),
             seed = random.nextFloat() * 12f,
             baseColor = palette.base,
@@ -589,6 +622,7 @@ private class AquariumEngine {
     private fun updateFish(time: Float, dt: Float) {
         val feeding = touchHeld || time < attractionUntil
         val scattering = !feeding && time < scatterUntil
+        val rapidFeedReaction = feeding && time - attractionStartedAt < FEED_REACTION_SECONDS
         for (index in 0 until activeFishCount) {
             val f = fish[index]
             if (!feeding && time >= f.behaviorUntil) {
@@ -628,11 +662,13 @@ private class AquariumEngine {
                 if (attractionY > 0.66f) offsetY = -abs(offsetY)
                 targetX = attractionX + offsetX
                 targetY = attractionY + offsetY
-                desiredSpeed = 0.80f + (f.seed % 1f) * 0.12f
+                desiredSpeed = (f.cruiseSpeed * (4.55f + (f.seed % 1f) * 0.70f))
+                    .coerceAtMost(f.maxForwardSpeed)
             } else if (scattering) {
                 targetX = scatterTargetX[index]
                 targetY = scatterTargetY[index]
-                desiredSpeed = 0.34f + (f.seed % 1f) * 0.16f
+                desiredSpeed = (f.cruiseSpeed * (1.85f + (f.seed % 1f) * 0.42f))
+                    .coerceAtMost(f.maxForwardSpeed * 0.68f)
             } else {
                 when (f.behavior) {
                     FishBehavior.ROUTE -> Unit
@@ -644,8 +680,8 @@ private class AquariumEngine {
                                 sin(leader.heading) * sideOffset
                         targetY = leader.y - sin(leader.heading) * spacing +
                                 cos(leader.heading) * sideOffset
-                        desiredSpeed = (leader.forwardSpeed + 0.045f)
-                            .coerceIn(f.cruiseSpeed * 0.78f, 0.36f)
+                        desiredSpeed = (leader.forwardSpeed * 0.82f + f.cruiseSpeed * 0.42f)
+                            .coerceIn(f.cruiseSpeed * 0.74f, f.maxForwardSpeed * 0.58f)
                     }
                     FishBehavior.PLAY -> {
                         val partner = fish[schoolMateIndex(index, ahead = true)]
@@ -660,7 +696,10 @@ private class AquariumEngine {
                                 orbitRadius * orbitSide + cos(partner.heading) * 0.075f
                         targetY = partner.y + fromPartnerX / partnerDistance *
                                 orbitRadius * orbitSide + sin(partner.heading) * 0.075f
-                        desiredSpeed = max(f.cruiseSpeed, 0.25f + (f.seed % 1f) * 0.055f)
+                        desiredSpeed = max(
+                            f.cruiseSpeed,
+                            f.cruiseSpeed * (1.28f + (f.seed % 1f) * 0.34f)
+                        ).coerceAtMost(f.maxForwardSpeed * 0.54f)
                     }
                 }
             }
@@ -798,7 +837,8 @@ private class AquariumEngine {
             val speedError = desiredSpeed - f.forwardSpeed
             val feedingTailBoost = if (feeding) {
                 (0.08f + smoothStep01(forwardAlignment) * 0.68f) *
-                        (1f - arrivalBrake * 0.78f)
+                        (1f - arrivalBrake * 0.78f) +
+                        if (rapidFeedReaction) 0.20f else 0f
             } else {
                 0f
             }
@@ -816,7 +856,11 @@ private class AquariumEngine {
                 .coerceIn(0.12f, 1f)
             val rightFinTarget = (finBaseTarget + max(-turnDemand, 0f) * 0.76f)
                 .coerceIn(0.12f, 1f)
-            val muscleResponse = (dt * if (feeding) 6.4f else 4.5f).coerceIn(0f, 1f)
+            val muscleResponse = (dt * when {
+                rapidFeedReaction -> 11.5f
+                feeding -> 7.2f
+                else -> 4.5f
+            }).coerceIn(0f, 1f)
             f.tailDrive += (tailDriveTarget - f.tailDrive) * muscleResponse
             f.leftFinDrive += (leftFinTarget - f.leftFinDrive) * muscleResponse
             f.rightFinDrive += (rightFinTarget - f.rightFinDrive) * muscleResponse
@@ -824,8 +868,12 @@ private class AquariumEngine {
                     (dt * if (feeding) 32f else 9f).coerceIn(0f, 1f)
             f.brakeDrive += (brakeDemand - f.brakeDrive) * muscleResponse
 
-            val tailBeatHz = tailBeatHzForDrive(f.tailDrive)
-            val finBeatHz = finBeatHzForDrive(max(f.leftFinDrive, f.rightFinDrive))
+            val reactionTempo = if (rapidFeedReaction) 1.22f else 1f
+            val tailBeatHz = tailBeatHzForDrive(f.tailDrive, f.tailTempo * reactionTempo)
+            val finBeatHz = finBeatHzForDrive(
+                max(f.leftFinDrive, f.rightFinDrive),
+                f.tailTempo * reactionTempo
+            )
             // Sample the articulated middle/outer caudal membrane. The shader delays this area
             // by the same local-X phase, so a CPU thrust pulse coincides with the tail that the
             // user can actually see crossing the centreline.
@@ -842,7 +890,7 @@ private class AquariumEngine {
             val tailAmplitude = 0.130f + (0.400f - 0.130f) * f.tailDrive
             val tailStrokeImpulse = if (completedPowerStroke) {
                 f.completedTailStrokes++
-                tailAmplitude * (0.115f + tailBeatHz * 0.020f)
+                tailAmplitude * (0.115f + tailBeatHz * 0.020f) * f.thrustScale
             } else {
                 0f
             }
@@ -854,13 +902,13 @@ private class AquariumEngine {
             val redirectedTailImpulse = tailStrokeImpulse *
                     (1f - f.brakeDrive * 0.96f).coerceIn(0.02f, 1f)
             f.forwardSpeed = (f.forwardSpeed + redirectedTailImpulse)
-                .coerceIn(0f, 0.94f)
+                .coerceIn(0f, f.maxForwardSpeed)
             val waterDrag = f.forwardSpeed * 1.18f +
                     f.forwardSpeed * f.forwardSpeed * 0.82f
             val pectoralBrake = f.brakeDrive * finExtension *
                     (0.34f + f.forwardSpeed * 1.20f)
             f.forwardSpeed = (f.forwardSpeed - (waterDrag + pectoralBrake) * dt)
-                .coerceIn(0f, 0.94f)
+                .coerceIn(0f, f.maxForwardSpeed)
 
             // Tail sweep and differential pectoral-fin drag create yaw torque. Heading is
             // integrated from angular velocity; routes, neighbours and walls cannot rotate it.
@@ -870,7 +918,11 @@ private class AquariumEngine {
                     finExtension * 0.55f
             val differentialFinTorque = (f.leftFinDrive - f.rightFinDrive) *
                     finExtension * 1.65f
-            val feedingTurnGain = if (feeding) 2.15f else 1f
+            val feedingTurnGain = when {
+                rapidFeedReaction -> 3.35f
+                feeding -> 2.55f
+                else -> 1f
+            }
             val yawTorque = turnDemand *
                     (tailSteering * 2.35f + pairedFinSteering) * feedingTurnGain +
                     differentialFinTorque
@@ -883,7 +935,7 @@ private class AquariumEngine {
                 f.turnDrive = turnDemand
                 f.forwardSpeed *= 0.42f
                 f.angularSpeed += turnDemand * initialTurnAmount *
-                        (2.80f + f.tailDrive * 2.20f)
+                        (5.80f + f.tailDrive * 3.40f) * f.tailTempo
             } else if (abs(turnDemand) < 0.24f || !feeding) {
                 f.fastTurnLatched = false
             }
@@ -892,7 +944,11 @@ private class AquariumEngine {
             val fastTurnAmount = smoothStep01((abs(turnDemand) - 0.38f) / 0.57f)
             if (completedPowerStroke && fastTurnAmount > 0f) {
                 f.angularSpeed += turnDemand * fastTurnAmount * f.tailDrive *
-                        (if (feeding) 2.65f else 0.72f)
+                        when {
+                            rapidFeedReaction -> 4.80f
+                            feeding -> 3.30f
+                            else -> 0.72f
+                        }
             }
             val turnStop = 1f - smoothStep01(abs(turnDemand) / 0.34f)
             val angularAcceleration = yawTorque -
@@ -900,8 +956,16 @@ private class AquariumEngine {
                     (2.15f + f.brakeDrive * 0.65f + turnStop * 6.8f)
             f.angularSpeed = (f.angularSpeed + angularAcceleration * dt)
                 .coerceIn(
-                    if (feeding) -8.80f else -3.20f,
-                    if (feeding) 8.80f else 3.20f
+                    when {
+                        rapidFeedReaction -> -14.50f
+                        feeding -> -11.20f
+                        else -> -3.20f
+                    },
+                    when {
+                        rapidFeedReaction -> 14.50f
+                        feeding -> 11.20f
+                        else -> 3.20f
+                    }
                 )
             f.heading = wrapAngle(f.heading + f.angularSpeed * dt)
             val targetBank = (f.angularSpeed / 2.35f).coerceIn(-1f, 1f) * 0.25f
@@ -929,6 +993,8 @@ private class AquariumEngine {
             var tailBeatHzSum = 0f
             var finBeatHzSum = 0f
             var completedTailStrokesSum = 0
+            var speedMin = Float.MAX_VALUE
+            var speedMax = 0f
             for (index in 0 until activeFishCount) {
                 val f = fish[index]
                 val dx = attractionX - f.x
@@ -937,10 +1003,19 @@ private class AquariumEngine {
                 distanceSum += distance
                 distanceMax = max(distanceMax, distance)
                 speedSum += f.forwardSpeed
+                speedMin = min(speedMin, f.forwardSpeed)
+                speedMax = max(speedMax, f.forwardSpeed)
                 tailDriveSum += f.tailDrive
                 finDriveSum += (f.leftFinDrive + f.rightFinDrive) * 0.5f
-                tailBeatHzSum += tailBeatHzForDrive(f.tailDrive)
-                finBeatHzSum += finBeatHzForDrive(max(f.leftFinDrive, f.rightFinDrive))
+                val reportReactionTempo = if (rapidFeedReaction) 1.22f else 1f
+                tailBeatHzSum += tailBeatHzForDrive(
+                    f.tailDrive,
+                    f.tailTempo * reportReactionTempo
+                )
+                finBeatHzSum += finBeatHzForDrive(
+                    max(f.leftFinDrive, f.rightFinDrive),
+                    f.tailTempo * reportReactionTempo
+                )
                 completedTailStrokesSum += f.completedTailStrokes
             }
             val divisor = activeFishCount.coerceAtLeast(1).toFloat()
@@ -950,6 +1025,7 @@ private class AquariumEngine {
                         "avgDistance=${"%.3f".format(distanceSum / divisor)} " +
                         "maxDistance=${"%.3f".format(distanceMax)} " +
                         "avgSpeed=${"%.3f".format(speedSum / divisor)} " +
+                        "speedRange=${"%.3f".format(speedMin)}..${"%.3f".format(speedMax)} " +
                         "tail=${"%.2f".format(tailDriveSum / divisor)} " +
                         "fin=${"%.2f".format(finDriveSum / divisor)} " +
                         "tailHz=${"%.2f".format(tailBeatHzSum / divisor)} " +
@@ -960,20 +1036,52 @@ private class AquariumEngine {
         }
     }
 
+    private fun updateSparkle(time: Float) {
+        if (sparkleFishIndex >= activeFishCount) {
+            previousSparkleFishIndex = sparkleFishIndex
+            sparkleFishIndex = -1
+            sparkleUntil = -1f
+            nextSparkleAt = time + 0.7f
+        }
+        if (sparkleFishIndex >= 0) {
+            if (time >= sparkleUntil) {
+                previousSparkleFishIndex = sparkleFishIndex
+                sparkleFishIndex = -1
+                sparkleUntil = -1f
+                nextSparkleAt = time + SPARKLE_PAUSE_MIN_SECONDS +
+                        random.nextFloat() * SPARKLE_PAUSE_RANGE_SECONDS
+            }
+            return
+        }
+        if (time < nextSparkleAt || activeFishCount <= 0) return
+        var selected = random.nextInt(activeFishCount)
+        if (activeFishCount > 1 && selected == previousSparkleFishIndex) {
+            selected = (selected + 1 + random.nextInt(activeFishCount - 1)) % activeFishCount
+        }
+        sparkleFishIndex = selected
+        sparkleStartedAt = time
+        sparkleUntil = time + SPARKLE_DURATION_MIN_SECONDS +
+                random.nextFloat() * SPARKLE_DURATION_RANGE_SECONDS
+        Log.i(
+            TAG,
+            "sparkle fish=$sparkleFishIndex duration=${"%.2f".format(sparkleUntil - time)}"
+        )
+    }
+
     private fun behaviorForStep(step: Int): FishBehavior = when ((step % 3 + 3) % 3) {
         0 -> FishBehavior.ROUTE
         1 -> FishBehavior.FOLLOW
         else -> FishBehavior.PLAY
     }
 
-    private fun tailBeatHzForDrive(drive: Float): Float {
+    private fun tailBeatHzForDrive(drive: Float, tempo: Float): Float {
         val burst = smoothStep01((drive - 0.20f) / 0.80f)
-        return 1.60f + burst * 3.80f
+        return (1.60f + burst * 3.80f) * tempo
     }
 
-    private fun finBeatHzForDrive(drive: Float): Float {
+    private fun finBeatHzForDrive(drive: Float, tempo: Float): Float {
         val burst = smoothStep01((drive - 0.20f) / 0.80f)
-        return 0.70f + burst * 1.55f
+        return (0.70f + burst * 1.55f) * (0.88f + tempo * 0.12f)
     }
 
     private fun smoothStep01(value: Float): Float {
@@ -1024,8 +1132,9 @@ private class AquariumEngine {
         GLES30.glBindVertexArray(0)
     }
 
-    private fun drawFish() {
+    private fun drawFish(time: Float) {
         GLES30.glUseProgram(fishProgram)
+        GLES30.glUniform1f(fishTimeLocation, time)
         GLES30.glUniform1f(
             fishAspectLocation,
             width.toFloat() / height.coerceAtLeast(1)
@@ -1063,6 +1172,14 @@ private class AquariumEngine {
                 f.accentColor[0], f.accentColor[1], f.accentColor[2]
             )
             GLES30.glUniform1f(fishPatternLocation, f.pattern)
+            val sparkleFade = if (index == sparkleFishIndex) {
+                val fadeIn = smoothStep01((time - sparkleStartedAt) / 0.20f)
+                val fadeOut = smoothStep01((sparkleUntil - time) / 0.30f)
+                fadeIn * fadeOut
+            } else {
+                0f
+            }
+            GLES30.glUniform1f(fishSparkleLocation, sparkleFade)
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, fishVertexCount)
         }
         GLES30.glBindVertexArray(0)
@@ -1283,6 +1400,11 @@ private class AquariumEngine {
         const val FEED_GOLDEN_ANGLE = 2.3999632f
         const val SCATTER_SECONDS = 3.4f
         const val FEED_REPORT_SECONDS = 0.75f
+        const val FEED_REACTION_SECONDS = 0.46f
+        const val SPARKLE_DURATION_MIN_SECONDS = 1.15f
+        const val SPARKLE_DURATION_RANGE_SECONDS = 0.95f
+        const val SPARKLE_PAUSE_MIN_SECONDS = 1.40f
+        const val SPARKLE_PAUSE_RANGE_SECONDS = 2.60f
         const val PERFORMANCE_REPORT_NS = 5_000_000_000L
         const val TWO_PI = 6.2831855f
         // Representative phase of the visible caudal membrane around 72% of its length.
@@ -1291,6 +1413,12 @@ private class AquariumEngine {
         val FISH_SCALES = floatArrayOf(
             0.045f, 0.064f, 0.053f, 0.079f, 0.042f,
             0.070f, 0.057f, 0.075f, 0.048f, 0.061f
+        )
+        // Deliberately non-monotonic and unique: neighbours in the list do not form a mechanical
+        // slow-to-fast parade, while every fish still keeps a recognisable cruising personality.
+        val FISH_SPEED_PERSONALITIES = floatArrayOf(
+            0.72f, 1.18f, 0.88f, 1.36f, 0.79f,
+            1.06f, 1.43f, 0.95f, 1.27f, 0.84f
         )
 
         val FISH_PALETTES = arrayOf(
@@ -1575,6 +1703,17 @@ private class AquariumEngine {
             uniform vec3 uPatchColor;
             uniform vec3 uAccentColor;
             uniform float uPattern;
+            uniform float uTime;
+            uniform float uSparkle;
+
+            float starGlint(vec2 point, vec2 centre, float phase) {
+                vec2 delta = abs(point - centre);
+                float core = exp(-dot(delta, delta) * 310.0);
+                float horizontal = exp(-delta.x * 43.0 - delta.y * 10.0);
+                float vertical = exp(-delta.y * 58.0 - delta.x * 9.0);
+                float pulse = pow(max(sin(phase), 0.0), 3.0);
+                return (core * 1.25 + (horizontal + vertical) * 0.30) * pulse;
+            }
             void main() {
                 float organic = sin(vLocal.x * 13.0 + uSeed) +
                                 sin(vLocal.y * 18.0 - uSeed * 1.7) * 0.72;
@@ -1611,7 +1750,23 @@ private class AquariumEngine {
                 float headGloss = exp(-pow(vLocal.x - 0.37, 2.0) * 21.0 -
                                       pow(vLocal.y + 0.05, 2.0) * 42.0) * vBody;
                 color += vec3(0.30, 0.42, 0.46) * headGloss * 0.34;
+                // Only one fish receives a non-zero uSparkle at a time. Three independent glints
+                // travel over its head, back and veil so the highlight feels alive rather than
+                // like a permanent emissive texture.
+                vec2 sparkleA = vec2(0.34 + sin(uSeed * 1.73) * 0.10,
+                                     0.05 + sin(uSeed * 2.31) * 0.08);
+                vec2 sparkleB = vec2(-0.10 + sin(uSeed * 0.91) * 0.18,
+                                     -0.08 + cos(uSeed * 1.47) * 0.10);
+                vec2 sparkleC = vec2(-0.70 + sin(uSeed * 1.19) * 0.13,
+                                     cos(uSeed * 2.07) * 0.17);
+                float sparkle = starGlint(vLocal, sparkleA, uTime * 8.6 + uSeed) +
+                                 starGlint(vLocal, sparkleB, uTime * 7.1 + uSeed * 1.8) +
+                                 starGlint(vLocal, sparkleC, uTime * 9.4 + uSeed * 0.7);
+                sparkle *= uSparkle;
+                color += vec3(1.00, 0.90, 0.56) * min(sparkle, 1.45) * 0.92;
+                color += vec3(0.66, 0.90, 1.00) * min(sparkle, 1.15) * 0.34;
                 float alpha = mix(uAlpha, uAlpha * (0.48 + membraneRibs * 0.16), vMembrane);
+                alpha = max(alpha, min(1.0, uAlpha + sparkle * 0.10));
                 fragColor = vec4(color, alpha);
             }
         """
