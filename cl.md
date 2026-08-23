@@ -1216,6 +1216,33 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.41 - 2026-08-23
+
+### 主题
+按 KEMI/RustDesk 联调文档补齐全局键盘的标准桌面功能键转发。
+
+### 过程
+- 逐项核对 `/Users/newlink/kemi/RustDesk/client/kemi-docs/KBOARD-REMOTE-FUNCTION-KEY-FIX.md`：KEMI 端 `RemoteFunctionKeyMapper` 与 `KeyboardProxyActivity` 已支持 F1–F12、Esc、Tab、Caps Lock、Enter、退格、方向键及 Ctrl/Alt/Shift/Command 状态，对应 KEMI 提交为 `b7d9116fd`。
+- KBoard `DesktopKeyboard.onAction()` 仍会给不带 Ctrl/Alt/Meta 的功能键增加 `KeyState.Virtual`；服务端 Virtual 分支无 Unicode 且没有专用 case 时直接丢弃，因此 Esc、F1–F12、Caps Lock、Tab、Up 和 Down 无法到达 KEMI。
+- 选择在全局桌面键盘源头标记原始控制键，不在全局 `FcitxInputMethodService` 中堆叠特例，以避免破坏中文预编辑和普通键盘。
+
+### 修改
+- `DesktopKeyboard` 新增 `RawDesktopControlKeySyms`：Esc、F1–F12、Backspace、Tab、Caps Lock、Return 和四个方向键。
+- 命中上述集合时不再附加 `KeyState.Virtual`，事件进入现有非 Virtual 通路，由 `sym.keyCode` 生成标准 Android `KeyEvent` 并通过当前 `InputConnection` 交给 KEMI。
+- Ctrl、Alt 和 Meta 仍强制原始事件；Shift 单独按住普通字符时仍保持文本输入语义，Shift+功能键则因功能键命中原始集合而完整保留 meta 状态。
+- 修改范围只有 `DesktopKeyboard.kt`；普通中文/英文键盘、候选、ASR、水族动画、双屏切换和 KEMI 代理代码未改动。
+
+### 验证
+- `:app:compileReleaseKotlin` 成功。
+- `:app:assembleRelease` 完整成功，R8、Lint Vital、arm64 原生组件和 Release 打包通过；没有构建 Debug APK。
+- 源码提交为 `d74b7ff9`；无签名 Release 为 `org.fcitx.fcitx5.android-d74b7ff9-arm64-v8a-release-unsigned.apk`，SHA-256 为 `8a95d963b53da32f07e1f9388f2cf29faa608416f844eee30c708dd423ace3ec`。该包仅用于证明 Release 代码可完整编译，不作为正式交付或设备安装包。
+
+### 待办
+- 用户指定的 `/Users/newlink/kemi/keystore` 目录当前只有 `debug.keystore`，未配置 `SIGN_KEY_FILE/SIGN_KEY_PWD/SIGN_KEY_ALIAS`；在不猜测口令、不误用调试证书的前提下，尚不能生成正式签名 APK。获得正确别名/口令后，必须先核对证书 SHA-256 是否为当前 KBoard 正式证书 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 功能键跨系统最终语义由 Windows/macOS/Linux 和前台应用决定。签名 Release 完成后还需按对接文档在真实远程会话验证 Esc/F1/F5/F12、Tab/Shift+Tab、方向键长按、Alt+F4、Ctrl/Command 组合键，并排查双发与卡键。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

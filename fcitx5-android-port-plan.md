@@ -513,6 +513,13 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - 普通 Android 应用继续遵循 `IME_ACTION_GO/SEARCH/SEND/NEXT/DONE`；目标编辑器拒绝标准动作时再兜底实体 Enter。中文仍保持两阶段确认：存在预编辑时先确认候选，预编辑为空时再提交表单或发送 Enter。
 - 远程回车必须分别连接 Windows 和 Mac 做真实交互复测。Windows 无效而 Mac 有效通常表示远端特殊键路由问题，不能通过对所有应用同时发送“编辑器动作 + 实体键”解决，否则会产生双回车风险。
 
+#### RustDesk/KEMI 桌面功能键（2026-08-23）
+
+- 全局键盘的 Esc、F1–F12、Backspace、Tab、Caps Lock、Return 和方向键必须由 `DesktopKeyboard` 按非 Virtual 事件发送。若添加 `KeyState.Virtual`，无 Unicode 且未被服务端特殊处理的功能键会在到达 KEMI 前被消费。
+- 该规则只属于 `DesktopKeyboard`，不得把普通中文/英文布局全部改成原始 KeyEvent；否则会破坏拼音预编辑、候选和 Unicode 文本输入。
+- Ctrl、Alt、Meta 组合键和上述原始控制键保留完整 modifier states；因此 Shift+Tab、Alt+F4、Ctrl+方向键、Command+方向键与 Command+Shift+3/4/5 均继续走现有标准 `InputConnection.sendKeyEvent()` 链路，不需要新建私有广播或第二套协议。
+- KEMI 接收端 `RemoteFunctionKeyMapper`/`KeyboardProxyActivity` 已实现 Android keyCode 到 RustDesk `VK_*` 的映射；KBoard 修复的职责是让标准 KeyEvent 到达该代理。验收时必须对 Windows/macOS 实际会话分别测试，不能用 Android 本地编译成功替代跨端验收。
+
 #### 中继自动启用与全键盘单音效
 
 - `DisplaySwitchInputMethodService` 与主服务位于同一 APK，不是需要用户另行安装的输入法。平台签名 V900 包通过 `WRITE_SECURE_SETTINGS` 调用系统 `ime enable` 接口，仅启用这个固定同包组件；不得直接改写 enabled IME 字符串，也不得修改默认输入法或关闭其他输入法。
