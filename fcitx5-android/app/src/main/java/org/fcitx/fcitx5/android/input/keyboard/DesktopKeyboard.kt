@@ -111,6 +111,26 @@ class DesktopKeyboard private constructor(
         private const val DESKTOP_ACTIVE_LANGUAGE_COLOR = 0xFF4285F4.toInt()
         private const val DESKTOP_KEY_TEXT_COLOR = 0xFFF4F8FC.toInt()
 
+        // These keys model a physical desktop keyboard and must leave the IME as standard
+        // Android KeyEvents. Marking them Virtual makes the service's text-oriented branch
+        // consume keys without Unicode (Esc/F-keys/Caps/Tab/Up/Down) before a remote host can
+        // receive them. Keep this list local to DesktopKeyboard so ordinary layouts retain their
+        // composition-aware virtual-key behaviour.
+        private val RawDesktopControlKeySyms = buildSet {
+            add(FcitxKeyMapping.FcitxKey_Escape)
+            addAll(FcitxKeyMapping.FcitxKey_F1..FcitxKeyMapping.FcitxKey_F12)
+            add(FcitxKeyMapping.FcitxKey_BackSpace)
+            add(FcitxKeyMapping.FcitxKey_Tab)
+            add(FcitxKeyMapping.FcitxKey_Caps_Lock)
+            add(FcitxKeyMapping.FcitxKey_Return)
+            add(FcitxKeyMapping.FcitxKey_Left)
+            add(FcitxKeyMapping.FcitxKey_Right)
+            add(FcitxKeyMapping.FcitxKey_Up)
+            add(FcitxKeyMapping.FcitxKey_Down)
+        }
+
+        private val ShortcutModifiers = setOf(KeyState.Ctrl, KeyState.Alt, KeyState.Meta)
+
         private fun Context.dp(value: Int) =
             (value * resources.displayMetrics.density).roundToInt()
 
@@ -310,8 +330,11 @@ class DesktopKeyboard private constructor(
             return
         }
 
-        val shortcutModifiers = setOf(KeyState.Ctrl, KeyState.Alt, KeyState.Meta)
-        val states = if (modifierStates.any { it in shortcutModifiers }) {
+        val isRawDesktopControlKey = action is KeyAction.SymAction &&
+                action.sym.sym in RawDesktopControlKeySyms
+        val states = if (
+            modifierStates.any { it in ShortcutModifiers } || isRawDesktopControlKey
+        ) {
             KeyStates(*modifierStates.toTypedArray())
         } else {
             KeyStates(*(modifierStates + KeyState.Virtual).toTypedArray())
