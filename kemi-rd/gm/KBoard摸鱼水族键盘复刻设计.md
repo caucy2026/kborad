@@ -1,7 +1,7 @@
 # KBoard 摸鱼水族键盘可复刻设计规范
 
 > 文档状态：可交付 / 可复刻  
-> 对应源码版本：`e5ec4f17`
+> 对应源码版本：`2ecfa902`
 > 目标设备基线：Android 12、arm64-v8a、Mali-G52、OpenGL ES 3.2、1920×1280  
 > 目标效果：全局键盘下方是一整块沉浸式池塘；金鱼依靠尾鳍和胸鳍真实游动，触摸后争先恐后游向手指，滑动时持续跟随，松手后散开并恢复巡游、跟随和玩耍；触点产生轻微非圆涟漪和一次真实水滴声；持续渲染稳定在 30Hz。
 
@@ -9,9 +9,9 @@
 
 若项目也是 Android View + OpenGL ES，最可靠的复刻方法不是重新估算参数，而是复制下列源码与资源，再按第 3 节接入。本文后续章节解释每个参数为什么存在，便于移植到 Compose、Flutter Texture、Qt、Unity 原生插件或其他 GLES 容器。
 
-| 文件 | 用途 | SHA-256（`e5ec4f17`） |
+| 文件 | 用途 | SHA-256（`2ecfa902`） |
 |---|---|---|
-| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/aquarium/DesktopAquariumView.kt` | EGL、30Hz 渲染线程、水面 Shader、鱼体网格、鱼群行为和水动力 | `e8fb548b74ead4abdaf64b7efab53b3be623461adaf4bd29c50def02cf0dbfb4` |
+| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/aquarium/DesktopAquariumView.kt` | EGL、30Hz 渲染线程、水面 Shader、鱼体网格、个体速度、随机闪光、鱼群行为和水动力 | `90e8c08af0e01093d8e3fa0a8f7ec0ef9ca2b0819d34c34886d00c8564413cef` |
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/DesktopKeyboard.kt` | 水族层和原生按键层组合、触摸观察、底部水域、组合键提示映射 | `a92af8ea3e1f69ec32c00baf88c78dbd379554d34fe3a98c3ed901b75bacece3` |
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyView.kt` | 半透明景深键帽、按压行程、无圆形 Ripple、稳定提示层 | `6e9a5bc1b48d04fe5539f702dfb381c5a45795fdadecf50dafc072ab4b10cd76` |
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyDefPreset.kt` | 全局修饰键的按住式定义 | `e6b8b09a074c47cab241dd6fef70a0f864e5268d438132786ab8c0c868a5751e` |
@@ -29,7 +29,7 @@
 
 ## 2. 视觉和交互验收定义
 
-空闲时 10 条鱼应有不同颜色、花纹、深度和体型，覆盖键盘全高，包括最下面的功能键水域。不能形成等距队列，也不能全部同步摆尾。
+空闲时 10 条鱼应有不同颜色、花纹、深度、体型和速度性格，覆盖键盘全高，包括最下面的功能键水域。不能形成等距队列，也不能全部同步摆尾。空闲期间每隔随机时间只有一条鱼出现短暂的头部、背部和尾膜流动闪光，不能所有鱼同时发光或常亮。
 
 触摸瞬间必须同时出现：
 
@@ -126,7 +126,7 @@ worldY = 1 - touchY × 2
 
 ## 7. 单条鱼的数据模型与初始化
 
-每条鱼至少保存：世界位置、朝向、非负前向速度、角速度、尾摆相位、胸鳍相位、尾鳍力度、左右胸鳍力度、转向力度、制动力、侧倾、深度、体型、巡游速度、个体 seed、三色调色板、花纹类型、群组、个人路线和社交行为状态。
+每条鱼至少保存：世界位置、朝向、非负前向速度、角速度、尾摆相位、胸鳍相位、尾鳍力度、左右胸鳍力度、转向力度、制动力、侧倾、深度、体型、巡游速度、尾摆节奏 `tailTempo`、冲程推力系数 `thrustScale`、个体最高速度、个体 seed、三色调色板、花纹类型、群组、个人路线和社交行为状态。
 
 随机种子固定为 `0x4B4F49`，保证同一版本启动分布可复现。鱼数固定 10，分成两个松散群组 `schoolId=index%2`。
 
@@ -139,7 +139,14 @@ worldY = 1 - touchY × 2
 
 绘制时再乘 `0.75 + depth × 0.35`，alpha 为 `0.72 + depth × 0.24`，形成远近层次。
 
-初始速度 `0.14..0.205 NDC/s`，个体巡游速度 `0.17..0.26`。三分之一鱼拥有底部路线：中心 Y 为 `-0.75..-0.65`，纵向半径 `0.12..0.22`；其余路线中心 Y 为 `-0.11..0.11`，纵向半径 `0.38..0.60`。所有鱼的横向路线半径 `0.48..0.70`。
+速度性格必须使用非单调、不重复的序列，避免按索引排成机械的由慢到快队列：
+
+```text
+0.72, 1.18, 0.88, 1.36, 0.79,
+1.06, 1.43, 0.95, 1.27, 0.84
+```
+
+`cruiseSpeed=0.175×personality`，`tailTempo=0.82+personality×0.24`，`thrustScale=0.73+personality×0.31`，`maxForwardSpeed=0.72+personality×0.38`。初始速度为本鱼巡游速度的 72%..82%。快鱼不是被直接平移得更快，而是同时具有更高尾摆节奏、单次冲程推力和速度上限。三分之一鱼拥有底部路线：中心 Y 为 `-0.75..-0.65`，纵向半径 `0.12..0.22`；其余路线中心 Y 为 `-0.11..0.11`，纵向半径 `0.38..0.60`。所有鱼的横向路线半径 `0.48..0.70`。
 
 十组三色调色板和四种花纹的精确 RGB 数组位于 `FISH_PALETTES`；复刻时应直接复制，不能只用一个鱼贴图随机改色。
 
@@ -164,11 +171,11 @@ targetY = centerY + sin(lookAhead) × radiusY
 
 ### FOLLOW
 
-选择同群前一条鱼，目标位于其尾流后方：间距 `0.15 + scale×0.65`，再叠加最大 `0.035` 的慢速侧向摆动。目标速度为领游鱼实际速度加 `0.045`，限制在本鱼巡游速度的 78% 到 `0.36`。
+选择同群前一条鱼，目标位于其尾流后方：间距 `0.15 + scale×0.65`，再叠加最大 `0.035` 的慢速侧向摆动。目标速度为 `leaderSpeed×0.82 + ownCruise×0.42`，限制在本鱼巡游速度的 74% 到个体最高速度的 58%，不再用全群共享的 `0.36` 上限压平速度。
 
 ### PLAY
 
-选择同群后一条鱼，按奇偶方向在伙伴周围绕游。绕游半径 `0.16..0.215`，并在伙伴前方增加 `0.075`。目标速度不低于 `0.25..0.305`。
+选择同群后一条鱼，按奇偶方向在伙伴周围绕游。绕游半径 `0.16..0.215`，并在伙伴前方增加 `0.075`。目标速度为本鱼巡游速度的 `1.28..1.62` 倍，上限为个体最高速度的 54%。
 
 四条底层鱼即使进入社交行为，非投喂/非散开时目标 Y 仍不高于 `-0.67`，因此最下排按键下方始终有鱼。
 
@@ -187,8 +194,9 @@ targetY = centerY + sin(lookAhead) × radiusY
 1. 在 4 个循环槽中写入新涟漪，Y 转成 `1-y`。
 2. 设置手指世界坐标，吸引持续 4.6 秒；`touchHeld=true`。
 3. 所有鱼清零本轮摆尾计数。
-4. 背对触点的鱼立即提高相应单侧胸鳍力度到 `0.54 + turnKick×0.42`，制动力最高到 `(1-forwardAlignment)×0.82`。
-5. 播放一个水滴样本。
+4. 每条鱼的尾膜相位被放到下一帧将穿过中线的位置，小偏移按索引为 `0.050..0.086rad`；这只消除等待空闲相位的迟滞，位移仍必须由下一次可见冲程产生。
+5. 背对触点的鱼立即提高相应单侧胸鳍力度到 `0.72 + turnKick×0.28`，制动力最高到 `(1-forwardAlignment)×0.94`，尾鳍力度至少提高到约 0.88。
+6. 播放一个水滴样本。
 
 ### MOVE
 
@@ -204,7 +212,7 @@ radius = 0.14 + (index mod 4) × 0.032 + fract(seed) × 0.025
 offsetY *= 0.76
 ```
 
-触点靠边时把朝边外的 offset 反射回池塘，避免目标经 clamp 后重叠。投喂目标速度为 `0.80 + fract(seed)×0.12`。
+触点靠边时把朝边外的 offset 反射回池塘，避免目标经 clamp 后重叠。投喂目标速度为 `ownCruise×(4.55+fract(seed)×0.70)`，不超过本鱼 `maxForwardSpeed`，所以快慢鱼在投喂时仍保留个体差异。
 
 ### UP / CANCEL
 
@@ -264,7 +272,7 @@ left  = clamp(finBase + max(turnDemand,0)×0.76, 0.12, 1)
 right = clamp(finBase + max(-turnDemand,0)×0.76, 0.12, 1)
 ```
 
-肌肉响应率投喂为 `6.4/s`，空闲为 `4.5/s`；转向力度响应率投喂 `32/s`、空闲 `9/s`。
+肌肉响应率在投喂后前 0.46 秒为 `11.5/s`，后续投喂为 `7.2/s`，空闲为 `4.5/s`；转向力度响应率投喂 `32/s`、空闲 `9/s`。
 
 ### 11.2 摆频
 
@@ -272,11 +280,11 @@ right = clamp(finBase + max(-turnDemand,0)×0.76, 0.12, 1)
 
 ```text
 burst  = smoothstep01((drive-0.20)/0.80)
-tailHz = 1.60 + burst×3.80       // 1.6–5.4Hz
-finHz  = 0.70 + burst×1.55       // 0.7–2.25Hz
+tailHz = (1.60 + burst×3.80) × tailTempo
+finHz  = (0.70 + burst×1.55) × (0.88 + tailTempo×0.12)
 ```
 
-尾鳍明显快于胸鳍，避免四片鱼鳍像蜻蜓翅膀同步拍动。
+尾鳍明显快于胸鳍，避免四片鱼鳍像蜻蜓翅膀同步拍动。投喂后前 0.46 秒再将两者节奏乘 1.22，因此快鱼的可见尾摆会先于位移明显爆发。
 
 ### 11.3 尾摆脉冲和水阻
 
@@ -285,13 +293,13 @@ CPU 与 Shader 共用 `swimPhase`。CPU 在连续尾幕约 72% 长度处采样�
 ```text
 tailAmplitude = lerp(0.130, 0.400, tailDrive)
 impulse = completedStroke
-  ? tailAmplitude × (0.115 + tailHz×0.020)
+  ? tailAmplitude × (0.115 + tailHz×0.020) × thrustScale
   : 0
 redirectedImpulse = impulse × clamp(1-brake×0.96, 0.02, 1)
-speed = clamp(speed + redirectedImpulse, 0, 0.94)
+speed = clamp(speed + redirectedImpulse, 0, maxForwardSpeed)
 drag = speed×1.18 + speed²×0.82
 pectoralBrake = brake×finExtension×(0.34 + speed×1.20)
-speed = clamp(speed - (drag+pectoralBrake)×dt, 0, 0.94)
+speed = clamp(speed - (drag+pectoralBrake)×dt, 0, maxForwardSpeed)
 ```
 
 两次摆尾之间只有水中惯性和阻力，不存在隐藏的连续目标速度推进。位置每帧只积分一次：
@@ -307,10 +315,10 @@ y += sin(heading) × speed × dt
 
 ```text
 turnDemand × smoothstep((abs(turnDemand)-0.52)/0.38)
-× (2.80 + tailDrive×2.20)
+× (5.80 + tailDrive×3.40) × tailTempo
 ```
 
-锁存防止逐帧重复。随后每个可见摆尾完成事件再增加一次同源偏航脉冲；投喂角速度限制 `±8.80rad/s`，空闲限制 `±3.20rad/s`。对准目标后额外 `6.8` 的角阻尼迅速停转。
+锁存防止逐帧重复。随后每个可见摆尾完成事件再增加一次同源偏航脉冲；投喂后前 0.46 秒角速度限制 `±14.50rad/s`，后续投喂 `±11.20rad/s`，空闲 `±3.20rad/s`。对准目标后额外 `6.8` 的角阻尼迅速停转。
 
 鱼朝向只能由角速度积分，不能直接赋值。
 
@@ -357,6 +365,15 @@ mat2(cosH, sinH, -sinH, cosH) * local.xy
 - 尾膜筋纹与半透明 alpha。
 - 头部双眼和局部光泽。
 - 实际角速度产生的侧倾 `bank`，但鱼身不随尾相位摇晃。
+
+### 随机单鱼闪光
+
+闪光不新增 CPU 粒子或第三个渲染 Pass，仍在鱼体片元 Shader 内完成：
+
+- 任何时刻只有一条鱼的 `uSparkle` 非零；当前鱼结束后不立即重复选中同一条。
+- 每次持续 `1.15..2.10s`，两次之间暂停 `1.40..4.00s`，选择仍使用固定引擎随机源。
+- 在头部、背部、尾膜各生成一个与 `seed` 相关的星芒中心；三者用不同 7.1..9.4Hz 相位闪烁，叠加暖金和弱冷蓝高光。
+- CPU 只传入时间和淡入/淡出强度；不修改鱼的坐标、速度、尾摆或深度，所以特效不影响物理。
 
 要得到完全一致的形状和着色，请直接复用 `FISH_VERTEX_SHADER`、`FISH_FRAGMENT_SHADER`、`createFishGeometry()` 与 `FISH_PALETTES`，文档中的描述不替代可执行 Shader。
 
@@ -470,10 +487,12 @@ mat2(cosH, sinH, -sinH, cosH) * local.xy
 
 ### 动作
 
-- 低速尾摆约 1.6–2.8Hz，冲刺最高约 5.4Hz；胸鳍始终更慢。
+- 不同鱼的巡游速度、尾摆节奏、冲程推力和最高速度均有稳定差异；快鱼和慢鱼不会被 FOLLOW/PLAY 的全局上限压成同速。
+- 尾摆基础频率为 1.6–5.4Hz 再乘个体 `tailTempo`，投喂后前 0.46 秒再乘 1.22；胸鳍始终明显更慢。
 - 鱼身不随尾相位整体晃动。
-- 背对目标时可见 C 型卷尾并快速转身，旧方向速度先下降。
+- 背对目标时下一帧即进入可见 C 型动力冲程，瞬时角速度可达 `14.5rad/s`，旧方向速度先下降。
 - 无倒游、无瞬移、无边缘镜面反射、无所有鱼同步。
+- 随机闪光期间只有一条鱼出现多点流动星芒，特效不改变该鱼的路线和速度。
 
 ### 水面与声音
 
@@ -502,6 +521,8 @@ mat2(cosH, sinH, -sinH, cosH) * local.xy
 | 尾巴像蜻蜓 | 尾叶拆成独立扇面、Z 轴反相拍动 | 连续 6×5 尾幕、根尖延迟、主要平面扫水 |
 | 鱼倒着游 | CPU heading 与 GLSL 列主序矩阵不一致 | 使用本文第 12 节矩阵，速度保持非负 |
 | 转身太慢 | 必须等待半个空闲尾摆才有转矩 | 大角度上升沿只锁存一次卷尾启动脉冲 |
+| 十条鱼速度越游越一样 | FOLLOW/PLAY 使用全群共享上限 | 个体化 cruise/tailTempo/thrust/maxSpeed，社交速度也按本鱼上限计算 |
+| 闪光像常亮贴图 | 全鱼共享发光材质 | 每次只给一条鱼传 `uSparkle`，三个 seed 星芒异步淡入淡出 |
 | 点击后鱼先滑远 | 尾推力仍沿旧朝向释放 | 胸鳍制动重定向推力，对准后再解锁冲刺 |
 | 所有鱼叠在手指下 | 所有目标完全相同或边缘 clamp | 黄金角分槽，靠边时反射 offset |
 | 涟漪第一帧没有 | 使用 `sin(age)`，age=0 为零 | 增加短寿命接触凹陷和偏心高光 |
@@ -516,13 +537,13 @@ mat2(cosH, sinH, -sinH, cosH) * local.xy
 
 ```text
 package     org.fcitx.fcitx5.android
-versionName bf7a8e13
-versionCode 102
+versionName 2ecfa902
+versionCode 112
 ABI         arm64-v8a
 APK         fcitx5-android/build/kboard.apk
-SHA-256     bbdd0e5af70bf3d0eaf2cd9402afd86ccf3b7edd47bbdfa98c309bcc59b0cf85
+SHA-256     1f4a5e489f5a24c6c87191a2006ec9f63b3c3a6401f02c21d67fba6dceac8fa0
 签名        v1=true, v2=true
 证书 SHA-256 c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8
 ```
 
-该 Release 已覆盖安装到 `192.168.3.63:5555`。复刻到其他项目时，应保留源码与音频来源许可，并在实际目标 GPU 上做 Shader 编译、30Hz 性能和真实触控验收。
+该 Release 已完成 Kotlin、Lint Vital、R8、arm64 原生组件和 v1/v2 签名构建验证。截至 2026-08-23，`192.168.3.62/.63` 均整机网络不可达，因此新增 Shader 的 Mali-G52 编译、30Hz 性能和真实触控尚未验收，不得将本地构建成功写成真机成功。复刻到其他项目时，应保留源码与音频来源许可，并在实际目标 GPU 上完成全部验收。
