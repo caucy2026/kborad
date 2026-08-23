@@ -493,6 +493,12 @@ private class AquariumEngine {
         }
         interactionVariant = (interactionVariant + 1) % FEED_VARIANT_COUNT
         touchSparkleFishIndex = if (activeFishCount > 0) random.nextInt(activeFishCount) else -1
+        // Touch-time prize sparkle replaces, rather than stacks with, the idle random sparkle.
+        // This preserves the one-fish-at-a-time visual rule.
+        if (sparkleFishIndex >= 0) previousSparkleFishIndex = sparkleFishIndex
+        sparkleFishIndex = -1
+        sparkleUntil = -1f
+        nextSparkleAt = now + SPARKLE_PAUSE_MIN_SECONDS
         attractionStartedAt = now
         attractionUntil = now + ATTRACTION_SECONDS
         touchHeld = true
@@ -555,6 +561,7 @@ private class AquariumEngine {
         // release scenes instead of being teleported when the visual cue disappears.
         touchPlant.start = -100f
         touchSparkleFishIndex = -1
+        nextSparkleAt = now + SPARKLE_PAUSE_MIN_SECONDS
         for (index in 0 until activeFishCount) {
             val f = fish[index]
             val radialAngle = TWO_PI * index / activeFishCount.coerceAtLeast(1) +
@@ -1191,6 +1198,7 @@ private class AquariumEngine {
     }
 
     private fun updateSparkle(time: Float) {
+        if (touchHeld) return
         if (sparkleFishIndex >= activeFishCount) {
             previousSparkleFishIndex = sparkleFishIndex
             sparkleFishIndex = -1
