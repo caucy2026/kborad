@@ -1162,7 +1162,31 @@ private class AquariumEngine {
                 if (time - weekdayIntroPhaseStartedAt >= INTRO_DEPART_SECONDS) {
                     weekdayIntroPhase = WeekdayIntroPhase.DONE
                     nextSparkleAt = time + SPARKLE_PAUSE_MIN_SECONDS
-                    Log.i(TAG, "weekdayIntro digit=$weekdayDigit phase=DONE")
+                    // Release the formation into a fresh pond scene on every entry. Cycling from
+                    // a random offset guarantees that the small school contains cruisers,
+                    // followers and playful pairs, while each fish gets an independent duration.
+                    // Only navigation intent changes here; position and velocity remain physical.
+                    val behaviorOffset = random.nextInt(3)
+                    var routeCount = 0
+                    var followCount = 0
+                    var playCount = 0
+                    for (index in 0 until activeFishCount) {
+                        val f = fish[index]
+                        f.behaviorStep = random.nextInt(100) * 3 +
+                                (index + behaviorOffset) % 3
+                        f.behavior = behaviorForStep(f.behaviorStep)
+                        f.behaviorUntil = time + 3.8f + random.nextFloat() * 6.2f
+                        when (f.behavior) {
+                            FishBehavior.ROUTE -> routeCount++
+                            FishBehavior.FOLLOW -> followCount++
+                            FishBehavior.PLAY -> playCount++
+                        }
+                    }
+                    Log.i(
+                        TAG,
+                        "weekdayIntro digit=$weekdayDigit phase=DONE " +
+                                "activities=route:$routeCount,follow:$followCount,play:$playCount"
+                    )
                 }
             }
             WeekdayIntroPhase.DONE -> Unit
@@ -1733,119 +1757,93 @@ private class AquariumEngine {
             void main() {
                 vec2 uv = vUv;
                 float aspect = uResolution.x / max(uResolution.y, 1.0);
-                vec2 waveSlope = vec2(0.0);
-                float waveHeight = 0.0;
-                float waveEnergy = 0.0;
-                float rippleCrest = 0.0;
-                float rippleShadow = 0.0;
-                float contactDimple = 0.0;
-                float contactGlint = 0.0;
+                vec2 surfaceSlope = vec2(0.0);
+                float surfaceHeight = 0.0;
+                float crestLight = 0.0;
+                float troughShadow = 0.0;
+                float impactDimple = 0.0;
+                float impactCrown = 0.0;
                 for (int i = 0; i < 4; ++i) {
                     float age = uTime - uRipples[i].z;
                     vec2 delta = uv - uRipples[i].xy;
                     delta.x *= aspect;
-                    // A touch makes a shallow, drifting surface disturbance. Keep the outline
-                    // slightly irregular so it feels like pond water, but avoid bright rings or
-                    // a large lens-like distortion over the keyboard.
+                    // Pond current makes the wavefront subtly oval and drifting. Angular noise
+                    // breaks mathematical circles without turning the ripple into random fog.
                     vec2 flowDrift = vec2(
                         sin(uRipples[i].x * 17.0 + uRipples[i].y * 5.0),
                         cos(uRipples[i].y * 13.0 - uRipples[i].x * 4.0)
-                    ) * age * 0.006;
+                    ) * max(age, 0.0) * 0.0045;
                     delta -= flowDrift;
                     float currentAngle = uRipples[i].x * 7.3 + uRipples[i].y * 11.1;
                     vec2 currentAxis = vec2(cos(currentAngle), sin(currentAngle));
                     vec2 currentNormal = vec2(-currentAxis.y, currentAxis.x);
                     float alongCurrent = dot(delta, currentAxis);
                     float acrossCurrent = dot(delta, currentNormal);
-                    vec2 currentSpace = vec2(alongCurrent * 0.95, acrossCurrent * 1.05);
-                    float rawDistance = max(length(currentSpace), 0.001);
+                    vec2 currentSpace = vec2(alongCurrent * 0.965, acrossCurrent * 1.035);
+                    float baseDistance = max(length(currentSpace), 0.001);
                     float angle = atan(currentSpace.y, currentSpace.x);
-                    float directionalStretch = 1.0 +
-                        sin(angle * 2.0 + uRipples[i].x * 6.0) * 0.045 +
-                        sin(angle * 3.0 - uRipples[i].y * 7.0 + age * 0.34) * 0.022;
-                    float edgeVariation = sin(angle * 5.0 + uRipples[i].x * 8.0 + age * 0.42) * 0.004;
-                    float distanceFromTouch = rawDistance * directionalStretch + edgeVariation;
-                    float waveFront = age * 0.19;
-                    float wake = waveFront - distanceFromTouch;
-                    float normalizedWake = wake / 0.074;
-                    float frontBand = exp(-normalizedWake * normalizedWake);
-                    float innerWake = smoothstep(0.0, 0.055, wake) *
-                                      exp(-max(wake, 0.0) * 5.4);
+                    float irregularity =
+                        sin(angle * 3.0 + currentAngle) * 0.022 +
+                        sin(angle * 5.0 - currentAngle * 0.7 + age * 0.55) * 0.012;
+                    float distanceFromTouch = baseDistance * (1.0 + irregularity);
+
+                    // A real fingertip first depresses the surface, then releases a dispersive
+                    // capillary wave train. Fast short waves lead; broader gravity waves trail.
+                    float waveFront = 0.014 + age * 0.245;
+                    float behindFront = waveFront - distanceFromTouch;
                     float lifetime = step(0.0, age) *
-                                     (1.0 - smoothstep(1.55, 2.35, age));
-                    float envelope = (frontBand * 0.64 + innerWake * 0.36) *
-                                     lifetime * exp(-age * 0.82);
-                    float phase = wake * 34.0;
-                    float impact = exp(-rawDistance * rawDistance * 380.0) *
-                                   exp(-age * 5.2) * sin(age * 11.0);
-                    float height = (sin(phase) * 0.76 + sin(phase * 0.58 + 0.8) * 0.24) *
-                                   envelope * 0.40 + impact * lifetime * 0.16;
-                    vec2 radialInCurrent = currentSpace / rawDistance;
+                                     (1.0 - smoothstep(1.55, 2.25, age));
+                    float temporalDecay = lifetime * exp(-age * 0.72);
+                    float leadingBand = exp(-pow((distanceFromTouch - waveFront) / 0.030, 2.0));
+                    float wakeGate = smoothstep(-0.012, 0.032, behindFront);
+                    float wakeEnvelope = wakeGate * exp(-max(behindFront, 0.0) * 3.1);
+                    float phaseFast = behindFront * 72.0;
+                    float phaseSlow = behindFront * 37.0 + 0.72;
+                    float wave = cos(phaseFast) * 0.68 + cos(phaseSlow) * 0.32;
+                    float envelope = (leadingBand * 0.82 + wakeEnvelope * 0.58) * temporalDecay;
+                    float height = wave * envelope * 0.042;
+
+                    vec2 radialInCurrent = currentSpace / baseDistance;
                     vec2 radial = currentAxis * radialInCurrent.x * 0.95 +
                                   currentNormal * radialInCurrent.y * 1.05;
-                    // The travelling wave is almost flat on its first frame. Add the small
-                    // asymmetric depression and offset reflection that are visible the instant
-                    // a fingertip breaks the surface, then fade them before the wake takes over.
-                    // Current-space scaling plus angular perturbation keeps this from becoming
-                    // a synthetic circular ring.
                     float contactLifetime = step(0.0, age) *
-                                            (1.0 - smoothstep(0.16, 0.30, age));
-                    vec2 contactSpace = vec2(
-                        currentSpace.x * 1.16 + currentSpace.y * 0.10,
-                        currentSpace.y * 0.84
-                    );
-                    float contactDistance = max(length(contactSpace), 0.001);
-                    float contactAngle = atan(contactSpace.y, contactSpace.x);
-                    float irregularContactDistance = contactDistance * (
-                        1.0 + sin(contactAngle * 3.0 + currentAngle) * 0.075 +
-                        sin(contactAngle * 5.0 - currentAngle) * 0.035
-                    );
-                    float dimple = exp(-irregularContactDistance * irregularContactDistance * 190.0) *
+                                            (1.0 - smoothstep(0.18, 0.34, age));
+                    float dimple = exp(-distanceFromTouch * distanceFromTouch * 430.0) *
                                    contactLifetime;
-                    vec2 glintOffset = contactSpace - vec2(-0.021, 0.015);
-                    float glint = exp(-dot(glintOffset, glintOffset) * 560.0) *
+                    float crownRadius = 0.010 + age * 0.115;
+                    float crown = exp(-pow((distanceFromTouch - crownRadius) / 0.014, 2.0)) *
                                   contactLifetime;
-                    float contactFront = 0.013 + age * 0.12;
-                    float contactBandDistance =
-                        (irregularContactDistance - contactFront) / 0.020;
-                    float contactBand = exp(-contactBandDistance * contactBandDistance) *
-                                        contactLifetime;
-                    waveHeight += height;
-                    waveEnergy += abs(height);
-                    waveSlope += radial * (cos(phase) * envelope * 0.54 - dimple * 0.32);
-                    contactDimple += dimple;
-                    contactGlint += glint * 0.92 + contactBand * 0.52;
-                    // A broad highlight and its offset shadow expose the surface displacement
-                    // through translucent keys. Both inherit the current-stretched, irregular
-                    // distance field above, so the result is a soft pond ripple rather than a
-                    // geometrically perfect circle.
-                    rippleCrest += (0.5 + 0.5 * sin(phase)) * envelope * 0.78 +
-                                   (0.5 + 0.5 * sin(phase * 0.58 + 0.8)) *
-                                   innerWake * lifetime * exp(-age * 0.92) * 0.22;
-                    rippleShadow += (0.5 + 0.5 * sin(phase + 2.30)) * envelope;
+
+                    surfaceHeight += height - dimple * 0.050;
+                    // The normal is what makes the wave read as displaced water instead of a
+                    // painted ring: one side catches light while the opposite side goes dark.
+                    float slopeFast = -sin(phaseFast) * 0.78;
+                    float slopeSlow = -sin(phaseSlow) * 0.22;
+                    surfaceSlope += radial * ((slopeFast + slopeSlow) * envelope -
+                                              dimple * 0.52 + crown * 0.24);
+                    crestLight += max(wave, 0.0) * envelope + crown * 0.70;
+                    troughShadow += max(-wave, 0.0) * envelope + dimple * 0.58;
+                    impactDimple += dimple;
+                    impactCrown += crown;
                 }
 
-                vec2 refractedUv = clamp(uv + waveSlope * vec2(0.0025, 0.0034), 0.0, 1.0);
+                vec2 refractedUv = clamp(uv + surfaceSlope * vec2(0.0065, 0.0085), 0.0, 1.0);
                 float flowA = sin((refractedUv.x * 8.0 + refractedUv.y * 5.0) + uTime * 0.52);
                 float flowB = sin((refractedUv.x * -11.0 + refractedUv.y * 7.0) + uTime * 0.39);
                 float caustic = smoothstep(0.58, 0.98, 0.5 + 0.25 * flowA + 0.25 * flowB);
                 vec3 deep = vec3(0.012, 0.075, 0.14);
                 vec3 shallow = vec3(0.018, 0.22, 0.30);
                 vec3 color = mix(deep, shallow, refractedUv.y * 0.72 + caustic * 0.12);
-                vec3 waterNormal = normalize(vec3(-waveSlope.x * 1.08, -waveSlope.y * 1.08, 1.0));
+                vec3 waterNormal = normalize(vec3(-surfaceSlope.x * 1.18, -surfaceSlope.y * 1.18, 1.0));
                 vec3 lightDirection = normalize(vec3(-0.38, 0.46, 0.80));
-                float waveHighlight = pow(max(dot(waterNormal, lightDirection), 0.0), 18.0);
-                float crest = max(waveHeight, 0.0);
-                float trough = max(-waveHeight, 0.0);
-                color += vec3(0.30, 0.78, 0.92) *
-                         (waveHighlight * waveEnergy * 0.44 + crest * 0.072);
-                color += vec3(0.12, 0.48, 0.66) * min(rippleCrest, 1.3) * 0.095;
-                color -= vec3(0.02, 0.10, 0.15) *
-                         (trough * 0.070 + min(rippleShadow, 1.2) * 0.030);
-                // Keep the contact cue legible below the translucent keycaps. Its highlight is
-                // deliberately offset from the shallow blue depression like a real water dimple.
-                color -= vec3(0.04, 0.14, 0.20) * min(contactDimple, 1.0) * 0.34;
-                color += vec3(0.34, 0.78, 0.94) * min(contactGlint, 1.25) * 0.24;
+                float specular = pow(max(dot(waterNormal, lightDirection), 0.0), 22.0);
+                color += vec3(0.34, 0.78, 0.94) * min(crestLight, 1.35) * 0.155;
+                color += vec3(0.52, 0.88, 1.00) * specular *
+                         min(length(surfaceSlope), 1.0) * 0.22;
+                color -= vec3(0.025, 0.11, 0.17) * min(troughShadow, 1.35) * 0.16;
+                color -= vec3(0.03, 0.13, 0.20) * min(impactDimple, 1.0) * 0.40;
+                color += vec3(0.48, 0.88, 1.00) * min(impactCrown, 1.0) * 0.22;
+                color += vec3(0.08, 0.25, 0.30) * surfaceHeight;
                 float vignette = 1.0 - smoothstep(0.20, 1.18, length((uv - 0.5) * vec2(1.0, 0.74)));
                 color *= 0.72 + vignette * 0.28;
                 fragColor = vec4(color, 1.0);
