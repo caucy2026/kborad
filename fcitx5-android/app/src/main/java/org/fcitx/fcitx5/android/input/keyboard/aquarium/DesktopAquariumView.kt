@@ -345,8 +345,6 @@ private class AquariumEngine {
         val accent: FloatArray
     )
 
-    private data class Ripple(var x: Float = 0f, var y: Float = 0f, var start: Float = -100f)
-
     private data class DigitStroke(
         val startX: Float,
         val startY: Float,
@@ -356,8 +354,6 @@ private class AquariumEngine {
 
     private val random = Random(0x4B4F49)
     private val fish = MutableList(MAX_FISH) { index -> createFish(index) }
-    private val ripples = Array(MAX_RIPPLES) { Ripple() }
-    private var nextRipple = 0
     private var attractionX = 0f
     private var attractionY = 0f
     private var attractionUntil = -1f
@@ -389,8 +385,6 @@ private class AquariumEngine {
     private var fishVbo = 0
     private var fishVertexCount = 0
     private var waterTimeLocation = -1
-    private var waterResolutionLocation = -1
-    private var waterRipplesLocation = -1
     private var fishAspectLocation = -1
     private var fishPositionLocation = -1
     private var fishHeadingLocation = -1
@@ -412,7 +406,6 @@ private class AquariumEngine {
     private var fishPatternLocation = -1
     private var fishTimeLocation = -1
     private var fishSparkleLocation = -1
-    private val rippleUniforms = FloatArray(MAX_RIPPLES * 4)
     private var width = 1
     private var height = 1
     private var startNanos = 0L
@@ -429,8 +422,6 @@ private class AquariumEngine {
         waterProgram = createProgram(WATER_VERTEX_SHADER, WATER_FRAGMENT_SHADER)
         fishProgram = createProgram(FISH_VERTEX_SHADER, FISH_FRAGMENT_SHADER)
         waterTimeLocation = GLES30.glGetUniformLocation(waterProgram, "uTime")
-        waterResolutionLocation = GLES30.glGetUniformLocation(waterProgram, "uResolution")
-        waterRipplesLocation = GLES30.glGetUniformLocation(waterProgram, "uRipples[0]")
         fishAspectLocation = GLES30.glGetUniformLocation(fishProgram, "uAspect")
         fishPositionLocation = GLES30.glGetUniformLocation(fishProgram, "uPosition")
         fishHeadingLocation = GLES30.glGetUniformLocation(fishProgram, "uHeading")
@@ -471,12 +462,6 @@ private class AquariumEngine {
         // Typing always wins over decoration. The fish retain their current physical state and
         // immediately use the existing C-start path toward the finger.
         weekdayIntroPhase = WeekdayIntroPhase.DONE
-        ripples[nextRipple].apply {
-            this.x = x
-            this.y = 1f - y
-            start = now
-        }
-        nextRipple = (nextRipple + 1) % ripples.size
         updateTouchTarget(x, y, now)
         attractionX = x * 2f - 1f
         attractionY = 1f - y * 2f
@@ -589,7 +574,7 @@ private class AquariumEngine {
         attractionX = x * 2f - 1f
         attractionY = 1f - y * 2f
         // This timeout is only a safety net for a lost ACTION_UP. While held, updateFish keeps
-        // attraction active and every move refreshes the target without creating extra ripples.
+        // attraction active and every move refreshes the target without adding visual feedback.
         attractionUntil = now + TOUCH_EVENT_TIMEOUT_SECONDS
     }
 
@@ -1395,23 +1380,6 @@ private class AquariumEngine {
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
         GLES30.glUseProgram(waterProgram)
         GLES30.glUniform1f(waterTimeLocation, time)
-        GLES30.glUniform2f(
-            waterResolutionLocation,
-            width.toFloat(),
-            height.toFloat()
-        )
-        ripples.forEachIndexed { index, ripple ->
-            rippleUniforms[index * 4] = ripple.x
-            rippleUniforms[index * 4 + 1] = ripple.y
-            rippleUniforms[index * 4 + 2] = ripple.start
-            rippleUniforms[index * 4 + 3] = 1f
-        }
-        GLES30.glUniform4fv(
-            waterRipplesLocation,
-            MAX_RIPPLES,
-            rippleUniforms,
-            0
-        )
         GLES30.glBindVertexArray(waterVao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
         GLES30.glBindVertexArray(0)
@@ -1690,7 +1658,6 @@ private class AquariumEngine {
         const val MAX_FISH = 10
         const val MEDIUM_FISH = 7
         const val MIN_FISH = 5
-        const val MAX_RIPPLES = 4
         const val ATTRACTION_SECONDS = 4.6f
         const val TOUCH_EVENT_TIMEOUT_SECONDS = 1.0f
         const val FEED_GOLDEN_ANGLE = 2.3999632f
@@ -1751,99 +1718,19 @@ private class AquariumEngine {
             in vec2 vUv;
             out vec4 fragColor;
             uniform float uTime;
-            uniform vec2 uResolution;
-            uniform vec4 uRipples[4];
 
             void main() {
                 vec2 uv = vUv;
-                float aspect = uResolution.x / max(uResolution.y, 1.0);
-                vec2 surfaceSlope = vec2(0.0);
-                float surfaceHeight = 0.0;
-                float crestLight = 0.0;
-                float troughShadow = 0.0;
-                float impactDimple = 0.0;
-                float impactCrown = 0.0;
-                for (int i = 0; i < 4; ++i) {
-                    float age = uTime - uRipples[i].z;
-                    vec2 delta = uv - uRipples[i].xy;
-                    delta.x *= aspect;
-                    // Pond current makes the wavefront subtly oval and drifting. Angular noise
-                    // breaks mathematical circles without turning the ripple into random fog.
-                    vec2 flowDrift = vec2(
-                        sin(uRipples[i].x * 17.0 + uRipples[i].y * 5.0),
-                        cos(uRipples[i].y * 13.0 - uRipples[i].x * 4.0)
-                    ) * max(age, 0.0) * 0.0045;
-                    delta -= flowDrift;
-                    float currentAngle = uRipples[i].x * 7.3 + uRipples[i].y * 11.1;
-                    vec2 currentAxis = vec2(cos(currentAngle), sin(currentAngle));
-                    vec2 currentNormal = vec2(-currentAxis.y, currentAxis.x);
-                    float alongCurrent = dot(delta, currentAxis);
-                    float acrossCurrent = dot(delta, currentNormal);
-                    vec2 currentSpace = vec2(alongCurrent * 0.965, acrossCurrent * 1.035);
-                    float baseDistance = max(length(currentSpace), 0.001);
-                    float angle = atan(currentSpace.y, currentSpace.x);
-                    float irregularity =
-                        sin(angle * 3.0 + currentAngle) * 0.022 +
-                        sin(angle * 5.0 - currentAngle * 0.7 + age * 0.55) * 0.012;
-                    float distanceFromTouch = baseDistance * (1.0 + irregularity);
-
-                    // A real fingertip first depresses the surface, then releases a dispersive
-                    // capillary wave train. Fast short waves lead; broader gravity waves trail.
-                    float waveFront = 0.014 + age * 0.245;
-                    float behindFront = waveFront - distanceFromTouch;
-                    float lifetime = step(0.0, age) *
-                                     (1.0 - smoothstep(1.55, 2.25, age));
-                    float temporalDecay = lifetime * exp(-age * 0.72);
-                    float leadingBand = exp(-pow((distanceFromTouch - waveFront) / 0.030, 2.0));
-                    float wakeGate = smoothstep(-0.012, 0.032, behindFront);
-                    float wakeEnvelope = wakeGate * exp(-max(behindFront, 0.0) * 3.1);
-                    float phaseFast = behindFront * 72.0;
-                    float phaseSlow = behindFront * 37.0 + 0.72;
-                    float wave = cos(phaseFast) * 0.68 + cos(phaseSlow) * 0.32;
-                    float envelope = (leadingBand * 0.82 + wakeEnvelope * 0.58) * temporalDecay;
-                    float height = wave * envelope * 0.042;
-
-                    vec2 radialInCurrent = currentSpace / baseDistance;
-                    vec2 radial = currentAxis * radialInCurrent.x * 0.95 +
-                                  currentNormal * radialInCurrent.y * 1.05;
-                    float contactLifetime = step(0.0, age) *
-                                            (1.0 - smoothstep(0.18, 0.34, age));
-                    float dimple = exp(-distanceFromTouch * distanceFromTouch * 430.0) *
-                                   contactLifetime;
-                    float crownRadius = 0.010 + age * 0.115;
-                    float crown = exp(-pow((distanceFromTouch - crownRadius) / 0.014, 2.0)) *
-                                  contactLifetime;
-
-                    surfaceHeight += height - dimple * 0.050;
-                    // The normal is what makes the wave read as displaced water instead of a
-                    // painted ring: one side catches light while the opposite side goes dark.
-                    float slopeFast = -sin(phaseFast) * 0.78;
-                    float slopeSlow = -sin(phaseSlow) * 0.22;
-                    surfaceSlope += radial * ((slopeFast + slopeSlow) * envelope -
-                                              dimple * 0.52 + crown * 0.24);
-                    crestLight += max(wave, 0.0) * envelope + crown * 0.70;
-                    troughShadow += max(-wave, 0.0) * envelope + dimple * 0.58;
-                    impactDimple += dimple;
-                    impactCrown += crown;
-                }
-
-                vec2 refractedUv = clamp(uv + surfaceSlope * vec2(0.0065, 0.0085), 0.0, 1.0);
-                float flowA = sin((refractedUv.x * 8.0 + refractedUv.y * 5.0) + uTime * 0.52);
-                float flowB = sin((refractedUv.x * -11.0 + refractedUv.y * 7.0) + uTime * 0.39);
+                vec2 flowUv = uv + vec2(
+                    sin(uv.y * 6.0 + uTime * 0.19),
+                    cos(uv.x * 5.0 - uTime * 0.17)
+                ) * 0.003;
+                float flowA = sin((flowUv.x * 8.0 + flowUv.y * 5.0) + uTime * 0.52);
+                float flowB = sin((flowUv.x * -11.0 + flowUv.y * 7.0) + uTime * 0.39);
                 float caustic = smoothstep(0.58, 0.98, 0.5 + 0.25 * flowA + 0.25 * flowB);
                 vec3 deep = vec3(0.012, 0.075, 0.14);
                 vec3 shallow = vec3(0.018, 0.22, 0.30);
-                vec3 color = mix(deep, shallow, refractedUv.y * 0.72 + caustic * 0.12);
-                vec3 waterNormal = normalize(vec3(-surfaceSlope.x * 1.18, -surfaceSlope.y * 1.18, 1.0));
-                vec3 lightDirection = normalize(vec3(-0.38, 0.46, 0.80));
-                float specular = pow(max(dot(waterNormal, lightDirection), 0.0), 22.0);
-                color += vec3(0.34, 0.78, 0.94) * min(crestLight, 1.35) * 0.155;
-                color += vec3(0.52, 0.88, 1.00) * specular *
-                         min(length(surfaceSlope), 1.0) * 0.22;
-                color -= vec3(0.025, 0.11, 0.17) * min(troughShadow, 1.35) * 0.16;
-                color -= vec3(0.03, 0.13, 0.20) * min(impactDimple, 1.0) * 0.40;
-                color += vec3(0.48, 0.88, 1.00) * min(impactCrown, 1.0) * 0.22;
-                color += vec3(0.08, 0.25, 0.30) * surfaceHeight;
+                vec3 color = mix(deep, shallow, flowUv.y * 0.72 + caustic * 0.12);
                 float vignette = 1.0 - smoothstep(0.20, 1.18, length((uv - 0.5) * vec2(1.0, 0.74)));
                 color *= 0.72 + vignette * 0.28;
                 fragColor = vec4(color, 1.0);

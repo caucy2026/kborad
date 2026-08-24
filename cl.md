@@ -1474,6 +1474,33 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.49 - 2026-08-24
+
+### 主题
+移除全局水族键盘的触摸涟漪和专用水滴声，降低连续输入时的 GPU 与音频开销。
+
+### 过程
+- 用户真机体验确认涟漪影响系统体验。源码检查发现每个水面像素每帧最多执行 4 路触点波列、接触凹陷、坡度法线和折射计算，同时主线程还需维护涟漪循环槽并向 GLES 上传 4 组 uniform。
+- 进入/恢复全局键盘还会启动后台线程预加载 4 个水滴样本，按下时通过 `SoundPool` 停止上一 stream 并轮转播放。即使它不阻塞按键，这些工作仍会与 IME 的 30Hz 水族渲染和快速输入共享 GPU/音频资源。
+- 本次按性能优先完整移除涟漪视觉和配套水滴声音，而不是只把波纹透明度调为零；保留鱼群触点跟随、C-start、投喂角色、松手散开、静态水面氛围、键帽触觉、语音和普通键盘功能。
+
+### 修改
+- `DesktopAquariumView.kt`：删除 `Ripple` 状态、4 个循环槽、`uResolution/uRipples` 位置、每帧 ripple 数组填充/上传和片元 Shader 波列、法线、折射、凹陷/波峰计算；水面仅保留单 `uTime` 的低成本渐变、慢速流光、弱焦散和暗角。
+- `DesktopKeyboard.kt`：按下仍把 DOWN/MOVE/UP 镜像给鱼群，但不再触发水滴播放；初始化和重新挂载时不再预加载水滴音频。
+- `InputFeedbacks.kt`：删除水族专用 `SoundPool`、异步预加载线程、样本轮转、stream 停止/播放和相关常量；普通键盘声音与触觉反馈逻辑不变。
+- 同步更新 `desktop-aquarium-engine.md`、`kemi-rd/gm/KBoard摸鱼水族键盘复刻设计.md` 和构建部署文档，明确当前复刻基线不得恢复触点 ripple/audio 路径。
+
+### 验证
+- 静态扫描确认 `DesktopKeyboard`、`InputFeedbacks` 和水族引擎中已无 `Ripple/uRipples/MAX_RIPPLES/prepareRippleSound/rippleSound` 执行引用；项目其他页面原有 Android `RippleDrawable` 不属于水面涟漪，未改动。
+- `./gradlew :app:compileReleaseKotlin` 成功；只执行 Release 变体，没有生成或安装 Debug APK。
+- 待正式签名 Release 覆盖安装到 63 后补充 Mali-G52 链接、30Hz、连续触摸无涟漪/无水滴声、鱼群跟手和崩溃日志验证结果。
+
+### 待办
+- 水面仍以固定 30Hz 绘制鱼群和低成本流光，因此本次是消除触点相关的额外片元/音频开销，不是关闭整个 GLES 水族层；若系统仍有压力，应先用真机 FPS/SurfaceFlinger 数据定位，不得直接牺牲按键输入链路。
+- 历史 4 个 WAV 和生成脚本暂留源码以便追溯，但运行代码不引用；Release 资源收缩后应核对它们没有进入最终 APK。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

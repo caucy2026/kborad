@@ -1,9 +1,9 @@
 # KBoard 摸鱼水族键盘可复刻设计规范
 
 > 文档状态：可交付 / 可复刻  
-> 对应源码版本：`d2d5fa9f`
+> 对应源码版本：2026-08-24 无涟漪性能基线
 > 目标设备基线：Android 12、arm64-v8a、Mali-G52、OpenGL ES 3.2、1920×1280  
-> 目标效果：全局键盘下方是一整块沉浸式池塘；每次从普通键盘切入时，10 条鱼依当天是周一到周日游成数字 1–7，短暂保持并游散后随机进入巡游、跟随和两鱼戏耍；金鱼依靠尾鳍和胸鳍真实游动；投喂时鱼群分为抢食、顺游、逆游和谨慎四种角色，松手轮换三种散场；空闲时会跟随、追逐、并游和交叉嬉戏；触点产生具有凹陷、波峰/波谷和轻微折射的真实非圆水波纹，并播放一次真实水滴声；持续渲染稳定在 30Hz。最终版本不含水草。
+> 目标效果：全局键盘下方是一整块沉浸式池塘；每次从普通键盘切入时，10 条鱼依当天是周一到周日游成数字 1–7，短暂保持并游散后随机进入巡游、跟随和两鱼戏耍；金鱼依靠尾鳍和胸鳍真实游动；投喂时鱼群分为抢食、顺游、逆游和谨慎四种角色，松手轮换三种散场；空闲时会跟随、追逐、并游和交叉嬉戏。触摸只驱动鱼群，不再生成涟漪或播放水滴声；持续渲染稳定在 30Hz。最终版本不含水草。
 
 ## 1. 怎样得到完全一致的效果
 
@@ -11,35 +11,29 @@
 
 | 文件 | 用途 | SHA-256（`d2d5fa9f`） |
 |---|---|---|
-| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/aquarium/DesktopAquariumView.kt` | EGL、30Hz 渲染线程、星期数字入场、真实水面/鱼体 Shader、个体速度、随机闪光、触摸角色、三种散场、按尺寸碰撞和水动力 | `5aa8c84d16ffbe56c065767ae17b5f1df7dbba0b78a64aedf50314117c899a59` |
-| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/DesktopKeyboard.kt` | 水族层和原生按键层组合、触摸观察、底部水域、组合键提示和桌面功能键 | `5666323c4d2262b332d1345d123fa74745d94f2030b6c411ee0ac99467dbc48c` |
+| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/aquarium/DesktopAquariumView.kt` | EGL、30Hz 渲染线程、星期数字入场、轻量静态水面/鱼体 Shader、个体速度、随机闪光、触摸角色、三种散场、按尺寸碰撞和水动力 | `b57c798849275dbeb470113f11dd269713aaf5829ace2d71bafc2b7e68d10844` |
+| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/DesktopKeyboard.kt` | 水族层和原生按键层组合、触摸观察、底部水域、组合键提示和桌面功能键 | `9b7a93caace4763ead17d8be07c9a8e6d944a7c8ce08d6a198fa0d00df612287` |
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyView.kt` | 半透明景深键帽、按压行程、无圆形 Ripple、稳定提示层 | `6e9a5bc1b48d04fe5539f702dfb381c5a45795fdadecf50dafc072ab4b10cd76` |
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyDefPreset.kt` | 全局修饰键的按住式定义 | `e6b8b09a074c47cab241dd6fef70a0f864e5268d438132786ab8c0c868a5751e` |
 | `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/keyboard/KeyDrawable.kt` | 键帽分层渐变、描边和透明度 | 以同一提交为准 |
-| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/data/InputFeedbacks.kt` | SoundPool 预加载、单次水滴播放和音量控制 | `eb3f55664b0ce829d131e946e82b4b59103b07c4141ae5260ad8c080a657d318` |
-| `fcitx5-android/scripts/prepare-aquarium-water-touch.py` | 从原始 CC0 录音生成四个低延迟切片 | `50ee17f1488cb0f16ac853d45c908c22e5f65eb49d2f0e9a85d08d243091f47c` |
-| `fcitx5-android/app/src/main/res/raw/aquarium_water_touch_1..4.wav` | 四个真实触水声音 | 见第 12 节 |
+| `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/data/InputFeedbacks.kt` | 普通按键声音与触觉反馈；不再包含水族水滴 SoundPool | `b2307566baff2e524b2be740f58a3cf3e9f05c70b49eaf9b7bd5031a356e3cff` |
 
 完全一致必须同时满足四点：
 
 1. CPU 的推进、转向和 GPU 的尾鳍/胸鳍动作共用同一套相位及力度，不能让模型位移与鱼鳍动画各自运行。
 2. 水族只观察触摸，原生按键仍独立命中和发送输入；渲染故障不能阻塞键盘。
 3. 渲染固定 30Hz、内部最大宽度 1080；Android 字符和键帽仍按设备原生分辨率绘制。
-4. `DOWN` 创建一个真实涟漪并播放一次声音；`MOVE` 只让鱼群目标跟手，不重复涟漪/声音；`UP/CANCEL` 启动差异化散场。
+4. `DOWN/MOVE` 只更新鱼群目标，不创建涟漪、不播放水滴声；`UP/CANCEL` 启动差异化散场。
 
 ## 2. 视觉和交互验收定义
 
 空闲时 10 条鱼应有不同颜色、花纹、深度、体型和速度性格，覆盖键盘全高，包括最下面的功能键水域。不能形成等距队列，也不能全部同步摆尾。空闲期间每隔随机时间只有一条鱼出现短暂的头部、背部和尾膜流动闪光，不能所有鱼同时发光或常亮。
 
-触摸瞬间必须同时出现：
-
-- 触点处约 0.16–0.30 秒的浅凹陷、偏心高光和不规则接触带；首帧不能为零。
-- 一次低音量真实触水声；释放时没有第二声。
-- 所有鱼开始转向触点，但背对目标的鱼先卷尾、张胸鳍制动和快速转身，不能沿旧方向继续滑远。
+触摸瞬间所有鱼开始转向触点，但背对目标的鱼先卷尾、张胸鳍制动和快速转身，不能沿旧方向继续滑远。水面不显示触点动画，也不播放水滴声，避免每次输入增加 GPU 片元计算、uniform 上传和音频解码/混音。
 
 持续按住或滑动时：
 
-- 鱼群目标随 `MOVE` 连续跟手，滑动不另外播放声音或新建涟漪。
+- 鱼群目标随 `MOVE` 连续跟手。
 - 鱼群有抢食近槽、顺时针环游、逆时针环游、先外后内四类投喂角色；同一角色也保留个体速度与碰撞半径。
 - 尾摆越快，单位时间完成的推进脉冲越多，位移才越大。
 - 鱼身主体保持稳定，不跟尾巴一起左右摇；尾根先弯，尾尖延迟。
@@ -53,13 +47,12 @@
 Android IME / UI 主线程
   ├─ 原生 KeyView：命中、按键事件、无障碍、按压下沉
   ├─ 触摸观察器：DOWN / MOVE / UP -> 有界无锁队列
-  ├─ SoundPool：DOWN 时轮转播放一个水滴样本
   └─ 语音键和底部操作条：镜像触摸但不改变原控件所有权
 
 kboard-aquarium-gl 独立线程
   ├─ EGL 3 context + TextureView Surface
   ├─ 固定 30Hz 更新鱼群动力学
-  ├─ Pass 1：全屏水面和最多 4 组涟漪
+  ├─ Pass 1：全屏渐变水面与低成本流光（无触点涟漪）
   ├─ Pass 2：5–10 条程序化金鱼
   └─ 每 5 秒统计 FPS 并调整鱼数
 ```
@@ -240,16 +233,15 @@ FORM/HOLD 期间取消群聚合、方向协调和底层路线约束，但保留�
 
 ### DOWN
 
-1. 在 4 个循环槽中写入新涟漪，Y 转成 `1-y`。
-2. 设置手指世界坐标，吸引持续 4.6 秒；`touchHeld=true`。
-3. 所有鱼清零本轮摆尾计数。
-4. 每条鱼的尾膜相位被放到下一帧将穿过中线的位置，小偏移按索引为 `0.050..0.086rad`；这只消除等待空闲相位的迟滞，位移仍必须由下一次可见冲程产生。
-5. 背对触点的鱼立即提高相应单侧胸鳍力度到 `0.72 + turnKick×0.28`，制动力最高到 `(1-forwardAlignment)×0.94`，尾鳍力度至少提高到约 0.88。
-6. 投喂场景在 3 组变体间轮换，随机选一条幸运鱼；播放一个水滴样本。
+1. 设置手指世界坐标，吸引持续 4.6 秒；`touchHeld=true`。
+2. 所有鱼清零本轮摆尾计数。
+3. 每条鱼的尾膜相位被放到下一帧将穿过中线的位置，小偏移按索引为 `0.050..0.086rad`；这只消除等待空闲相位的迟滞，位移仍必须由下一次可见冲程产生。
+4. 背对触点的鱼立即提高相应单侧胸鳍力度到 `0.72 + turnKick×0.28`，制动力最高到 `(1-forwardAlignment)×0.94`，尾鳍力度至少提高到约 0.88。
+5. 投喂场景在 3 组变体间轮换，随机选一条幸运鱼。触摸不创建水面动画，也不启动音频播放。
 
 ### MOVE
 
-更新吸引点及 1 秒丢失 UP 的安全超时，不新建涟漪、不播放声音。渲染线程每帧读取最新目标，因此鱼群连续跟手。
+更新吸引点及 1 秒丢失 UP 的安全超时。渲染线程每帧读取最新目标，因此鱼群连续跟手。
 
 ### 投喂槽位
 
@@ -438,23 +430,13 @@ mat2(cosH, sinH, -sinH, cosH) * local.xy
 
 要得到完全一致的形状和着色，请直接复用 `FISH_VERTEX_SHADER`、`FISH_FRAGMENT_SHADER`、`createFishGeometry()` 与 `FISH_PALETTES`，文档中的描述不替代可执行 Shader。
 
-## 13. 真实非圆水波纹 Shader
+## 13. 无触点涟漪的轻量水面 Shader
 
-水面是一个全屏四边形，最多 4 个 ripple uniform：`x,y,start,enabled`。
+水面仍是一个全屏四边形，但当前基线已删除 `Ripple` CPU 状态、4 个循环槽、`uResolution/uRipples` uniform、每帧数组填充和 `glUniform4fv` 上传。片元 Shader 不读取触点，也不计算波前、波高、法线折射、波峰或波谷。
 
-每个涟漪按以下顺序计算：
+基础水色保持 deep `(0.012,0.075,0.14)` 与 shallow `(0.018,0.22,0.30)`。只保留两组慢速正弦流动、弱焦散和暗角，用单个 `uTime` 提供低成本池塘氛围；触摸前后水面计算量一致，不会因连续输入叠加波纹。
 
-1. X 乘屏幕 aspect。
-2. 依据触点生成水流方向，波心随 age 以 `0.0045` 轻微漂移。
-3. 水流轴使用 `0.965/1.035` 非等比缩放，并叠加 3、5 阶小幅角度扰动，避免几何圆。
-4. `DOWN` 早期用 `exp(-r²×430)` 建立中心凹陷，并用半径 `0.010+age×0.115` 的窄 crown 表现水面回弹；不能只使用 `sin(age)`，否则 age=0 时看不到接触。
-5. 主波前为 `0.014+age×0.245`，前导带宽 `0.030`；后随波列使用 `72` 和 `37 rad·UV⁻¹` 两个相位，权重 0.68/0.32，模拟快毛细波领先、慢重力波拖尾。
-6. 波列寿命 1.55–2.25 秒，时间衰减 `exp(-age×0.72)`，空间拖尾衰减 `exp(-behind×3.1)`；不能把所有能量集中成一条亮圈。
-7. 由波高导出坡度法线，一侧产生波峰高光、另一侧产生波谷阴影；折射量为 `0.0065/0.0085`，既能透过半透明键帽看见，又不扭曲整块键盘。
-
-基础水色：deep `(0.012,0.075,0.14)`，shallow `(0.018,0.22,0.30)`；两组慢速正弦生成弱焦散，最后叠加法线高光、波峰、波谷和暗角。
-
-完全一致应直接复制 `WATER_VERTEX_SHADER` 和 `WATER_FRAGMENT_SHADER`。Mali-G52 的 GLSL 编译器会拒绝某些保留标识符；本项目曾因变量名 `patch` 在真机失败，因此所有新增命名必须在目标 GPU 上编译验证。
+完全一致应直接复制当前 `WATER_VERTEX_SHADER` 和 `WATER_FRAGMENT_SHADER`，不要从历史版本恢复 ripple uniform 或触点波列。Mali-G52 的 GLSL 编译器会拒绝某些保留标识符；所有新增命名仍必须在目标 GPU 上编译验证。
 
 ## 14. 半透明键帽和输入隔离
 
@@ -468,7 +450,7 @@ mat2(cosH, sinH, -sinH, cosH) * local.xy
 - 键间距横/纵 2dp，圆角 8dp，按下 Y/Z 行程 3dp。
 - 字色 `0xFFF4F8FC`。
 
-水族按键禁用 Android `RippleDrawable`，因为规则圆形反馈会与水面 Shader 冲突。按键本身仍是原生 View；`dispatchTouchEvent()` 先把事件镜像给水族，再调用 `super.dispatchTouchEvent()`，不能消费或改写事件。
+水族按键禁用 Android `RippleDrawable`，避免额外的按键波纹动画。按键本身仍是原生 View；`dispatchTouchEvent()` 先把事件镜像给鱼群，再调用 `super.dispatchTouchEvent()`，不能消费或改写事件。
 
 底部操作条和语音键不在键盘 View 内时，要用不消费事件的 listener 镜像触摸。水族 Surface 铺到最底边，但六行按键通过真实 44dp bottom inset 避开操作条，不能只设置 padding。
 
@@ -503,18 +485,9 @@ mat2(cosH, sinH, -sinH, cosH) * local.xy
 
 禁止在按压时创建/删除 View、切换 `visibility`、更改 LayoutParams 或调用普通 `setText()`。提示层只由 `DesktopKeyboard` 使用，所以普通键盘、数字键盘、候选栏和语音流程不会变化。
 
-## 15. 真实水滴声音
+## 15. 音频策略
 
-声音来自 BigSoundBank `Drops of water #1` 的 CC0 现场录音，来源：<https://bigsoundbank.com/drops-of-water-1-s1384.html>。四个切片由 `prepare-aquarium-water-touch.py` 可重复生成。
-
-| 样本 | SHA-256 | 播放速率 |
-|---|---|---|
-| `aquarium_water_touch_1.wav` | `c96bbd42ddf89db25465b9715c803a48d96f9b5752733ef2b27c116a39cf8302` | 0.98 |
-| `aquarium_water_touch_2.wav` | `0d751efa5045b986e634def7077ca37b071144abf49e828392d815b00b2707b2` | 1.01 |
-| `aquarium_water_touch_3.wav` | `34d1b8064ebea6ef1f0efa77e96370aa9be6e795554342615c577396b25e71f7` | 0.96 |
-| `aquarium_water_touch_4.wav` | `abff27174a10d1741aab472feac6c5642a279e7610bed19f969847fc7bd04ef3` | 1.03 |
-
-用 `SoundPool(maxStreams=2)` 在进入全局模式前异步预加载，usage/content type 均为 sonification。默认音量系数 0.30；每次 `DOWN` 停掉上一条未结束的尾音，再轮转播放下一样本。`MOVE` 和 `UP` 不播放，避免一次按键有按下/释放双音效。
+当前水族触摸不播放水滴声，也不创建或预加载专用 `SoundPool`。进入全局键盘和恢复水族视图时没有音频解码线程；连续输入不会停止、切换或混合水滴 stream。普通键盘已有的系统声音/触觉设置保持原样，水族层不覆盖它们。
 
 ## 16. 与语音、语言切换和页面布局共存
 
@@ -530,10 +503,10 @@ mat2(cosH, sinH, -sinH, cosH) * local.xy
 2. 复制 EGL 生命周期、1080 内部缓冲和 30Hz 独立线程。
 3. 复制鱼状态、固定 seed、初始化参数、路线和三种社交状态。
 4. 完整复制 `updateFish()` 的“意图—肌肉—脉冲—水阻—积分”顺序，不能调换。
-5. 复制鱼身、6×5 连续尾幕、胸鳍网格及四个 Shader。
+5. 复制鱼身、6×5 连续尾幕、胸鳍网格及水面/鱼体 Shader。
 6. 把主按键区、语音键、底部条的触摸以观察方式统一送入 DOWN/MOVE/UP 队列。
 7. 复制半透明键帽参数，关闭原生圆形 Ripple。
-8. 复制四个 WAV、SoundPool 预加载和单次播放策略。
+8. 确认触摸路径不创建 ripple 状态、不上传触点 uniform、不加载专用水滴音频。
 9. 增加 5 秒 FPS 日志和 10/7/5 鱼降级。
 10. 用第 18 节矩阵验收；只有构建通过不能算完成。
 
@@ -544,7 +517,7 @@ mat2(cosH, sinH, -sinH, cosH) * local.xy
 - 按键输入、长按、连删、修饰键、空格、回车、语音不被水族拦截。
 - 设备本地周一到周日入场分别形成可辨识的 1–7；数字由鱼游成、短暂保持、再慢速游走，没有坐标跳变。
 - FORM/HOLD/DEPART 任意阶段按键都必须立即中断队形并正常输入；重新进入全局键盘时才再触发当天数字。
-- DOWN 有一次真实涟漪和一次声音，MOVE 让鱼群目标跟手且无新声音/涟漪，UP 无第二声。
+- DOWN/MOVE 让鱼群目标跟手，水面无触点涟漪且无水滴声，UP 正常散开。
 - 手指滑到语音键和底部空白水域，鱼也持续跟随。
 - 连续三次按住可辨识抢食、顺/逆环游、谨慎靠近的角色差异；靠近时每次只有一条随机幸运鱼获得触摸闪光。
 - 连续三次松手依次可观察放射、双群分流和螺旋三种散场；所有鱼保留惯性，不瞬移、不直接转向。
@@ -595,8 +568,7 @@ mat2(cosH, sinH, -sinH, cosH) * local.xy
 | 两鱼一直机械绕圈 | PLAY 只有一个轨迹方程 | 每 3.8 秒轮换绕游、追尾和并排交叉 |
 | 点击后鱼先滑远 | 尾推力仍沿旧朝向释放 | 胸鳍制动重定向推力，对准后再解锁冲刺 |
 | 所有鱼叠在手指下 | 所有目标完全相同或边缘 clamp | 黄金角分槽，靠边时反射 offset |
-| 涟漪第一帧没有 | 使用 `sin(age)`，age=0 为零 | 增加短寿命接触凹陷和偏心高光 |
-| 涟漪像规则圆圈 | 只使用径向距离 | 水流轴非等比、漂移和多阶角度扰动 |
+| 连续输入时 GPU/音频负载升高 | 恢复了历史 ripple uniform、片元波列或水滴 SoundPool | 删除触点水面状态、uniform 上传和水滴音频执行路径，只保留鱼群触点目标 |
 | 旋转后鱼变小 | 只改 viewport | 同时重配 SurfaceTexture buffer |
 | 键盘切换状态时跳动 | 动态 TextView/visibility 请求布局 | 固定测量，只改 alpha 或自绘内容 |
 | 声音变嘈杂 | 按下和释放都播、快速输入叠音 | 仅 DOWN，先停上一 stream，再播一个样本 |
@@ -624,6 +596,8 @@ V1.42 触摸生命期与差异化互动源码为 `79a3f763`：多簇长寿命水
 
 V1.43 星期数字入场源码为 `5dc9bafa`：按设备本地周一到周日生成七段数字 1–7，把 10 条鱼近邻匹配到独立槽位，通过 FORM/HOLD/DEPART 物理游动形成、保持和解散。任意触摸立即取消入场，不影响键盘命中与投喂交互。`compileReleaseKotlin` 和完整 `assembleRelease` 均成功；无签名验证包为 `org.fcitx.fcitx5.android-5dc9bafa-arm64-v8a-release-unsigned.apk`，SHA-256 为 `1219e71a92c1678ecaa068ba444ad0ce155ac007dc1ff03bda2aa1f31ac10377`，不得安装或作为正式交付。
 
-V1.45 最终源码为 `d2d5fa9f`：`a167e34d` 完整删除水草渲染与碰撞，避免 Mali Shader 链接失败拖停整个水族；`d2d5fa9f` 重做真实双频水波纹，并在星期数字游散后随机保证 ROUTE/FOLLOW/PLAY 三类活动同时存在。复刻最终效果必须以本节正式基线与文件 SHA-256 为准，V1.40/V1.42 水草内容只作为历史实验，不得重新接入。
+V1.45 源码 `d2d5fa9f` 曾重做双频水波纹；2026-08-24 性能基线已将其完整移出运行路径。它只作为历史实验，不得在当前复刻中重新接入。
 
 V1.46 正式包为 `529adb53`：水族引擎仍对应 `d2d5fa9f`，新增的只是全局深色表面候选高对比覆盖。首个活动组合态保持蓝色，其他候选及上屏后的联想使用白色，退出全局键盘后恢复普通主题。复刻时必须把该覆盖绑定到全局模式生命周期，不能直接改全局主题预设或候选引擎。
+
+V1.49 当前无涟漪基线：触摸仍驱动鱼群 C-start、跟手、投喂角色和散开，但删除 `Ripple`/循环槽、`uRipples`、每帧 uniform 上传、片元波列/折射计算，以及水滴 `SoundPool` 预加载和播放。保留单 `uTime` 的低成本水面流光、按键触觉、语音和普通键盘功能。其他项目应以本文顶部列出的当前文件哈希复刻。

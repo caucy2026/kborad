@@ -67,7 +67,6 @@ class DesktopKeyboard private constructor(
             it.physicalReleaseSoundEnabled = false
         }
         configureHeldModifierKeys()
-        InputFeedbacks.prepareRippleSoundAsync()
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -96,7 +95,6 @@ class DesktopKeyboard private constructor(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 aquariumView.touchDownAt(normalizedX, normalizedY)
-                InputFeedbacks.rippleSound()
             }
             MotionEvent.ACTION_MOVE -> aquariumView.moveTouchTo(normalizedX, normalizedY)
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> aquariumView.releaseTouch()
@@ -362,7 +360,6 @@ class DesktopKeyboard private constructor(
         updateLetterKeys()
         updateSpaceLanguageLabel()
         aquariumView.activate()
-        InputFeedbacks.prepareRippleSoundAsync()
     }
 
     override fun onDetach() {
