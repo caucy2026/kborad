@@ -21,6 +21,16 @@ class Android12ImeFrameworkCompatTest {
         )
     }
 
+    private fun missingSettingsObserverFailure(
+        message: String = "Attempt to invoke direct method 'boolean android.inputmethodservice.InputMethodService\$SettingsObserver.shouldShowImeWithHardKeyboard()' on a null object reference",
+        className: String = "android.inputmethodservice.InputMethodService",
+        methodName: String = "onShowInputRequested"
+    ) = NullPointerException(message).apply {
+        stackTrace = arrayOf(
+            StackTraceElement(className, methodName, "InputMethodService.java", 2193)
+        )
+    }
+
     @Test
     fun ignoresExactAndroid12FrameworkRace() {
         assertTrue(
@@ -47,6 +57,42 @@ class Android12ImeFrameworkCompatTest {
             Android12ImeFrameworkCompat.canIgnoreBindBeforeInitialize(
                 31,
                 frameworkFailure(className = "org.fcitx.SomeClass")
+            )
+        )
+    }
+
+    @Test
+    fun rejectsExactAndroid12ShowAfterDestroyRace() {
+        assertTrue(
+            Android12ImeFrameworkCompat.canRejectShowAfterDestroy(
+                31,
+                missingSettingsObserverFailure()
+            )
+        )
+    }
+
+    @Test
+    fun doesNotRejectShowRaceOnOtherAndroidVersions() {
+        assertFalse(
+            Android12ImeFrameworkCompat.canRejectShowAfterDestroy(
+                32,
+                missingSettingsObserverFailure()
+            )
+        )
+    }
+
+    @Test
+    fun doesNotRejectUnrelatedNullPointerExceptions() {
+        assertFalse(
+            Android12ImeFrameworkCompat.canRejectShowAfterDestroy(
+                31,
+                missingSettingsObserverFailure(message = "different failure")
+            )
+        )
+        assertFalse(
+            Android12ImeFrameworkCompat.canRejectShowAfterDestroy(
+                31,
+                missingSettingsObserverFailure(className = "org.fcitx.SomeClass")
             )
         )
     }

@@ -249,6 +249,23 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             super.onCreateInputMethodInterface()
         }
 
+    override fun onShowInputRequested(flags: Int, configChange: Boolean): Boolean =
+        try {
+            super.onShowInputRequested(flags, configChange)
+        } catch (error: NullPointerException) {
+            if (!Android12ImeFrameworkCompat.canRejectShowAfterDestroy(
+                    Build.VERSION.SDK_INT,
+                    error
+                )
+            ) {
+                throw error
+            }
+            // The framework is tearing down this service instance. Returning false drops only
+            // the stale request; the remote keyboard proxy retries against the next instance.
+            Timber.w(error, "Rejected Android 12 showSoftInput-after-destroy framework race")
+            false
+        }
+
     override fun onCreate() {
         // Initialize InputMethodService and its window before connecting the native daemon.
         // This minimizes the interval in which a vendor IME callback can observe partial state.

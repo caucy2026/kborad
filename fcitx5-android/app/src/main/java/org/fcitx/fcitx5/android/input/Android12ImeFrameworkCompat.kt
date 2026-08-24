@@ -12,6 +12,10 @@ internal object Android12ImeFrameworkCompat {
         "onBindInput can be called only after onInitialize()."
     private const val ConfigurationTrackerClass =
         "android.inputmethodservice.ImsConfigurationTracker"
+    private const val InputMethodServiceClass =
+        "android.inputmethodservice.InputMethodService"
+    private const val MissingSettingsObserverMessage =
+        "android.inputmethodservice.InputMethodService\$SettingsObserver.shouldShowImeWithHardKeyboard()"
 
     /**
      * Android 12's ImsConfigurationTracker crashes when a vendor InputMethodManager sends
@@ -23,5 +27,17 @@ internal object Android12ImeFrameworkCompat {
             error.message == BindBeforeInitializeMessage &&
             error.stackTrace.any {
                 it.className == ConfigurationTrackerClass && it.methodName == "onBindInput"
+            }
+
+    /**
+     * Android 12 can dispatch a queued show request after InputMethodService.onDestroy() has
+     * already cleared its private SettingsObserver. Reject only that stale framework callback;
+     * a subsequent request will be delivered to the newly initialized service instance.
+     */
+    fun canRejectShowAfterDestroy(sdkInt: Int, error: NullPointerException): Boolean =
+        sdkInt == Android12ApiLevel &&
+            error.message?.contains(MissingSettingsObserverMessage) == true &&
+            error.stackTrace.any {
+                it.className == InputMethodServiceClass && it.methodName == "onShowInputRequested"
             }
 }
