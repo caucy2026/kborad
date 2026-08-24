@@ -347,13 +347,6 @@ private class AquariumEngine {
 
     private data class Ripple(var x: Float = 0f, var y: Float = 0f, var start: Float = -100f)
 
-    private data class PlantPatch(
-        var x: Float = 0f,
-        var y: Float = 0f,
-        var start: Float = -100f,
-        var seed: Float = 0f
-    )
-
     private data class DigitStroke(
         val startX: Float,
         val startY: Float,
@@ -364,7 +357,6 @@ private class AquariumEngine {
     private val random = Random(0x4B4F49)
     private val fish = MutableList(MAX_FISH) { index -> createFish(index) }
     private val ripples = Array(MAX_RIPPLES) { Ripple() }
-    private val touchPlant = PlantPatch()
     private var nextRipple = 0
     private var attractionX = 0f
     private var attractionY = 0f
@@ -390,26 +382,15 @@ private class AquariumEngine {
     private var weekdayIntroPhaseStartedAt = 0f
 
     private var waterProgram = 0
-    private var plantProgram = 0
     private var fishProgram = 0
     private var waterVao = 0
     private var waterVbo = 0
-    private var plantVao = 0
-    private var plantVbo = 0
     private var fishVao = 0
     private var fishVbo = 0
     private var fishVertexCount = 0
-    private var plantVertexCount = 0
     private var waterTimeLocation = -1
     private var waterResolutionLocation = -1
     private var waterRipplesLocation = -1
-    private var plantAspectLocation = -1
-    private var plantPositionLocation = -1
-    private var plantScaleLocation = -1
-    private var plantTimeLocation = -1
-    private var plantAgeLocation = -1
-    private var plantSeedLocation = -1
-    private var plantAlphaLocation = -1
     private var fishAspectLocation = -1
     private var fishPositionLocation = -1
     private var fishHeadingLocation = -1
@@ -446,18 +427,10 @@ private class AquariumEngine {
         reportStartNanos = startNanos
         assignWeekdayDigitTargets()
         waterProgram = createProgram(WATER_VERTEX_SHADER, WATER_FRAGMENT_SHADER)
-        plantProgram = createProgram(PLANT_VERTEX_SHADER, PLANT_FRAGMENT_SHADER)
         fishProgram = createProgram(FISH_VERTEX_SHADER, FISH_FRAGMENT_SHADER)
         waterTimeLocation = GLES30.glGetUniformLocation(waterProgram, "uTime")
         waterResolutionLocation = GLES30.glGetUniformLocation(waterProgram, "uResolution")
         waterRipplesLocation = GLES30.glGetUniformLocation(waterProgram, "uRipples[0]")
-        plantAspectLocation = GLES30.glGetUniformLocation(plantProgram, "uAspect")
-        plantPositionLocation = GLES30.glGetUniformLocation(plantProgram, "uPosition")
-        plantScaleLocation = GLES30.glGetUniformLocation(plantProgram, "uScale")
-        plantTimeLocation = GLES30.glGetUniformLocation(plantProgram, "uTime")
-        plantAgeLocation = GLES30.glGetUniformLocation(plantProgram, "uAge")
-        plantSeedLocation = GLES30.glGetUniformLocation(plantProgram, "uSeed")
-        plantAlphaLocation = GLES30.glGetUniformLocation(plantProgram, "uAlpha")
         fishAspectLocation = GLES30.glGetUniformLocation(fishProgram, "uAspect")
         fishPositionLocation = GLES30.glGetUniformLocation(fishProgram, "uPosition")
         fishHeadingLocation = GLES30.glGetUniformLocation(fishProgram, "uHeading")
@@ -480,7 +453,6 @@ private class AquariumEngine {
         fishTimeLocation = GLES30.glGetUniformLocation(fishProgram, "uTime")
         fishSparkleLocation = GLES30.glGetUniformLocation(fishProgram, "uSparkle")
         createWaterGeometry()
-        createPlantGeometry()
         createFishGeometry()
         GLES30.glDisable(GLES30.GL_CULL_FACE)
         GLES30.glEnable(GLES30.GL_BLEND)
@@ -508,14 +480,6 @@ private class AquariumEngine {
         updateTouchTarget(x, y, now)
         attractionX = x * 2f - 1f
         attractionY = 1f - y * 2f
-        touchPlant.apply {
-            this.x = attractionX.coerceIn(-0.88f, 0.88f)
-            // The mesh grows upward from its root. Keep the whole clump inside the pond even
-            // when a bottom-row or top-row key was touched.
-            this.y = attractionY.coerceIn(-0.93f, 0.70f)
-            start = now
-            seed = random.nextFloat() * 19f
-        }
         interactionVariant = (interactionVariant + 1) % FEED_VARIANT_COUNT
         touchSparkleFishIndex = if (activeFishCount > 0) random.nextInt(activeFishCount) else -1
         // Touch-time prize sparkle replaces, rather than stacks with, the idle random sparkle.
@@ -563,7 +527,7 @@ private class AquariumEngine {
         }
         Log.i(
             TAG,
-            "touchPlant variant=$interactionVariant luckyFish=$touchSparkleFishIndex " +
+            "touchFeed variant=$interactionVariant luckyFish=$touchSparkleFishIndex " +
                     "position=${"%.2f".format(attractionX)},${"%.2f".format(attractionY)}"
         )
     }
@@ -580,11 +544,8 @@ private class AquariumEngine {
         touchHeld = false
         attractionUntil = now
         scatterUntil = now + SCATTER_SECONDS
-        // The touch plant belongs to the finger rather than the pond. Removing its start marker
-        // makes the next frame skip both rendering and collision, so ACTION_UP never leaves old
-        // grass behind. Fish keep their momentum and physically swim into one of three rotating
-        // release scenes instead of being teleported when the visual cue disappears.
-        touchPlant.start = -100f
+        // Fish keep their momentum and physically swim into one of three rotating release
+        // scenes instead of being teleported when the finger leaves the water.
         touchSparkleFishIndex = -1
         nextSparkleAt = now + SPARKLE_PAUSE_MIN_SECONDS
         for (index in 0 until activeFishCount) {
@@ -627,10 +588,6 @@ private class AquariumEngine {
     private fun updateTouchTarget(x: Float, y: Float, now: Float) {
         attractionX = x * 2f - 1f
         attractionY = 1f - y * 2f
-        if (touchHeld) {
-            touchPlant.x = attractionX.coerceIn(-0.88f, 0.88f)
-            touchPlant.y = attractionY.coerceIn(-0.93f, 0.70f)
-        }
         // This timeout is only a safety net for a lost ACTION_UP. While held, updateFish keeps
         // attraction active and every move refreshes the target without creating extra ripples.
         attractionUntil = now + TOUCH_EVENT_TIMEOUT_SECONDS
@@ -643,20 +600,16 @@ private class AquariumEngine {
         updateFish(time, dt)
         updateSparkle(time)
         drawWater(time)
-        drawPlants(time)
         drawFish(time)
         reportPerformance(frameNanos)
     }
 
     fun destroy() {
         if (waterVbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(waterVbo), 0)
-        if (plantVbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(plantVbo), 0)
         if (fishVbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(fishVbo), 0)
         if (waterVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(waterVao), 0)
-        if (plantVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(plantVao), 0)
         if (fishVao != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(fishVao), 0)
         if (waterProgram != 0) GLES30.glDeleteProgram(waterProgram)
-        if (plantProgram != 0) GLES30.glDeleteProgram(plantProgram)
         if (fishProgram != 0) GLES30.glDeleteProgram(fishProgram)
     }
 
@@ -943,25 +896,6 @@ private class AquariumEngine {
                         cohesionX += other.x
                         cohesionY += other.y
                         schoolNeighbours++
-                    }
-                }
-            }
-            // While the finger is down, grass bends rather than acting as a hard wall, but fish
-            // still avoid pushing their torso through its root. ACTION_UP invalidates touchPlant,
-            // so neither rendering nor this collision survives the finger.
-            if (touchHeld && time >= touchPlant.start) {
-                val awayX = f.x - touchPlant.x
-                val awayY = f.y - (touchPlant.y + 0.045f)
-                val distance2 = awayX * awayX + awayY * awayY
-                val plantClearance = selfCollisionRadius + PLANT_CORE_RADIUS
-                if (distance2 > 0.0001f && distance2 < plantClearance * plantClearance) {
-                    val distanceToPlant = sqrt(distance2)
-                    val weight = (plantClearance - distanceToPlant) / plantClearance
-                    separationX += awayX / distanceToPlant * weight * 0.78f
-                    separationY += awayY / distanceToPlant * weight * 0.78f
-                    val aheadDot = (-awayX * forwardX - awayY * forwardY) / distanceToPlant
-                    if (aheadDot > 0.42f) {
-                        crowdingBrake = max(crowdingBrake, weight * aheadDot * 0.72f)
                     }
                 }
             }
@@ -1459,30 +1393,6 @@ private class AquariumEngine {
         GLES30.glBindVertexArray(0)
     }
 
-    private fun drawPlants(time: Float) {
-        if (!touchHeld || touchPlant.start < 0f) return
-        GLES30.glUseProgram(plantProgram)
-        GLES30.glUniform1f(plantTimeLocation, time)
-        GLES30.glUniform1f(
-            plantAspectLocation,
-            width.toFloat() / height.coerceAtLeast(1)
-        )
-        GLES30.glBindVertexArray(plantVao)
-        val age = (time - touchPlant.start).coerceAtLeast(0f)
-        // A visible seedling exists on the first rendered frame, then completes its soft growth.
-        // ACTION_UP bypasses this method entirely, so disappearance is synchronous with release.
-        val growth = 0.30f + smoothStep01(age / PLANT_GROW_SECONDS) * 0.70f
-        val scale = PLANT_BASE_SCALE *
-                (0.86f + (touchPlant.seed % 1f) * 0.24f)
-        GLES30.glUniform2f(plantPositionLocation, touchPlant.x, touchPlant.y)
-        GLES30.glUniform1f(plantScaleLocation, scale * growth)
-        GLES30.glUniform1f(plantAgeLocation, age)
-        GLES30.glUniform1f(plantSeedLocation, touchPlant.seed)
-        GLES30.glUniform1f(plantAlphaLocation, growth)
-        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, plantVertexCount)
-        GLES30.glBindVertexArray(0)
-    }
-
     private fun drawFish(time: Float) {
         GLES30.glUseProgram(fishProgram)
         GLES30.glUniform1f(fishTimeLocation, time)
@@ -1588,81 +1498,6 @@ private class AquariumEngine {
         GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, vertices.size * 4, buffer, GLES30.GL_STATIC_DRAW)
         GLES30.glEnableVertexAttribArray(0)
         GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 2 * 4, 0)
-        GLES30.glBindVertexArray(0)
-    }
-
-    private fun createPlantGeometry() {
-        val vertices = mutableListOf<Float>()
-        fun vertex(x: Float, y: Float, id: Float, kind: Float, edge: Float) {
-            vertices += x
-            vertices += y
-            vertices += id
-            vertices += kind
-            vertices += edge
-        }
-        fun bladeVertex(x: Float, y: Float, id: Int, edge: Float) {
-            vertex(x, y, id.toFloat(), 0f, edge)
-        }
-        val bladeCount = 7
-        val segments = 5
-        for (blade in 0 until bladeCount) {
-            val baseX = (blade - (bladeCount - 1) * 0.5f) * 0.105f +
-                    sin(blade * 2.17f) * 0.025f
-            val bladeHeight = 0.74f + (blade % 4) * 0.115f
-            val bladeWidth = 0.048f + (blade % 3) * 0.008f
-            for (segment in 0 until segments) {
-                val p0 = segment.toFloat() / segments
-                val p1 = (segment + 1).toFloat() / segments
-                val y0 = bladeHeight * p0
-                val y1 = bladeHeight * p1
-                val staticCurve0 = sin(p0 * PI.toFloat() * 0.86f + blade * 0.71f) *
-                        p0 * 0.055f
-                val staticCurve1 = sin(p1 * PI.toFloat() * 0.86f + blade * 0.71f) *
-                        p1 * 0.055f
-                val halfWidth0 = bladeWidth * (1f - p0 * 0.72f)
-                val halfWidth1 = bladeWidth * (1f - p1 * 0.72f)
-                val x0Left = baseX + staticCurve0 - halfWidth0
-                val x0Right = baseX + staticCurve0 + halfWidth0
-                val x1Left = baseX + staticCurve1 - halfWidth1
-                val x1Right = baseX + staticCurve1 + halfWidth1
-                bladeVertex(x0Left, y0, blade, -1f)
-                bladeVertex(x0Right, y0, blade, 1f)
-                bladeVertex(x1Left, y1, blade, -1f)
-                bladeVertex(x1Left, y1, blade, -1f)
-                bladeVertex(x0Right, y0, blade, 1f)
-                bladeVertex(x1Right, y1, blade, 1f)
-            }
-        }
-        // Three tiny quads become slowly rising bubbles in the vertex shader. They share the
-        // plant draw call and add no CPU particles or per-frame allocation.
-        for (bubble in 0 until 3) {
-            val size = 0.020f + bubble * 0.004f
-            vertex(-size, -size, bubble.toFloat(), 1f, -1f)
-            vertex(size, -size, bubble.toFloat(), 1f, 1f)
-            vertex(-size, size, bubble.toFloat(), 1f, -1f)
-            vertex(-size, size, bubble.toFloat(), 1f, -1f)
-            vertex(size, -size, bubble.toFloat(), 1f, 1f)
-            vertex(size, size, bubble.toFloat(), 1f, 1f)
-        }
-        plantVertexCount = vertices.size / 5
-        val data = vertices.toFloatArray()
-        val ids = IntArray(1)
-        GLES30.glGenVertexArrays(1, ids, 0)
-        plantVao = ids[0]
-        GLES30.glGenBuffers(1, ids, 0)
-        plantVbo = ids[0]
-        GLES30.glBindVertexArray(plantVao)
-        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, plantVbo)
-        GLES30.glBufferData(
-            GLES30.GL_ARRAY_BUFFER,
-            data.size * 4,
-            floatBuffer(data),
-            GLES30.GL_STATIC_DRAW
-        )
-        GLES30.glEnableVertexAttribArray(0)
-        GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 5 * 4, 0)
-        GLES30.glEnableVertexAttribArray(1)
-        GLES30.glVertexAttribPointer(1, 3, GLES30.GL_FLOAT, false, 5 * 4, 2 * 4)
         GLES30.glBindVertexArray(0)
     }
 
@@ -1845,9 +1680,6 @@ private class AquariumEngine {
         const val INTRO_SETTLED_DISTANCE = 0.145f
         const val INTRO_HOLD_SECONDS = 1.45f
         const val INTRO_DEPART_SECONDS = 3.20f
-        const val PLANT_GROW_SECONDS = 0.24f
-        const val PLANT_BASE_SCALE = 0.135f
-        const val PLANT_CORE_RADIUS = 0.055f
         const val SPARKLE_DURATION_MIN_SECONDS = 1.15f
         const val SPARKLE_DURATION_RANGE_SECONDS = 0.95f
         const val SPARKLE_PAUSE_MIN_SECONDS = 1.40f
@@ -2017,89 +1849,6 @@ private class AquariumEngine {
                 float vignette = 1.0 - smoothstep(0.20, 1.18, length((uv - 0.5) * vec2(1.0, 0.74)));
                 color *= 0.72 + vignette * 0.28;
                 fragColor = vec4(color, 1.0);
-            }
-        """
-
-        const val PLANT_VERTEX_SHADER = """#version 300 es
-            layout(location = 0) in vec2 aPosition;
-            layout(location = 1) in vec3 aMeta;
-            uniform vec2 uPosition;
-            uniform float uScale;
-            uniform float uAspect;
-            uniform float uTime;
-            uniform float uAge;
-            // uSeed is consumed in both stages. Mali-G52 requires the shared uniform precision
-            // to match explicitly; vertex highp default + fragment mediump default fails linking.
-            uniform mediump float uSeed;
-            out float vProgress;
-            out float vEdge;
-            out float vKind;
-            out vec2 vBubbleLocal;
-            void main() {
-                float item = aMeta.x;
-                float kind = aMeta.y;
-                vec2 local = aPosition;
-                vKind = kind;
-                vEdge = aMeta.z;
-                vBubbleLocal = vec2(0.0);
-                if (kind < 0.5) {
-                    float progress = clamp(local.y / 1.20, 0.0, 1.0);
-                    float waterCurrent = sin(uTime * (0.72 + fract(item * 0.37) * 0.22) +
-                                             uSeed + item * 1.31);
-                    float trailingFlex = sin(local.y * 3.10 - uTime * 0.46 +
-                                             uSeed * 0.61 + item) * 0.032;
-                    local.x += waterCurrent * pow(progress, 1.55) *
-                               (0.075 + fract(item * 0.63) * 0.035) +
-                               trailingFlex * progress;
-                    vProgress = progress;
-                } else {
-                    float bubbleSize = 0.020 + item * 0.004;
-                    float rise = fract(uAge * (0.105 + item * 0.018) +
-                                       fract(uSeed * 0.19 + item * 0.31));
-                    vec2 centre = vec2(
-                        -0.25 + item * 0.25 + sin(uTime * 0.74 + uSeed + item) * 0.045,
-                        0.16 + rise * 1.06
-                    );
-                    local = centre + aPosition;
-                    vProgress = rise;
-                    vBubbleLocal = aPosition / bubbleSize;
-                }
-                vec2 world = uPosition + vec2(local.x, local.y * uAspect) * uScale;
-                gl_Position = vec4(world, 0.0, 1.0);
-            }
-        """
-
-        const val PLANT_FRAGMENT_SHADER = """#version 300 es
-            precision mediump float;
-            in float vProgress;
-            in float vEdge;
-            in float vKind;
-            in vec2 vBubbleLocal;
-            uniform mediump float uSeed;
-            uniform float uAlpha;
-            out vec4 fragColor;
-            void main() {
-                if (vKind > 0.5) {
-                    float radius = length(vBubbleLocal);
-                    float disc = 1.0 - smoothstep(0.72, 1.0, radius);
-                    float rim = smoothstep(0.42, 0.78, radius) *
-                                (1.0 - smoothstep(0.80, 1.0, radius));
-                    float life = smoothstep(0.0, 0.12, vProgress) *
-                                 (1.0 - smoothstep(0.82, 1.0, vProgress));
-                    vec3 bubble = mix(vec3(0.24, 0.66, 0.72),
-                                      vec3(0.72, 0.94, 0.96), rim);
-                    fragColor = vec4(bubble, (disc * 0.10 + rim * 0.54) * life * uAlpha);
-                    return;
-                }
-                float edgeLight = 1.0 - abs(vEdge);
-                float vein = 0.5 + 0.5 * sin(vProgress * 34.0 + uSeed * 1.7);
-                vec3 root = vec3(0.018, 0.20, 0.16);
-                vec3 tip = vec3(0.18, 0.62, 0.38);
-                vec3 color = mix(root, tip, vProgress * 0.82);
-                color += vec3(0.08, 0.24, 0.13) * edgeLight * 0.38;
-                color += vec3(0.06, 0.16, 0.10) * vein * (0.18 + vProgress * 0.20);
-                float alpha = (0.66 + edgeLight * 0.22) * uAlpha;
-                fragColor = vec4(color, alpha);
             }
         """
 
