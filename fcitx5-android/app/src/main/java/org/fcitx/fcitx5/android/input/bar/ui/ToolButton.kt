@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
+import android.graphics.drawable.LayerDrawable
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ViewPropertyAnimator
@@ -96,6 +97,27 @@ class ToolButton(context: Context) : CustomGestureView(context) {
         )
     }
 
+    private fun setPhysicalPressedBackground(@ColorInt fillColor: Int) {
+        val borderWidth = dp(2)
+        background = InsetDrawable(
+            LayerDrawable(
+                arrayOf(
+                    GradientDrawable(
+                        GradientDrawable.Orientation.TL_BR,
+                        intArrayOf(0xFF3F8CFF.toInt(), 0xFF35E0A1.toInt())
+                    ).apply { shape = GradientDrawable.OVAL },
+                    GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(fillColor)
+                    }
+                )
+            ).apply {
+                setLayerInset(1, borderWidth, borderWidth, borderWidth, borderWidth)
+            },
+            dp(4)
+        )
+    }
+
     fun setPhysicalKeyStyle(
         enabled: Boolean,
         @ColorInt pressedColor: Int,
@@ -117,7 +139,7 @@ class ToolButton(context: Context) : CustomGestureView(context) {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     animate().cancel()
-                    setCircleBackgroundColor(physicalPressedColor)
+                    setPhysicalPressedBackground(physicalPressedColor)
                     animate()
                         .translationY(dp(PHYSICAL_KEY_TRAVEL_DP).toFloat())
                         .translationZ(-dp(PHYSICAL_KEY_TRAVEL_DP).toFloat())

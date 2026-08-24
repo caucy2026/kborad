@@ -5,7 +5,10 @@
 package org.fcitx.fcitx5.android.input.keyboard.aquarium
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.GradientDrawable
 import android.opengl.EGL14
 import android.opengl.EGLConfig
 import android.opengl.EGLContext
@@ -13,6 +16,7 @@ import android.opengl.EGLDisplay
 import android.opengl.EGLSurface
 import android.opengl.GLES30
 import android.util.Log
+import android.view.Gravity
 import android.view.Surface
 import android.view.TextureView
 import java.nio.ByteBuffer
@@ -54,9 +58,14 @@ class DesktopAquariumView(context: Context) : TextureView(context),
     private val touchCommands = ConcurrentLinkedQueue<AquariumTouchCommand>()
     private var renderThread: AquariumRenderThread? = null
     private var active = false
+    private var waitingForFirstFrame = true
 
     init {
-        isOpaque = true
+        // TextureView gets a new BufferQueue whenever Android 12 recreates the IME window.
+        // Until GLES submits its first buffer, an opaque TextureView exposes the solid deck
+        // underneath for one or more frames. Keep the last aquarium frame behind the new
+        // texture and remove it only after onSurfaceTextureUpdated confirms a real GPU frame.
+        showTransitionFrame()
         isClickable = false
         isFocusable = false
         surfaceTextureListener = this
@@ -100,6 +109,8 @@ class DesktopAquariumView(context: Context) : TextureView(context),
     }
 
     override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+        waitingForFirstFrame = true
+        showTransitionFrame()
         if (active) startRenderer(surface, width, height)
     }
 
@@ -109,11 +120,41 @@ class DesktopAquariumView(context: Context) : TextureView(context),
     }
 
     override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+        captureTransitionFrame()
+        waitingForFirstFrame = true
+        showTransitionFrame()
         stopRenderer()
         return true
     }
 
-    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
+    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
+        if (!waitingForFirstFrame) return
+        waitingForFirstFrame = false
+        background = null
+        isOpaque = true
+        Log.i(AquariumRenderThread.TAG, "first GPU frame replaced transition frame")
+    }
+
+    private fun captureTransitionFrame() {
+        if (!isAvailable || width <= 0 || height <= 0) return
+        val bitmapWidth = min(width, MAX_TRANSITION_FRAME_WIDTH)
+        val bitmapHeight = (height * bitmapWidth.toFloat() / width)
+            .toInt().coerceAtLeast(1)
+        runCatching { getBitmap(bitmapWidth, bitmapHeight) }
+            .getOrNull()
+            ?.takeIf { it.width > 0 && it.height > 0 }
+            ?.let { lastTransitionFrame = it }
+    }
+
+    private fun showTransitionFrame() {
+        isOpaque = false
+        background = lastTransitionFrame?.let { frame ->
+            BitmapDrawable(resources, frame).apply { gravity = Gravity.FILL }
+        } ?: GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(0xFF06394C.toInt(), 0xFF031526.toInt())
+        )
+    }
 
     private fun startRenderer(surface: SurfaceTexture, width: Int, height: Int) {
         if (renderThread?.isAlive == true || width <= 0 || height <= 0) return
@@ -138,6 +179,10 @@ class DesktopAquariumView(context: Context) : TextureView(context),
     private companion object {
         const val MAX_PENDING_INTERACTIONS = 12
         const val MAX_RENDER_WIDTH = 1080
+        const val MAX_TRANSITION_FRAME_WIDTH = 1080
+
+        @Volatile
+        var lastTransitionFrame: Bitmap? = null
     }
 }
 
@@ -207,7 +252,7 @@ private class AquariumRenderThread(
         }
     }
 
-    private companion object {
+    companion object {
         const val TAG = "KBoardAquarium"
         const val MAX_RENDER_WIDTH = 1080
         const val TARGET_FRAME_NS = 33_333_334L

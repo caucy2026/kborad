@@ -118,7 +118,8 @@ fun aquariumGlassKeyBackgroundDrawable(
 fun aquariumDepthKeyBackgroundDrawable(
     radius: Float,
     hMargin: Int,
-    vMargin: Int
+    vMargin: Int,
+    pressedBorderWidth: Int
 ): Drawable {
     fun face(selected: Boolean): Drawable = LayerDrawable(
         arrayOf(
@@ -152,7 +153,49 @@ fun aquariumDepthKeyBackgroundDrawable(
         setLayerInset(2, hMargin + 2, vMargin + 2, hMargin + 2, vMargin + 8)
     }
 
+    fun pressedFace(): Drawable = LayerDrawable(
+        arrayOf(
+            // A blue-to-green rim is visible only for the physical DOWN interval. The opaque
+            // inner face prevents the accent from changing the key fill or reducing contrast.
+            GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(0xFF3F8CFF.toInt(), 0xFF35E0A1.toInt())
+            ).apply {
+                cornerRadius = radius
+            },
+            GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(0xFF29465C.toInt(), 0xFF102536.toInt())
+            ).apply {
+                cornerRadius = (radius - pressedBorderWidth).coerceAtLeast(0f)
+            },
+            GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(0x32FFFFFF, 0x00FFFFFF)
+            ).apply {
+                cornerRadius = (radius - pressedBorderWidth).coerceAtLeast(0f)
+            }
+        )
+    ).apply {
+        setLayerInset(0, hMargin, vMargin, hMargin, vMargin + 3)
+        setLayerInset(
+            1,
+            hMargin + pressedBorderWidth,
+            vMargin + pressedBorderWidth,
+            hMargin + pressedBorderWidth,
+            vMargin + pressedBorderWidth + 3
+        )
+        setLayerInset(
+            2,
+            hMargin + pressedBorderWidth + 2,
+            vMargin + pressedBorderWidth + 2,
+            hMargin + pressedBorderWidth + 2,
+            vMargin + pressedBorderWidth + 8
+        )
+    }
+
     return StateListDrawable().apply {
+        addState(intArrayOf(android.R.attr.state_pressed), pressedFace())
         addState(intArrayOf(android.R.attr.state_selected), face(true))
         addState(intArrayOf(), face(false))
     }

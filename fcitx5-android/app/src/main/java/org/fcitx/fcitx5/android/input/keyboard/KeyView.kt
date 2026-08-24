@@ -242,7 +242,8 @@ abstract class KeyView(
         appearanceView.background = aquariumDepthKeyBackgroundDrawable(
             radius = radius,
             hMargin = hMargin,
-            vMargin = vMargin
+            vMargin = vMargin,
+            pressedBorderWidth = dp(2)
         )
         // The aquarium renderer owns the complete water-wave feedback. Keeping an
         // Android RippleDrawable here would add an unrelated circular animation.
