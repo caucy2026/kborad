@@ -140,11 +140,16 @@ class DesktopAquariumView(context: Context) : TextureView(context),
     }
 
     private fun captureTransitionFrame() {
-        if (!isAvailable || width <= 0 || height <= 0) return
+        // Never replace a valid snapshot with the empty BufferQueue shown before the first GPU
+        // frame. Reuse the bitmap across hide/show cycles to avoid allocating ~1 MB per switch.
+        if (waitingForFirstFrame || !isAvailable || width <= 0 || height <= 0) return
         val bitmapWidth = min(width, MAX_TRANSITION_FRAME_WIDTH)
         val bitmapHeight = (height * bitmapWidth.toFloat() / width)
             .toInt().coerceAtLeast(1)
-        runCatching { getBitmap(bitmapWidth, bitmapHeight) }
+        val reusable = lastTransitionFrame?.takeIf {
+            it.isMutable && it.width == bitmapWidth && it.height == bitmapHeight
+        } ?: Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888)
+        runCatching { getBitmap(reusable) }
             .getOrNull()
             ?.takeIf { it.width > 0 && it.height > 0 }
             ?.let { lastTransitionFrame = it }
@@ -183,14 +188,25 @@ class DesktopAquariumView(context: Context) : TextureView(context),
     }
 
     private fun stopRenderer() {
-        renderThread?.requestStop()
+        val thread = renderThread ?: return
         renderThread = null
+        thread.requestStop()
+        if (Thread.currentThread() !== thread) {
+            // A fresh TextureView may arrive immediately after this callback. Do not let the old
+            // EGL context, mesh buffers and Surface overlap with the new renderer; repeated IME
+            // migration otherwise grows transient native memory until Mali reports GL_OUT_OF_MEMORY.
+            runCatching { thread.join(RENDERER_STOP_TIMEOUT_MS) }
+            if (thread.isAlive) {
+                Log.w(AquariumRenderThread.TAG, "renderer did not stop within timeout")
+            }
+        }
     }
 
     private companion object {
         const val MAX_PENDING_INTERACTIONS = 12
         const val MAX_RENDER_WIDTH = 1080
         const val MAX_TRANSITION_FRAME_WIDTH = 1080
+        const val RENDERER_STOP_TIMEOUT_MS = 250L
 
         @Volatile
         var lastTransitionFrame: Bitmap? = null
