@@ -46,9 +46,18 @@ class CandidateItemUi(override val ctx: Context, val theme: Theme) : Ui {
         })
     }
 
-    fun updateCandidate(candidate: CandidateWord, directHit: Boolean) {
-        val fg = if (directHit) DIRECT_HIT_CANDIDATE_COLOR else theme.candidateTextColor
-        val altFg = theme.candidateCommentColor
+    fun updateCandidate(
+        candidate: CandidateWord,
+        directHit: Boolean,
+        candidateTextColorOverride: Int? = null,
+        candidateCommentColorOverride: Int? = null
+    ) {
+        val fg = if (directHit) {
+            DIRECT_HIT_CANDIDATE_COLOR
+        } else {
+            candidateTextColorOverride ?: theme.candidateTextColor
+        }
+        val altFg = candidateCommentColorOverride ?: theme.candidateCommentColor
         // AutoScaleTextView draws with currentTextColor and intentionally flattens spans in its
         // custom Canvas path, so set the actual paint color as well as building styled text.
         text.setTextColor(fg)

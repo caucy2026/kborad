@@ -6,6 +6,7 @@
 package org.fcitx.fcitx5.android.input.candidates.horizontal
 
 import android.content.res.Configuration
+import android.graphics.Color
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.RectShape
 import android.view.inputmethod.EditorInfo
@@ -62,6 +63,13 @@ class HorizontalCandidateComponent :
     private var layoutFlexGrow = 1f
     private var clientPreeditActive = false
     private var panelCompositionActive = false
+
+    fun setDesktopKeyboardMode(enabled: Boolean) {
+        adapter.setCandidateColorOverride(
+            textColor = if (enabled) Color.WHITE else null,
+            commentColor = if (enabled) DESKTOP_CANDIDATE_COMMENT_COLOR else null
+        )
+    }
 
     private fun updateDirectHitState() {
         adapter.setHighlightFirstCandidate(clientPreeditActive || panelCompositionActive)
@@ -227,4 +235,8 @@ class HorizontalCandidateComponent :
 
     private fun FcitxEvent.InputPanelEvent.Data.hasActiveComposition() =
         preedit.isNotEmpty() || auxUp.isNotEmpty() || auxDown.isNotEmpty()
+
+    private companion object {
+        const val DESKTOP_CANDIDATE_COMMENT_COLOR = 0xccffffff.toInt()
+    }
 }

@@ -35,6 +35,19 @@ open class HorizontalCandidateViewAdapter(val theme: Theme) :
     var highlightFirstCandidate = false
         private set
 
+    private var candidateTextColorOverride: Int? = null
+    private var candidateCommentColorOverride: Int? = null
+
+    @SuppressLint("NotifyDataSetChanged")
+    fun setCandidateColorOverride(textColor: Int?, commentColor: Int?) {
+        if (candidateTextColorOverride == textColor &&
+            candidateCommentColorOverride == commentColor
+        ) return
+        candidateTextColorOverride = textColor
+        candidateCommentColorOverride = commentColor
+        notifyDataSetChanged()
+    }
+
     fun setHighlightFirstCandidate(highlight: Boolean) {
         if (highlightFirstCandidate == highlight) return
         highlightFirstCandidate = highlight
@@ -68,7 +81,9 @@ open class HorizontalCandidateViewAdapter(val theme: Theme) :
         holder.update(
             position,
             candidates[position],
-            newDirectHit = highlightFirstCandidate && position == 0
+            newDirectHit = highlightFirstCandidate && position == 0,
+            newCandidateTextColorOverride = candidateTextColorOverride,
+            newCandidateCommentColorOverride = candidateCommentColorOverride
         )
     }
 

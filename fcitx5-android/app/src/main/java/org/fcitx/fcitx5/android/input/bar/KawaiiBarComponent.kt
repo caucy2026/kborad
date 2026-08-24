@@ -301,6 +301,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
 
     fun setDesktopKeyboardMode(enabled: Boolean) {
         desktopKeyboardMode = enabled
+        // Global mode uses a fixed dark aquarium surface independent of the selected theme.
+        // Rebind every visible candidate with high-contrast colors; leaving global mode clears
+        // the override so ordinary keyboards keep their configured theme unchanged.
+        horizontalCandidate.setDesktopKeyboardMode(enabled)
         idleUi.setDesktopQuietMode(enabled)
         if (enabled) {
             // Build the ASR client while global mode is entering, not on the first voice DOWN.

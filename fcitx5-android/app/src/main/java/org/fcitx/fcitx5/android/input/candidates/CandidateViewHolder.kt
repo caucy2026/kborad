@@ -16,13 +16,32 @@ class CandidateViewHolder(val ui: CandidateItemUi) : RecyclerView.ViewHolder(ui.
         private set
 
     private var directHit = false
+    private var candidateTextColorOverride: Int? = null
+    private var candidateCommentColorOverride: Int? = null
 
-    fun update(newIndex: Int, newCandidate: CandidateWord, newDirectHit: Boolean = false) {
+    fun update(
+        newIndex: Int,
+        newCandidate: CandidateWord,
+        newDirectHit: Boolean = false,
+        newCandidateTextColorOverride: Int? = null,
+        newCandidateCommentColorOverride: Int? = null
+    ) {
         idx = newIndex
-        if (candidate != newCandidate || directHit != newDirectHit) {
+        if (candidate != newCandidate ||
+            directHit != newDirectHit ||
+            candidateTextColorOverride != newCandidateTextColorOverride ||
+            candidateCommentColorOverride != newCandidateCommentColorOverride
+        ) {
             candidate = newCandidate
             directHit = newDirectHit
-            ui.updateCandidate(newCandidate, newDirectHit)
+            candidateTextColorOverride = newCandidateTextColorOverride
+            candidateCommentColorOverride = newCandidateCommentColorOverride
+            ui.updateCandidate(
+                newCandidate,
+                newDirectHit,
+                newCandidateTextColorOverride,
+                newCandidateCommentColorOverride
+            )
         }
     }
 
