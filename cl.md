@@ -1502,6 +1502,28 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.50 - 2026-08-24
+
+### 主题
+修复远程桌面隐藏后重新显示 IME 时先闪普通键盘、再切全局键盘的问题。
+
+### 过程
+- 远程桌面重新请求显示键盘时，Android 可能在 KBoard 进程仍存活的情况下重建 `InputView`。全局模式请求已经保存在 `KeyboardWindow.desktopModeRequested`，但 `onCreateView()` 固定先挂载 `TextKeyboard`。
+- `InputView` 创建完成后，`onStartInput()` 才读取全局模式并通过主线程 executor 异步切换到 `DesktopKeyboard`，因此普通键盘成为一个真实可绘制的中间帧；远程桌面只是触发 IME 显示，问题所有权在 KBoard。
+
+### 修改
+- `KeyboardWindow.onCreateView()` 首次挂载布局时直接读取 `desktopModeRequested`：已选全局模式就创建 `DesktopKeyboard`，否则保持原 `TextKeyboard`。
+- 后续 `onStartInput()` 的输入类型/全局模式选择、用户主动切换和进程重启后回普通键盘的原策略不变。
+
+### 验证
+- `git diff --check` 与 Release Kotlin 编译待执行；完成签名 Release 后覆盖安装 63，并由用户在真实远程桌面链路重复“隐藏 -> 显示”确认不再闪普通键盘。
+
+### 待办
+- 本修复只消除 KBoard 自己创建的普通键盘中间帧。如果日志显示远程桌面连续创建两个不同 EditorInfo/输入会话，仍需分别记录 `onStartInputView` 次数，但不能再通过固定首挂普通键盘放大闪烁。
+- KBoard 进程被系统完全杀死后仍按既有安全策略回到普通键盘；本次只保证同一进程内用户明确选择的全局模式跨 InputView 重建保持。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

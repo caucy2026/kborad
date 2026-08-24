@@ -111,7 +111,13 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     // This will be called EXACTLY ONCE
     override fun onCreateView(): View {
         keyboardView = context.frameLayout(R.id.keyboard_view)
-        attachLayout(TextKeyboard.Name)
+        // Android may recreate InputView between two show requests while the IME process stays
+        // alive. Build the first drawable frame from the user's retained desktop-mode choice;
+        // attaching TextKeyboard here and switching asynchronously in onStartInput caused a
+        // visible one-frame flash of the ordinary keyboard in remote-desktop clients.
+        attachLayout(
+            if (desktopModeRequested) DesktopKeyboard.Name else TextKeyboard.Name
+        )
         return keyboardView
     }
 

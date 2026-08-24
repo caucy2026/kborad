@@ -548,6 +548,7 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - `bf7a8e13` 将全局空格与中英状态文字改为固定测量、仅重绘，避免 `IMChangeEvent` 中 `TextView.setText()` 触发 IME/`adjustPan` 客户端重新布局；中文显示“中/英”、英文显示“英/中”，当前语言首字符为蓝色。Release APK SHA-256 为 `bbdd0e5af70bf3d0eaf2cd9402afd86ccf3b7edd47bbdfa98c309bcc59b0cf85`，已覆盖安装 `.63`。完整水族复刻规范见 `kemi-rd/gm/KBoard摸鱼水族键盘复刻设计.md`。
 - 2026-08-24 当前性能基线只移除视觉涟漪：不再维护 4 个 ripple 槽、不再查询/上传 `uResolution/uRipples`，水面片元不再执行每触点波列/凹陷/法线折射。鱼群 DOWN/MOVE/UP、C-start、语音触点镜像、按键触觉和普通键盘均保留；水面只剩单 `uTime` 的渐变/低成本流光。按键单次水滴声是明确保留项，仍由 `SoundPool` 异步预加载 4 个样本并只在 DOWN 播放，MOVE/UP 不叠加。
 - 上述修正正式 Release 为 `versionName=80325aee`、`versionCode=122`、APK SHA-256 `f658a757aeb09768c687d1e5be12782b8524d1f53d84009cfa6634a3b58f3003`；v1/v2 签名及正式证书验证通过，APK 中 4 个水滴 WAV 均存在，63 `install -r` 返回 `Success`，默认输入法未改变。
+- 远程桌面隐藏后重新显示 IME 时若闪一下普通键盘，责任在 KBoard 的首帧创建顺序：`KeyboardWindow.onCreateView()` 不能固定 `attachLayout(TextKeyboard.Name)` 后再等 `onStartInput()` 异步恢复全局模式；必须依据进程内 `desktopModeRequested` 直接首挂 `DesktopKeyboard`。远程桌面只需正常请求显示/隐藏，无需添加延时或遮罩。进程完全重启后仍回普通键盘是独立的既有安全策略。
 
 #### RustDesk/KEMI 远程回车
 
