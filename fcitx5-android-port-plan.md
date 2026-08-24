@@ -549,7 +549,7 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - 2026-08-24 当前性能基线只移除视觉涟漪：不再维护 4 个 ripple 槽、不再查询/上传 `uResolution/uRipples`，水面片元不再执行每触点波列/凹陷/法线折射。鱼群 DOWN/MOVE/UP、C-start、语音触点镜像、按键触觉和普通键盘均保留；水面只剩单 `uTime` 的渐变/低成本流光。按键单次水滴声是明确保留项，仍由 `SoundPool` 异步预加载 4 个样本并只在 DOWN 播放，MOVE/UP 不叠加。
 - 上述修正正式 Release 为 `versionName=80325aee`、`versionCode=122`、APK SHA-256 `f658a757aeb09768c687d1e5be12782b8524d1f53d84009cfa6634a3b58f3003`；v1/v2 签名及正式证书验证通过，APK 中 4 个水滴 WAV 均存在，63 `install -r` 返回 `Success`，默认输入法未改变。
 - 远程桌面隐藏后重新显示 IME 时若闪一下普通键盘，责任在 KBoard 的首帧创建顺序：`KeyboardWindow.onCreateView()` 不能固定 `attachLayout(TextKeyboard.Name)` 后再等 `onStartInput()` 异步恢复全局模式；必须依据进程内 `desktopModeRequested` 直接首挂 `DesktopKeyboard`。远程桌面只需正常请求显示/隐藏，无需添加延时或遮罩。进程完全重启后仍回普通键盘是独立的既有安全策略。
-- 首帧修复正式 Release 为 `64b1471b/122`，APK SHA-256 `1184d9c1ef21eb910afb25506646dc0f81de774d0444a8e758d14e6a4b5c32c5`；签名验证通过并已覆盖安装 63，默认输入法未变。包内继续保留 4 个水滴 WAV，视觉涟漪仍保持删除。
+- `64b1471b/122` 不得发布：63 在 InputView 重建时于 `InputView.setDesktopKeyboardMode()` 发生主线程 NPE。原因是首挂 `DesktopKeyboard` 后 `KeyboardWindow.onAttached()` 在 `InputView.keyboardView` 初始化前就应用桌面样式。正确实现必须让 `setDesktopKeyboardMode()` 在 `keyboardView` 未初始化时缓存最后状态，并在根布局构造完成后一次性应用；不能回退为先画普通键盘，也不能直接访问半构造 View。
 
 #### RustDesk/KEMI 远程回车
 

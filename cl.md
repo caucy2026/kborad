@@ -1510,15 +1510,16 @@ KEMI 设置页品牌化与动态名称中文化。
 ### 过程
 - 远程桌面重新请求显示键盘时，Android 可能在 KBoard 进程仍存活的情况下重建 `InputView`。全局模式请求已经保存在 `KeyboardWindow.desktopModeRequested`，但 `onCreateView()` 固定先挂载 `TextKeyboard`。
 - `InputView` 创建完成后，`onStartInput()` 才读取全局模式并通过主线程 executor 异步切换到 `DesktopKeyboard`，因此普通键盘成为一个真实可绘制的中间帧；远程桌面只是触发 IME 显示，问题所有权在 KBoard。
+- 首版 `64b1471b` 直接首挂全局键盘后，63 日志暴露更早的构造时序：`KeyboardWindow.onAttached()` 在 `InputView` 构造中调用 `setDesktopKeyboardMode()`，但 `keyboardView` 尚未初始化，17:14:27 主线程以 `NullPointerException` 崩溃。该问题由本次首帧顺序变更直接触发。
 
 ### 修改
 - `KeyboardWindow.onCreateView()` 首次挂载布局时直接读取 `desktopModeRequested`：已选全局模式就创建 `DesktopKeyboard`，否则保持原 `TextKeyboard`。
+- `InputView.setDesktopKeyboardMode()` 在内部 `keyboardView` 尚未初始化时只记录最后一次待应用模式；根视图、约束和操作栏全部创建完成后立即一次性应用。这样既不绘制普通键盘中间帧，也不在半构造对象上修改桌面样式。
 - 后续 `onStartInput()` 的输入类型/全局模式选择、用户主动切换和进程重启后回普通键盘的原策略不变。
 
 ### 验证
-- `git diff --check`、`:app:compileReleaseKotlin` 和完整 `./scripts/assemble-release-local.sh` 均成功；只构建正式 Release。
-- 正式包为 `versionName=64b1471b`、`versionCode=122`，APK SHA-256 `1184d9c1ef21eb910afb25506646dc0f81de774d0444a8e758d14e6a4b5c32c5`；v1/v2 签名及证书链验证通过，4 个水滴 WAV 仍在包内。
-- 63 使用 `install -r` 无损覆盖返回 `Success`，设备版本与包一致，默认输入法仍是主 `FcitxInputMethodService`。真实远程桌面“隐藏 -> 显示”无闪屏观感由用户现场复测。
+- `64b1471b` 构建与签名虽通过，但 63 真实重建 InputView 时按上述 NPE 崩溃，已判定为失败版本，不得继续发布或归档。
+- 增加构造期延迟应用保护后的 `git diff --check`、Release Kotlin、完整签名构建、63 覆盖安装和真实“隐藏 -> 显示”待重新执行；必须同时确认无闪普通键盘、无 `FATAL EXCEPTION`、水滴声保留。
 
 ### 待办
 - 本修复只消除 KBoard 自己创建的普通键盘中间帧。如果日志显示远程桌面连续创建两个不同 EditorInfo/输入会话，仍需分别记录 `onStartInputView` 次数，但不能再通过固定首挂普通键盘放大闪烁。

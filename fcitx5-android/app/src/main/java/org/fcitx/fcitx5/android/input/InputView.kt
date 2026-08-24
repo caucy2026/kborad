@@ -227,6 +227,8 @@ class InputView(
         keyboardBottomPaddingLandscape,
     )
     private var desktopKeyboardMode = false
+    private var pendingDesktopKeyboardMode: Boolean? = null
+    private var inputViewHierarchyReady = false
     private var desktopHeightConfigurationKey = ""
     private var lockedDesktopKeyboardHeightPx = 0
 
@@ -520,6 +522,11 @@ class InputView(
         keyboardPrefs.registerOnChangeListener(onKeyboardSizeChangeListener)
         keyboardPrefs.registerOnChangeListener(onFloatingKeyboardChangeListener)
         updateFloatingKeyboardLayout()
+        inputViewHierarchyReady = true
+        pendingDesktopKeyboardMode?.let { enabled ->
+            pendingDesktopKeyboardMode = null
+            setDesktopKeyboardMode(enabled)
+        }
     }
 
     fun toggleFloatingKeyboard(): Boolean {
@@ -529,6 +536,10 @@ class InputView(
     }
 
     fun setDesktopKeyboardMode(enabled: Boolean) {
+        if (!inputViewHierarchyReady) {
+            pendingDesktopKeyboardMode = enabled
+            return
+        }
         if (desktopKeyboardMode == enabled) {
             if (enabled) refreshDesktopKeyboardHeight()
             return
