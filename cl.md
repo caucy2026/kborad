@@ -1493,7 +1493,8 @@ KEMI 设置页品牌化与动态名称中文化。
 ### 验证
 - 静态扫描确认 `DesktopKeyboard`、`InputFeedbacks` 和水族引擎中已无 `Ripple/uRipples/MAX_RIPPLES/prepareRippleSound/rippleSound` 执行引用；项目其他页面原有 Android `RippleDrawable` 不属于水面涟漪，未改动。
 - `./gradlew :app:compileReleaseKotlin` 成功；只执行 Release 变体，没有生成或安装 Debug APK。
-- 待重新生成正式签名 Release 覆盖安装到 63 后补充 Mali-G52 链接、30Hz、连续触摸无视觉涟漪、单次水滴声、鱼群跟手和崩溃日志验证结果。
+- `./scripts/assemble-release-local.sh` 完整成功；正式包为 `versionName=80325aee`、`versionCode=122`，v1/v2 签名有效，证书链保持不变。APK SHA-256 为 `f658a757aeb09768c687d1e5be12782b8524d1f53d84009cfa6634a3b58f3003`。
+- APK 资源表确认 4 个水滴 WAV 均被保留；63 使用 `install -r` 无损覆盖返回 `Success`，设备查询为 `80325aee/122`，默认输入法仍是主 `FcitxInputMethodService`。视觉涟漪已从源码执行路径彻底移除；水滴声音量/听感由用户在 63 现场继续确认。
 
 ### 待办
 - 水面仍以固定 30Hz 绘制鱼群和低成本流光，因此本次只消除触点相关的额外片元开销，不是关闭整个 GLES 水族层；若系统仍有压力，应先用真机 FPS/SurfaceFlinger 数据定位，不得直接牺牲按键输入或水滴声音链路。
