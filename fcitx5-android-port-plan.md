@@ -560,6 +560,20 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - Ctrl、Alt、Meta 组合键和上述原始控制键保留完整 modifier states；因此 Shift+Tab、Alt+F4、Ctrl+方向键、Command+方向键与 Command+Shift+3/4/5 均继续走现有标准 `InputConnection.sendKeyEvent()` 链路，不需要新建私有广播或第二套协议。
 - KEMI 接收端 `RemoteFunctionKeyMapper`/`KeyboardProxyActivity` 已实现 Android keyCode 到 RustDesk `VK_*` 的映射；KBoard 修复的职责是让标准 KeyEvent 到达该代理。验收时必须对 Windows/macOS 实际会话分别测试，不能用 Android 本地编译成功替代跨端验收。
 
+#### RustDesk/KEMI 修饰键与鼠标协同（2026-08-24）
+
+- 全局键盘的 Ctrl、Alt、Shift、⌘ 不再只是 KBoard 内部的组合提示状态。触摸 DOWN 会通过当前标准 `InputConnection` 发送对应左侧 Android 修饰键 DOWN，触摸 UP/CANCEL 发送配对 UP，因此 KEMI 的远程鼠标点击、拖动和滚轮可以发生在同一个修饰键按住区间内。
+- `ModifierStateAction` 是有生命周期的边沿事件，直接由 `CommonKeyActionListener` 交给 `FcitxInputMethodService`；不得改回一次性 `ModifierAction`，不得进入 Fcitx native、提交文字、调用编辑器动作或用 `sendCombinationKeyEvents()` 立即收尾。
+- 服务端 `pressedDesktopModifiers` 才是“已经向远端发送 DOWN”的最终真值。重复 DOWN 被忽略；两枚 Shift 只产生一组 DOWN/UP；每个 UP 使用原 DOWN 的 downTime，metaState 包含当前全部修饰键的通用位和 LEFT 位。
+- `DesktopKeyboard.onDetach()`、`onWindowHidden()`、`onFinishInputView()`、`onFinishInput()`、`onUnbindInput()` 和 `onDestroy()` 都必须先释放仍按下的修饰键。以后增加全局键盘退出入口时也必须走这些兜底，不能只清 UI 高亮。
+- Windows/Linux 多选使用 Ctrl+鼠标，macOS Finder 多选使用 ⌘+鼠标；KBoard 不根据远端系统交换 Ctrl 与 Command。最终验收必须在真实远程会话完成，Android 本地编辑器只能验证事件配对，不能证明远端文件管理器语义。
+
+#### V900 隐藏键盘触摸穿透（2026-08-24）
+
+- 隐藏按钮和候选栏下滑入口必须完整消费 ACTION_DOWN/UP，在 ACTION_UP 完成后由根 View 延后 100ms 单次调用 `requestHideSelf(0)`。立即移除 IME 窗口会让 V900 Android 12 把同一手势尾部重新命中 KEMI 下层按钮。
+- 延时期间触发 View 禁用，重复隐藏请求合并；ACTION_CANCEL 只复位状态，不隐藏；`InputView.onDetachedFromWindow()` 取消尚未执行的任务并恢复按钮。不要增加长期悬浮遮罩，也不要让 KEMI 永久禁用底栏按钮。
+- 真机验收必须在 D0/D2 两个方向各循环 30 次，并同时检查 KEMI 页面、键盘是否异常回弹以及来源屏 `PointerDown/open_timeout` 日志；仅观察键盘消失不算通过。
+
 #### 中继自动启用与全键盘单音效
 
 - `DisplaySwitchInputMethodService` 与主服务位于同一 APK，不是需要用户另行安装的输入法。平台签名 V900 包通过 `WRITE_SECURE_SETTINGS` 调用系统 `ime enable` 接口，仅启用这个固定同包组件；不得直接改写 enabled IME 字符串，也不得修改默认输入法或关闭其他输入法。

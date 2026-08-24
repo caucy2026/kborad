@@ -244,8 +244,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         idleUi.updateState(newState, fromUser)
     }
 
-    private val hideKeyboardCallback = View.OnClickListener {
-        service.requestHideSelf(0)
+    private val hideKeyboardCallback = View.OnClickListener { view ->
+        service.requestHideSelfAfterTouch(view)
     }
 
     private val toggleToolbarCallback = View.OnClickListener {
@@ -389,9 +389,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         }
     }
 
-    private val swipeDownExpandCallback = CustomGestureView.OnGestureListener { _, e ->
-        if (e.type == CustomGestureView.GestureType.Up && e.totalY > 0) {
-            service.requestHideSelf(0)
+    private val swipeDownExpandCallback = CustomGestureView.OnGestureListener { view, e ->
+        if (e.type == CustomGestureView.GestureType.Up && !e.cancelled && e.totalY > 0) {
+            service.requestHideSelfAfterTouch(view)
             true
         } else false
     }
@@ -401,6 +401,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     // - If vertical is dominant and down, hide keyboard.
     private val swipeHideKeyboardCallback = CustomGestureView.OnGestureListener { v, e ->
         require(v is ToolButton)
+        if (e.type == CustomGestureView.GestureType.Up && e.cancelled) {
+            v.iconRotation = 0f
+            return@OnGestureListener true
+        }
         val numberRowAvailable = isCapabilityFlagsPassword && !isKeyboardLayoutNumber
         if (numberRowAvailable) {
             val dir = if (context.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_LTR) 1 else -1
@@ -422,7 +426,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 CustomGestureView.GestureType.Up -> {
                     val handled = when (angle) {
                         in -45f..45f if distance > v.swipeThresholdX -> {
-                            service.requestHideSelf(0)
+                            service.requestHideSelfAfterTouch(v)
                             true
                         }
                         !in -45f..45f if distance > v.swipeThresholdY -> {
@@ -441,7 +445,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         }
 
         if (e.type == CustomGestureView.GestureType.Up && abs(e.totalY) > abs(e.totalX) && e.totalY > 0) {
-            service.requestHideSelf(0)
+            service.requestHideSelfAfterTouch(v)
             true
         } else false
     }

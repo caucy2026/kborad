@@ -26,6 +26,12 @@ sealed class KeyAction {
 
     data class ModifierAction(val state: KeyState) : KeyAction()
 
+    /**
+     * A real press/release edge from DesktopKeyboard's held modifier keys.
+     * Unlike [ModifierAction], this action has a lifetime and must never be collapsed into a tap.
+     */
+    data class ModifierStateAction(val state: KeyState, val down: Boolean) : KeyAction()
+
     data object QuickPhraseAction : KeyAction()
 
     data object UnicodeAction : KeyAction()

@@ -1415,6 +1415,35 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.47 - 2026-08-24
+
+### 主题
+按 KEMI/RustDesk 联调规范重构全局键盘修饰键生命周期，并修复 V900 隐藏键盘时的触摸穿透。
+
+### 过程
+- 对照 `/Users/newlink/kemi/RustDesk/client/kemi-docs/KBOARD-REMOTE-MODIFIER-MOUSE-UPDATE.md` 复查：原全局键盘按住 Ctrl、Alt、Shift、⌘ 时只维护 KBoard 内部高亮与后续键盘组合状态，没有向当前 `InputConnection` 发送独立的修饰键 DOWN；远程鼠标走 KEMI 的另一条输入通道，因此鼠标点击期间远端并不知道修饰键仍被按住。
+- 远程复选必须把修饰键建模为跨触摸生命周期的标准 Android `KeyEvent`，不能使用会立即完成整套组合的 `sendCombinationKeyEvents()`，也不能用 `commitText()`、编辑器动作、广播或无障碍事件替代。
+- 63 的隐藏键盘穿透来自 IME 窗口在同一 ACTION_UP 分发栈内立即消失，V900 ROM 会把手势尾部重新命中 KEMI 下层按钮；修复原则是完整消费当前手势，在根 View 上延后 100ms 单次隐藏。
+
+### 修改
+- 新增 `ModifierStateAction(state, down)`；`DesktopKeyboard` 在修饰键真实 DOWN/UP/CANCEL 时发送状态边沿，同键重复 DOWN 去重，两枚 Shift 共用一份远端按下状态，最后一枚 Shift 松开时才发送 UP。
+- `CommonKeyActionListener` 将状态边沿直接交给输入法服务，不进入 Fcitx native job；服务映射为左 Ctrl/Alt/Shift/Meta 标准 keyCode，保留虚拟键盘 deviceId、软键盘 flags、当前完整 metaState 和配对 downTime。
+- `DesktopKeyboard.onDetach()`、输入法窗口隐藏、输入结束、解绑和服务销毁都会先补发所有未配对 UP，再清理状态，防止远端卡 Ctrl/⌘；布局切换和重复生命周期回调由服务端集合再次去重。
+- `CustomGestureView.Event` 增加 `cancelled`，ACTION_CANCEL 仍给修饰键产生释放，但隐藏键盘的下滑手势遇到 CANCEL 只复位视觉、不执行隐藏。
+- 工具栏、候选栏下滑入口和浮动键盘隐藏按钮统一调用 `requestHideSelfAfterTouch()`：按钮先禁用，根 View 延后 100ms 隐藏，重复请求合并；InputView detach 会取消尚未执行的任务并恢复按钮。
+
+### 验证
+- `git diff --check` 通过。
+- `:app:compileReleaseKotlin` 成功，66 个任务完成；全程没有构建 Debug。
+- 标准修饰事件、63 覆盖安装、DOWN/UP 日志配对和 Windows/macOS 真实远程复选将在正式签名 Release 完成后补充。
+
+### 待办
+- 在 63 对 Ctrl/Alt/Shift/⌘ 各执行 50 次按下/松开，确认 DOWN/UP 数量一致；分别连接 Windows 与 macOS 验证 Ctrl/⌘+鼠标复选、Shift 范围选择、滚轮和拖动。
+- 在 D0/D2 两个方向各执行 30 次“打开键盘 -> 隐藏”，确认 KEMI 不断开、不换页、不重新弹出键盘，且日志没有本次触摸造成的下层 `PointerDown`。
+- 继续回归 Ctrl+C/V、Command+C/V、Alt+F4、Shift+Tab、中文拼音、候选、Enter、语音和普通键盘；本次不改变这些功能的输入协议。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

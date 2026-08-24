@@ -62,6 +62,7 @@ import org.fcitx.fcitx5.android.core.FcitxAPI
 import org.fcitx.fcitx5.android.core.FcitxEvent
 import org.fcitx.fcitx5.android.core.FcitxKeyMapping
 import org.fcitx.fcitx5.android.core.FormattedText
+import org.fcitx.fcitx5.android.core.KeyState
 import org.fcitx.fcitx5.android.core.KeyStates
 import org.fcitx.fcitx5.android.core.KeySym
 import org.fcitx.fcitx5.android.core.ScancodeMapping
@@ -106,6 +107,13 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
      * See also [InputConnection#clearMetaKeyStates(int)](https://developer.android.com/reference/android/view/inputmethod/InputConnection#clearMetaKeyStates(int))
      */
     private var lastMetaState: Int = 0
+
+    /** Modifier DOWN events already forwarded to the current remote InputConnection. */
+    private val pressedDesktopModifiers = linkedMapOf<KeyState, Long>()
+
+    private var pendingTouchHideRequest: Runnable? = null
+    private var pendingTouchHideHost: View? = null
+    private var pendingTouchHideSource: View? = null
 
     private lateinit var pkgNameCache: PackageNameCache
 
@@ -590,6 +598,70 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         )
     }
 
+    /**
+     * Forward a desktop modifier edge without entering Fcitx or collapsing it into a chord.
+     * The remote mouse channel can operate between this DOWN and the matching UP.
+     */
+    fun sendDesktopModifierKeyState(state: KeyState, down: Boolean) {
+        val keyCode = when (state) {
+            KeyState.Ctrl -> KeyEvent.KEYCODE_CTRL_LEFT
+            KeyState.Alt -> KeyEvent.KEYCODE_ALT_LEFT
+            KeyState.Shift -> KeyEvent.KEYCODE_SHIFT_LEFT
+            KeyState.Meta -> KeyEvent.KEYCODE_META_LEFT
+            else -> return
+        }
+        if (down) {
+            if (state in pressedDesktopModifiers || currentInputConnection == null) return
+            val downTime = SystemClock.uptimeMillis()
+            pressedDesktopModifiers[state] = downTime
+            val metaState = KeyStates(*pressedDesktopModifiers.keys.toTypedArray()).metaState
+            sendDownKeyEvent(downTime, keyCode, metaState)
+        } else {
+            val downTime = pressedDesktopModifiers[state] ?: return
+            // Build meta state before removal so the UP still identifies the released modifier.
+            val metaState = KeyStates(*pressedDesktopModifiers.keys.toTypedArray()).metaState
+            sendUpKeyEvent(downTime, keyCode, metaState)
+            pressedDesktopModifiers.remove(state)
+        }
+    }
+
+    private fun releaseDesktopModifierKeys() {
+        pressedDesktopModifiers.keys.toList().asReversed().forEach { state ->
+            sendDesktopModifierKeyState(state, down = false)
+        }
+    }
+
+    /**
+     * Defer IME window removal until the click's ACTION_UP has left the current dispatch stack.
+     * This avoids the V900 ROM retargeting the tail of the gesture to KEMI's button underneath.
+     */
+    fun requestHideSelfAfterTouch(source: View) {
+        if (pendingTouchHideRequest != null) return
+        source.isEnabled = false
+        val host = source.rootView
+        val request = Runnable {
+            pendingTouchHideRequest = null
+            pendingTouchHideHost = null
+            pendingTouchHideSource = null
+            source.isEnabled = true
+            releaseDesktopModifierKeys()
+            requestHideSelf(0)
+        }
+        pendingTouchHideRequest = request
+        pendingTouchHideHost = host
+        pendingTouchHideSource = source
+        host.postDelayed(request, TOUCH_HIDE_DELAY_MS)
+    }
+
+    fun cancelPendingTouchHideRequest() {
+        val request = pendingTouchHideRequest ?: return
+        pendingTouchHideHost?.removeCallbacks(request)
+        pendingTouchHideSource?.isEnabled = true
+        pendingTouchHideRequest = null
+        pendingTouchHideHost = null
+        pendingTouchHideSource = null
+    }
+
     fun deleteSelection() {
         val lastSelection = selection.latest
         if (lastSelection.isEmpty()) return
@@ -673,6 +745,12 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             Timber.w("Device does not support android.R.attr.colorAccent which it should have.")
         }
         InputFeedbacks.syncSystemPrefs()
+    }
+
+    override fun onWindowHidden() {
+        cancelPendingTouchHideRequest()
+        releaseDesktopModifierKeys()
+        super.onWindowHidden()
     }
 
     override fun onCreateInputView(): View? {
@@ -1238,6 +1316,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         Timber.d("onFinishInputView: finishingInput=$finishingInput")
+        cancelPendingTouchHideRequest()
+        releaseDesktopModifierKeys()
         decorLocationUpdated = false
         inputDeviceMgr.onFinishInputView()
         currentInputConnection?.apply {
@@ -1254,6 +1334,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onFinishInput() {
         Timber.d("onFinishInput")
+        cancelPendingTouchHideRequest()
+        releaseDesktopModifierKeys()
         postFcitxJob {
             focus(false)
         }
@@ -1261,6 +1343,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onUnbindInput() {
+        cancelPendingTouchHideRequest()
+        releaseDesktopModifierKeys()
         cachedKeyEvents.evictAll()
         cachedKeyEventIndex = 0
         cursorUpdateIndex = 0
@@ -1273,6 +1357,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onDestroy() {
+        cancelPendingTouchHideRequest()
+        releaseDesktopModifierKeys()
         recreateInputViewPrefs.forEach {
             it.unregisterOnChangeListener(recreateInputViewListener)
         }
@@ -1316,5 +1402,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         private const val DISPLAY_IME_MODE_LOCAL = "local"
         private const val DISPLAY_IME_MODE_FALLBACK = "fallback"
         private const val SECONDARY_IME_DISPLAY_ID = 2
+        private const val TOUCH_HIDE_DELAY_MS = 100L
     }
 }

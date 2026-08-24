@@ -139,7 +139,7 @@ class InputView(
     ).apply {
         useFullSizeIcon()
         contentDescription = service.getString(R.string.hide_keyboard)
-        setOnClickListener { service.requestHideSelf(0) }
+        setOnClickListener { service.requestHideSelfAfterTouch(it) }
     }
     private val floatingResizeCorners = listOf(
         imageView {
@@ -920,6 +920,7 @@ class InputView(
     }
 
     override fun onDetachedFromWindow() {
+        service.cancelPendingTouchHideRequest()
         keyboardPrefs.unregisterOnChangeListener(onKeyboardSizeChangeListener)
         keyboardPrefs.unregisterOnChangeListener(onFloatingKeyboardChangeListener)
         // clear DynamicScope, implies that InputView should not be attached again after detached.

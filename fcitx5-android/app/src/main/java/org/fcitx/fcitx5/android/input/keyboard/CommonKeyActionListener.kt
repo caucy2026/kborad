@@ -26,6 +26,7 @@ import org.fcitx.fcitx5.android.input.keyboard.KeyAction.DeleteSelectionAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.FcitxKeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.LangSwitchAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.MoveSelectionAction
+import org.fcitx.fcitx5.android.input.keyboard.KeyAction.ModifierStateAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.PickerSwitchAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.QuickPhraseAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.ScreenSwitchAction
@@ -97,6 +98,8 @@ class CommonKeyActionListener :
                 is SymAction -> service.postFcitxJob {
                     sendKey(action.sym, action.states)
                 }
+                is ModifierStateAction ->
+                    service.sendDesktopModifierKeyState(action.state, action.down)
                 is CommitAction -> service.postFcitxJob {
                     commitAndReset()
                     service.lifecycleScope.launch { service.commitText(action.text) }

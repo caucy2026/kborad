@@ -354,6 +354,7 @@ class DesktopKeyboard private constructor(
 
     override fun onAttach() {
         super.onAttach()
+        releaseHeldModifierKeys()
         heldModifierKeys.clear()
         modifierStates.clear()
         updateModifierKeys()
@@ -365,6 +366,9 @@ class DesktopKeyboard private constructor(
     }
 
     override fun onDetach() {
+        // A layout/window transition can happen while a finger is still down. Forward every
+        // outstanding UP before clearing the visuals so the remote host cannot retain Ctrl/⌘.
+        releaseHeldModifierKeys()
         heldModifierKeys.clear()
         modifierStates.clear()
         updateModifierKeys()
@@ -427,8 +431,25 @@ class DesktopKeyboard private constructor(
             val state = modifierStateFor(key) ?: return@forEach
             key.onGestureListener = OnGestureListener { _, event ->
                 when (event.type) {
-                    GestureType.Down -> heldModifierKeys[key] = state
-                    GestureType.Up -> heldModifierKeys.remove(key)
+                    GestureType.Down -> {
+                        if (key !in heldModifierKeys) {
+                            val stateAlreadyHeld = state in heldModifierKeys.values
+                            heldModifierKeys[key] = state
+                            // The layout contains two Shift keys. The second physical touch must
+                            // not create a duplicate Android modifier DOWN.
+                            if (!stateAlreadyHeld) {
+                                onAction(KeyAction.ModifierStateAction(state, down = true))
+                            }
+                        }
+                    }
+                    GestureType.Up -> {
+                        val removed = heldModifierKeys.remove(key)
+                        // Keep Shift down until the final held Shift key is released. ACTION_CANCEL
+                        // is normalized to Up by CustomGestureView and follows this same path.
+                        if (removed != null && state !in heldModifierKeys.values) {
+                            onAction(KeyAction.ModifierStateAction(state, down = false))
+                        }
+                    }
                     GestureType.Move -> return@OnGestureListener false
                 }
                 modifierStates.clear()
@@ -439,6 +460,12 @@ class DesktopKeyboard private constructor(
                 // pressed visuals, sound and multi-pointer dispatch.
                 false
             }
+        }
+    }
+
+    private fun releaseHeldModifierKeys() {
+        heldModifierKeys.values.toSet().forEach { state ->
+            onAction(KeyAction.ModifierStateAction(state, down = false))
         }
     }
 

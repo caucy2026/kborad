@@ -35,7 +35,8 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
         val countX: Int,
         val countY: Int,
         val totalX: Int,
-        val totalY: Int
+        val totalY: Int,
+        val cancelled: Boolean = false
     )
 
     fun interface OnGestureListener {
@@ -247,7 +248,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
             }
             MotionEvent.ACTION_CANCEL -> {
                 isPressed = false
-                dispatchGestureEvent(GestureType.Up, event.x, event.y)
+                dispatchGestureEvent(GestureType.Up, event.x, event.y, cancelled = true)
                 if (physicalKeySoundEnabled && physicalReleaseSoundEnabled) {
                     InputFeedbacks.physicalKeyUp()
                 }
@@ -268,9 +269,20 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
         x: Float,
         y: Float,
         countX: Int = 0,
-        countY: Int = 0
+        countY: Int = 0,
+        cancelled: Boolean = false
     ) {
-        val event = Event(type, gestureConsumed, x, y, countX, countY, swipeTotalX, swipeTotalY)
+        val event = Event(
+            type,
+            gestureConsumed,
+            x,
+            y,
+            countX,
+            countY,
+            swipeTotalX,
+            swipeTotalY,
+            cancelled
+        )
         val consumed = onGestureListener?.onGesture(this, event) ?: return
         if (consumed && !gestureConsumed) {
             gestureConsumed = true
