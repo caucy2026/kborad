@@ -2028,7 +2028,9 @@ private class AquariumEngine {
             uniform float uAspect;
             uniform float uTime;
             uniform float uAge;
-            uniform float uSeed;
+            // uSeed is consumed in both stages. Mali-G52 requires the shared uniform precision
+            // to match explicitly; vertex highp default + fragment mediump default fails linking.
+            uniform mediump float uSeed;
             out float vProgress;
             out float vEdge;
             out float vKind;
@@ -2073,7 +2075,7 @@ private class AquariumEngine {
             in float vEdge;
             in float vKind;
             in vec2 vBubbleLocal;
-            uniform float uSeed;
+            uniform mediump float uSeed;
             uniform float uAlpha;
             out vec4 fragColor;
             void main() {
