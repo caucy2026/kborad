@@ -1299,6 +1299,90 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.44 - 2026-08-24
+
+### 主题
+恢复 KBoard 实际正式签名配置，生成星期数字水族正式 Release，并无损覆盖安装到 63。
+
+### 过程
+- 首次把 `5dc9bafa` 的无签名 Release 直接交给 63 时，Android 12 明确返回 `INSTALL_PARSE_FAILED_NO_CERTIFICATES`；系统权限不能替代 APK 证书校验。
+- 用户确认 `/Users/newlink/kemi/keystore/debug.keystore` 虽保留历史文件名，但就是 KBoard 当前正式签名文件，并提供实际 alias/口令。发布身份必须按证书指纹判断，不能按文件名猜测。
+- `keytool` 核对别名为 `androiddebugkey`，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`，与 63 原安装包及 KBoard 历史正式基线完全一致，因此可以 `install -r` 保留数据覆盖，不需要卸载或写入 `/system`。
+- 63 上 KBoard 当前实际为 `/data/app` 下普通 UID `10134`，无 `SYSTEM/PRIVILEGED` 包标志；项目需要的签名级/系统能力和普通安装位置是不同概念，不能用 root 或 appops 绕过 APK 签名。
+
+### 修改
+- 使用项目既有 `assemble-release-local.sh`，通过外部环境注入 `SIGN_KEY_FILE/SIGN_KEY_PWD/SIGN_KEY_ALIAS` 完整构建正式 Release；没有修改签名脚本、Gradle 配置或应用源码，也没有构建 Debug。
+- `fcitx5-android-port-plan.md` 补充 KBoard 实际 keystore 路径、alias、证书指纹、验签与安装命令；密码只指向私密权限文档，不写入可推送项目仓库。
+- 私密 `/Users/newlink/kemi/priv/xtqx.md` 补充 KBoard 可直接复用的正式 Release 签名、验签、覆盖安装步骤，并明确文件名不能替代证书身份判断。
+
+### 验证
+- 完整 `./scripts/assemble-release-local.sh` 为 `BUILD SUCCESSFUL`，Kotlin、R8、Lint Vital、arm64 原生组件、Release 签名和打包全部通过。
+- 正式 APK 为 `fcitx5-android/build/kboard.apk`，包名 `org.fcitx.fcitx5.android`、`versionCode=112`、`versionName=330ca8a4`、大小 46,193,440 字节，SHA-256 为 `318486abb3ca3025ef654ca988925c2503df47fcb021c038d23d63396fbcff47`。
+- `apksigner` 确认 v1/v2 均有效，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- `adb -s 192.168.3.63:5555 install -r` 返回 `Success`；设备查询确认 `versionName=330ca8a4`、`versionCode=112`、更新时间 `2026-08-24 10:12:33`，未卸载、未清数据。
+
+### 待办
+- 按用户要求本轮完成推送和版本核对，没有代替用户操作键盘。2026-08-24 为星期一，现场重新进入全局键盘应先看到鱼群游成数字 1，再保持并散开。
+- `keytool` 对该旧 JKS 的证书自签名算法给出 MD5withRSA 安全警告；当前 APK v1/v2 验签和 Android 12 覆盖安装均成功，但未来若轮换密钥必须专项设计签名 lineage/重装迁移，不能直接换证书破坏升级链。
+
+---
+
+## V1.45 - 2026-08-24
+
+### 主题
+修复 63 全局水族渲染中断，移除不协调水草，重做真实触水涟漪，并让普通键盘切入全局键盘时按当天星期编队后随机戏耍。
+
+### 过程
+- 63 上“金鱼、涟漪和音效同时消失”的直接原因不是三个功能分别失效，而是水草 program 在 Mali-G52 链接失败：片元与顶点 Shader 的 `uSeed` 精度不一致触发 `IllegalStateException`，整个 Aquarium renderer 随之停止。
+- 先用 `4e29c75b` 对齐水草 Shader 精度确认根因，再按产品决定用 `a167e34d` 完整删除水草 program、网格、uniform、Draw Call、触摸状态和碰撞体，避免隐藏图像后仍留下渲染成本或隐形障碍。
+- 旧涟漪只是低对比亮度扰动，连续截图中几乎不可见。`d2d5fa9f` 将水面模型改为触点凹陷、外扩前导波、后随快/慢双频波列、波峰高光、波谷阴影、法线折射和随水流轻微非圆漂移；仍复用 4 个 uniform 槽，不增加 View 或粒子系统。
+- 每次普通键盘切入全局键盘都会停止旧引擎并新建 AquariumEngine，重新读取本地 `Calendar.DAY_OF_WEEK`。星期数字完成 FORM/HOLD/DEPART 后，10 条鱼以随机偏移保证同时分配到 ROUTE/FOLLOW/PLAY，并获得独立持续时间；只改变导航意图，不改坐标、速度或朝向。
+
+### 修改
+- `DesktopAquariumView.kt`：彻底移除水草渲染与碰撞链；保留金鱼、真实水滴声、最多 4 组涟漪、触摸投喂、差异化散场和随机单鱼闪光。
+- `WATER_FRAGMENT_SHADER`：波前速度改为 `0.245 UV/s`，前导带宽 `0.030`，后随相位为 `72/37 rad·UV⁻¹`，寿命 1.55–2.25 秒，折射量为 `0.0065/0.0085`；接触早期单独计算中心凹陷和扩张 crown。
+- 星期编队结束日志增加活动统计，例如 `activities=route:4,follow:3,play:3`，便于确认编队不是结束后静止或全部进入同一种行为。
+- 普通键盘、候选栏、ASR、组合键、桌面功能键、切屏和输入事件链均未修改。
+
+### 验证
+- `:app:compileReleaseKotlin` 成功；`./scripts/assemble-release-local.sh` 完整成功，Kotlin、R8、Lint Vital、arm64 原生组件和 Release 签名均通过，没有构建 Debug。
+- 正式 APK：`fcitx5-android/build/kboard.apk`，包名 `org.fcitx.fcitx5.android`、`versionName=d2d5fa9f`、`versionCode=112`、大小 46,191,156 字节、SHA-256 `ecc801e8f8dfe3343123365aa2cf95a3df36ca1c448f83aadcbaa3c825134d10`。
+- `apksigner` 确认 v1/v2 有效，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`；63 覆盖安装返回 `Success`，未卸载、未清数据。
+- 2026-08-24 星期一，63 从普通键盘切入全局键盘实测日志依次为 `digit=1 phase=FORM/HOLD/DEPART/DONE`，DONE 为 `route:4,follow:3,play:3`；10 条鱼在 1080×451 内部 surface 持续 28.8–29.9 FPS，无 EGL、GLSL、renderer stopped 或应用崩溃。
+- 字符键受控触摸日志同时出现 `touchFeed` 和 AudioTrack 创建；连续截图可见 H/J 键下的中心暗凹、偏置亮脊和向外衰减波列，验证新版涟漪实际进入水面，而非仅有日志。
+
+### 待办
+- ADB 日志只能证明音轨创建和播放路径正常，真实水滴音量与音色仍以设备扬声器现场听感为准。
+- 当前 10 条鱼对数字 1 的七段槽位形成已通过星期一真机验证；星期二到星期日的 2–7 仍应在不改系统日期的自然日期或隔离测试设备上逐日核对辨识度。
+
+---
+
+## V1.46 - 2026-08-24
+
+### 主题
+修复全局键盘“只显示第一个候选”的视觉问题，并保持普通键盘候选主题不变。
+
+### 过程
+- 63 当前截图显示候选事件实际已经包含“你、n、能、拿、牛、年、那”等多项，因此不是拼音引擎、JNI 事件或 RecyclerView 把候选截成一个。
+- 全局键盘使用固定深色水族背景，但候选项继续读取当前普通浅色主题的深色 `candidateTextColor`；只有首个直命中项使用独立蓝色，所以其余候选虽然存在，视觉上接近不可见。
+- 颜色修复必须跟随全局模式生命周期，而不能修改主题预设，否则普通键盘、展开候选页和用户自定义主题都会被一起改变。
+
+### 修改
+- `CandidateItemUi` 和 `CandidateViewHolder` 增加可选候选正文/注释颜色覆盖，并把覆盖色纳入 ViewHolder 重绑定状态，保证普通键盘与全局键盘来回切换时同一批候选也会立即重绘。
+- `HorizontalCandidateViewAdapter` 增加颜色覆盖接口；全局模式普通候选使用白色，候选注释使用 80% 白色，首个活动组合态直命中仍保持 `#4285F4` 蓝色。
+- `KawaiiBarComponent.setDesktopKeyboardMode()` 只在进入全局键盘时启用覆盖，退出时清空覆盖并恢复当前主题；候选数量、排序、选择索引、展开分页和输入引擎均未修改。
+
+### 验证
+- `:app:compileReleaseKotlin` 和完整 `./scripts/assemble-release-local.sh` 均成功，没有构建或安装 Debug。
+- 正式 APK 为 `fcitx5-android/build/kboard.apk`：`versionName=529adb53`、`versionCode=112`、大小 46,191,389 字节、SHA-256 `35008f75e71616782fa8c657f752b502cd942444f4e6a4bd4d3c2430b86d07d7`；v1/v2 验签成功，证书 SHA-256 仍为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 63 无损覆盖安装返回 `Success`。全局键盘输入 `n` 后截图清晰显示“你、n、能、拿、年、那、内、…”，点击“你”上屏后联想栏清晰显示“好、帮、读、单独、的、们、是、不”；普通键盘同一输入仍沿用原浅色主题。
+- 过滤日志无 `FATAL EXCEPTION`、EGL/GLSL 或 `Aquarium renderer stopped`。
+
+### 待办
+- 候选栏仍按现有单行宽度最多展示首屏可容纳项，更多项通过右侧展开入口查看；本次修复的是“已有候选因低对比度不可见”，没有改变候选生成数量或分页策略。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

@@ -397,6 +397,7 @@ m fcitx5-android/lib/fcitx5-chinese-addons/src/main/cpp/fcitx5-chinese-addons
 - “直命中”不是简单的 `position == 0`，还必须存在活动组合态。软键盘同时跟踪 `ClientPreeditEvent` 与 `InputPanelEvent` 的 `preedit`、`auxUp`、`auxDown`；组合态结束后仍保留的候选属于联想，不着色。
 - 软件候选栏使用 `AutoScaleTextView`。该控件的 `onDraw()` 调用 `drawText(text.toString(), ...)`，颜色 Span 不参与绘制；改变候选颜色必须调用 `setTextColor()` 更新 `currentTextColor`。
 - 硬件键盘浮动候选使用普通 `TextView`，可通过 Span 单独设置候选正文颜色。两条 UI 路径必须一起验证。
+- 全局水族键盘使用固定深色背景，不能直接沿用浅色主题的深色 `candidateTextColor`。`529adb53` 在进入全局模式时只对横向候选正文/注释启用白色覆盖，首个活动组合态仍为 `#4285F4`；退出全局模式时清空覆盖，普通键盘、展开候选页和自定义主题不受影响。若截图中只有首项蓝色可见，先检查其余候选是否以低对比深色实际存在，不要误判为引擎只返回一个。
 
 #### 物理键盘去毛刺
 
@@ -491,6 +492,20 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - 当前正式签名为 AOSP Android 平台证书，SHA-256：`c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。早期文档中的 `fc84f5...` 是另一把 Android Debug 证书，只适用于对应历史产物，不能再用于当前设备覆盖安装。
 - 2026-08-17 当前安装到 `.63` 的正式版本为 `f6b7271c`；安装后首次启动或首次唤起 KBoard 会自动启用同包中继，默认输入法仍必须保持主 `FcitxInputMethodService`。
 
+#### KBoard 实际正式签名输入（2026-08-24）
+
+- KBoard 当前升级链使用 `/Users/newlink/kemi/keystore/debug.keystore`。`debug.keystore` 是历史文件名，不能据此判定为 Debug 身份；发布前必须核对 alias `androiddebugkey` 和证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 密码只保存在私密 `/Users/newlink/kemi/priv/xtqx.md`，不得复制到本仓库、GitHub、构建日志或 APK 旁的校验文件。
+- 从 `fcitx5-android/` 运行：
+  ```bash
+  SIGN_KEY_FILE=/Users/newlink/kemi/keystore/debug.keystore \
+  SIGN_KEY_PWD='<从私密 xtqx.md 读取>' \
+  SIGN_KEY_ALIAS=androiddebugkey \
+  ./scripts/assemble-release-local.sh
+  ```
+- 构建后先执行 `apksigner verify --verbose --print-certs build/kboard.apk`，只有 v1/v2 成功且证书指纹与上面一致，才允许执行 `adb -s 192.168.3.63:5555 install -r build/kboard.apk`。不要安装 `*-release-unsigned.apk`，不要因应用使用系统能力就跳过签名。
+- 2026-08-24 当前最终闭环：`versionName=529adb53`、`versionCode=112`、APK SHA-256 `35008f75e71616782fa8c657f752b502cd942444f4e6a4bd4d3c2430b86d07d7`，63 覆盖安装返回 `Success`。该包延续证书 SHA-256 `c8a2e9...92ab8`，不得改用未签名包或仅依据 keystore 文件名判断发布身份。
+
 #### `.63` Mali-G52 水族渲染验证（2026-08-21）
 
 - `.63` 为 Android 12/API 31、arm64-v8a、Mali-G52、OpenGL ES 3.2，D0/D2 均为 1920×1280@60Hz；全局键盘内部水面限制到 1440 宽。
@@ -499,6 +514,9 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - 全局语音键恢复为底部白色麦克风，语音链恢复 160ms 按住阈值、移动取消、partial 实时字幕、松开校准、final 预览 600ms 后单次提交；真机确认 `RECORD_AUDIO`、`INTERNET`、`ACCESS_NETWORK_STATE` 权限链未被水族界面改动破坏。远程触发会把现场音频发送至讯飞，必须得到该项明确授权后再做完整会话测试。
 - 设备安装与性能验收仍按 Release-only 流程执行；水滴音的听感必须由真机扬声器人工确认，日志只能证明音轨创建和播放路径没有异常。
 - 2026-08-21 后续水族迭代把内部宽度从 1440 降到 1080；同一 Mali-G52 在 1080×451、10 条鱼时恢复 29.3–29.9 FPS。最终 `e2e1813b` 使用连续 6×5 尾幕网格、根尖延迟行波、摆尾完成事件推进、C 型卷尾与一次性启动偏航脉冲、慢速胸鳍，Release 构建成功并覆盖安装到 `.63`。本轮遵照“用户自己测试、只推送”未远程启动或触摸，最终 Shader 观感仍以现场验收为准。
+- 2026-08-24 水草 program 在 Mali-G52 链接阶段因顶点/片元 `uSeed` 精度不一致导致整个 `KBoardAquarium` renderer 停止，表现为金鱼、涟漪同时消失。`a167e34d` 已完整删除水草 program、网格、uniform、Draw Call、触摸状态和草根碰撞，最终只保留水面与鱼体两个 program；不要只隐藏水草图像而保留旧 Shader。
+- `d2d5fa9f` 将水面重做为接触凹陷、扩张 crown、`0.245 UV/s` 外扩前导波、`72/37` 双频后随波列、波峰/波谷明暗和 `0.0065/0.0085` 法线折射。`.63` 受控 H/J 键触摸截图已看到按键下凹陷、亮脊和衰减波列；AudioTrack 创建正常，水滴听感仍需现场扬声器人工确认。
+- 每次普通键盘切入全局键盘会新建引擎并重新读取本地星期。2026-08-24 星期一真机日志完整输出 `digit=1 phase=FORM/HOLD/DEPART/DONE`，DONE 为 `activities=route:4,follow:3,play:3`；1080×451、10 条鱼保持 28.8–29.9 FPS，无 EGL、GLSL、renderer stopped 或应用崩溃。
 - 后续 `808aa72a` 修复触水首帧不可见、旋转后缓冲比例残留、语音覆盖层不参与水族触控和底栏遮住第六行：水面首帧加入非对称凹陷/偏心高光，尺寸变化同步重配 `SurfaceTexture` 缓冲；语音触摸以不消费事件的方式镜像到鱼群；全局键盘用真实 44dp 底部约束占位恢复 `Ctrl / Alt / 中/英 / 空格 / Cmd / 方向键`，普通键盘的默认占位仍为 0。`.63` 修复版截图已确认完整第六行，用户主动进入的全局模式在换输入框和旋转重建时保持到主动退出。
 - `808aa72a` Release 的 APK SHA-256 为 `ca5d149b2713172df7af2bfa89fb0e96e4d68501e913251be31a412e157bfd22`，覆盖安装 `.63` 返回 `Success`。普通/全局语音统一为按下提示、partial 实时显示、松开校准、final 预览 600ms 后单次提交；全局候选栏根尺寸固定以消除语音按下时的跳动。未远程触发麦克风，现场语音内容没有上传。
 - `feca3b94` 将全局语音提示移到候选状态机外的固定覆盖层，修复非 Idle 候选页看不到提示/partial 以及冗余 `Idle` 回调清空按下提示的问题；partial 恢复编辑器临时组合文本，final 使用纠正文本整体替换后单次确认。鱼群改为语音触点周围分层目标，“英中”键按当前输入法将对应字符标蓝。Release APK SHA-256 为 `f90251d76c7f4b47e95d209e84988fec29aecf86fe69af172d0a8a77a48d4915`，已覆盖安装 `.63`；默认输入法未变，未远程触发麦克风。
