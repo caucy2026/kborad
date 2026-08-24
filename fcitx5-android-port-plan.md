@@ -550,6 +550,7 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - 上述修正正式 Release 为 `versionName=80325aee`、`versionCode=122`、APK SHA-256 `f658a757aeb09768c687d1e5be12782b8524d1f53d84009cfa6634a3b58f3003`；v1/v2 签名及正式证书验证通过，APK 中 4 个水滴 WAV 均存在，63 `install -r` 返回 `Success`，默认输入法未改变。
 - 远程桌面隐藏后重新显示 IME 时若闪一下普通键盘，责任在 KBoard 的首帧创建顺序：`KeyboardWindow.onCreateView()` 不能固定 `attachLayout(TextKeyboard.Name)` 后再等 `onStartInput()` 异步恢复全局模式；必须依据进程内 `desktopModeRequested` 直接首挂 `DesktopKeyboard`。远程桌面只需正常请求显示/隐藏，无需添加延时或遮罩。进程完全重启后仍回普通键盘是独立的既有安全策略。
 - `64b1471b/122` 不得发布：63 在 InputView 重建时于 `InputView.setDesktopKeyboardMode()` 发生主线程 NPE。原因是首挂 `DesktopKeyboard` 后 `KeyboardWindow.onAttached()` 在 `InputView.keyboardView` 初始化前就应用桌面样式。正确实现必须让 `setDesktopKeyboardMode()` 在 `keyboardView` 未初始化时缓存最后状态，并在根布局构造完成后一次性应用；不能回退为先画普通键盘，也不能直接访问半构造 View。
+- 构造时序修复版为 `6c5be9c4/122`：`InputView` 以独立的 hierarchy-ready 标记缓存构造期桌面模式，在根视图、约束和操作栏全部初始化后一次性应用。正式 Release SHA-256 为 `044f9ef21f98f11853f8c73b96d97bbddc9430143eb95e3730102862fd08bb53`，v1/v2 及既定证书验证通过，63 覆盖安装成功且默认输入法未变。清空旧日志后，远程桌面真实重新拉起修复版 KBoard，多次 IME View/Surface 重建和连续触摸后进程持续存活，无旧 NPE 或任何 `FATAL EXCEPTION`；水族为 10 条鱼、1080×425、29.9–30.1 FPS，AudioTrack 与 `touchFeed` 均正常。
 
 #### RustDesk/KEMI 远程回车
 

@@ -1519,7 +1519,10 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ### 验证
 - `64b1471b` 构建与签名虽通过，但 63 真实重建 InputView 时按上述 NPE 崩溃，已判定为失败版本，不得继续发布或归档。
-- 增加构造期延迟应用保护后的 `git diff --check`、Release Kotlin、完整签名构建、63 覆盖安装和真实“隐藏 -> 显示”待重新执行；必须同时确认无闪普通键盘、无 `FATAL EXCEPTION`、水滴声保留。
+- 修复提交 `6c5be9c4` 的 Release Kotlin 编译及完整 Release 构建通过；正式 APK 为 `versionName=6c5be9c4`、`versionCode=122`，SHA-256 为 `044f9ef21f98f11853f8c73b96d97bbddc9430143eb95e3730102862fd08bb53`。
+- `apksigner` 验证 v1/v2 签名和既定正式证书通过，APK 内 4 个水滴 WAV 均存在；63 `install -r` 返回 `Success`，设备回读版本为 `6c5be9c4/122`，默认输入法仍为主 KBoard。
+- 安装后清空旧 logcat，并由 `com.newlinksz.kemi.remote` 真实重新拉起 KBoard：系统状态为 `mInputShown=true`，修复版进程持续存活；多次 InputMethod View/水族 Surface 重建及连续触摸后未再出现 `InputView.setDesktopKeyboardMode()` NPE、`FATAL EXCEPTION` 或进程重启。
+- 水族运行日志为 10 条鱼、`1080×425`、`29.9–30.1 FPS`；每次 DOWN 均创建 AudioTrack 并记录 `touchFeed`，证明水滴声音调用链和鱼群触摸链均保留。是否仍有肉眼可见的普通键盘中间帧以现场观感复核为准。
 
 ### 待办
 - 本修复只消除 KBoard 自己创建的普通键盘中间帧。如果日志显示远程桌面连续创建两个不同 EditorInfo/输入会话，仍需分别记录 `onStartInputView` 次数，但不能再通过固定首挂普通键盘放大闪烁。
