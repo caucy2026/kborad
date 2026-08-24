@@ -1447,6 +1447,33 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.48 - 2026-08-24
+
+### 主题
+正式版本号加一，发布 KBoard 0.1.4 / arm64 versionCode 122 到 `bin/`。
+
+### 过程
+- 项目继续使用多 ABI 版本编码：`versionCode = baseVersionCode * 10 + abiId`，arm64-v8a 的 `abiId=2`。因此基础版本从 11 增加到 12 后，正式 arm64 版本由 112 正确升级为 122，不能写成会破坏 ABI 编码规则的 113。
+- 语义基础版本同步从 `0.1.3` 增加到 `0.1.4`；版本变更独立提交为 `207449fb`，APK 的 `versionName` 与该源码提交一致。
+- 构建继续使用已确认的正式升级 keystore、alias 和证书链，仅执行签名 Release 发布流程，没有生成或安装 Debug APK。
+
+### 修改
+- `Versions.kt`：`baseVersionCode 11 -> 12`，`baseVersionName 0.1.3 -> 0.1.4`。
+- 正式 APK 归档为 `bin/KEMI-0.1.4-122-207449fb-arm64-v8a-release.apk`。
+- 新增独立校验文件 `bin/KEMI-0.1.4-122-207449fb-SHA256SUMS.txt`。
+
+### 验证
+- `./scripts/assemble-release-local.sh` 完整成功，Kotlin、R8、Lint Vital、arm64 原生构建、签名和 APK 打包均通过。
+- `aapt` 确认包名 `org.fcitx.fcitx5.android`、`versionCode=122`、`versionName=207449fb`、minSdk 23、targetSdk 36；APK 中 native ABI 仅为 `arm64-v8a`。
+- `apksigner` 确认 v1/v2 签名有效，证书 SHA-256 仍为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 正式 APK 大小 46,191,978 字节，SHA-256 为 `67d93022042ed0ef9e36e900382753bdbfd5ca90290603bc917d9f6085d4644b`；`bin` 副本与 `fcitx5-android/build/kboard.apk` 逐字节一致。
+
+### 待办
+- 本轮用户要求的是正式释放到 `bin/`，没有要求安装设备或推送 GitHub，因此没有改动 63 当前已安装版本，也没有执行远端仓库写入。
+- 后续覆盖安装必须使用本次 `bin` 中的签名 APK并保留数据；安装后应确认设备版本为 `versionCode=122`、`versionName=207449fb`。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

@@ -527,6 +527,7 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
   ```
 - 构建后先执行 `apksigner verify --verbose --print-certs build/kboard.apk`，只有 v1/v2 成功且证书指纹与上面一致，才允许执行 `adb -s 192.168.3.63:5555 install -r build/kboard.apk`。不要安装 `*-release-unsigned.apk`，不要因应用使用系统能力就跳过签名。
 - 2026-08-24 当前最终闭环：`versionName=529adb53`、`versionCode=112`、APK SHA-256 `35008f75e71616782fa8c657f752b502cd942444f4e6a4bd4d3c2430b86d07d7`，63 覆盖安装返回 `Success`。该包延续证书 SHA-256 `c8a2e9...92ab8`，不得改用未签名包或仅依据 keystore 文件名判断发布身份。
+- 2026-08-24 新的 `bin` 正式发布基线为 KBoard `0.1.4`：源码/`versionName=207449fb`、arm64 `versionCode=122`、APK SHA-256 `67d93022042ed0ef9e36e900382753bdbfd5ca90290603bc917d9f6085d4644b`，文件名 `KEMI-0.1.4-122-207449fb-arm64-v8a-release.apk`。版本号遵守 `baseVersionCode*10+abiId`，不得把 arm64 的 112 直接改成 113。
 
 #### `.63` Mali-G52 水族渲染验证（2026-08-21）
 
