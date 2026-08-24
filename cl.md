@@ -1516,7 +1516,9 @@ KEMI 设置页品牌化与动态名称中文化。
 - 后续 `onStartInput()` 的输入类型/全局模式选择、用户主动切换和进程重启后回普通键盘的原策略不变。
 
 ### 验证
-- `git diff --check` 与 Release Kotlin 编译待执行；完成签名 Release 后覆盖安装 63，并由用户在真实远程桌面链路重复“隐藏 -> 显示”确认不再闪普通键盘。
+- `git diff --check`、`:app:compileReleaseKotlin` 和完整 `./scripts/assemble-release-local.sh` 均成功；只构建正式 Release。
+- 正式包为 `versionName=64b1471b`、`versionCode=122`，APK SHA-256 `1184d9c1ef21eb910afb25506646dc0f81de774d0444a8e758d14e6a4b5c32c5`；v1/v2 签名及证书链验证通过，4 个水滴 WAV 仍在包内。
+- 63 使用 `install -r` 无损覆盖返回 `Success`，设备版本与包一致，默认输入法仍是主 `FcitxInputMethodService`。真实远程桌面“隐藏 -> 显示”无闪屏观感由用户现场复测。
 
 ### 待办
 - 本修复只消除 KBoard 自己创建的普通键盘中间帧。如果日志显示远程桌面连续创建两个不同 EditorInfo/输入会话，仍需分别记录 `onStartInputView` 次数，但不能再通过固定首挂普通键盘放大闪烁。
