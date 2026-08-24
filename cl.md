@@ -1367,16 +1367,48 @@ KEMI 设置页品牌化与动态名称中文化。
 - 全局键盘使用固定深色水族背景，但候选项继续读取当前普通浅色主题的深色 `candidateTextColor`；只有首个直命中项使用独立蓝色，所以其余候选虽然存在，视觉上接近不可见。
 - 颜色修复必须跟随全局模式生命周期，而不能修改主题预设，否则普通键盘、展开候选页和用户自定义主题都会被一起改变。
 
+### 根因证据与调用链
+- Native `AndroidInputContext.updateCandidatesBulk()` 会把当前候选总数和首批最多 16 项送入 JNI；`FcitxEvent.CandidateListEvent.Data` 在 Kotlin 层同时保留 `total` 和完整 `candidates` 数组。
+- `HorizontalCandidateComponent.onCandidateUpdate()` 原样把数组交给适配器，`HorizontalCandidateViewAdapter.getItemCount()` 返回 `candidates.size`。截图中各候选分隔线和深色字形轮廓都存在，排除了“引擎只生成一项”“JNI 只传一项”和“列表只绑定一项”。
+- 首个候选之所以可见，是活动 `ClientPreedit/InputPanel` 组合态把第 0 项标记为 direct hit，`CandidateItemUi` 使用固定 `#4285F4`；其余项回退到浅色主题的深色 `theme.candidateTextColor`，与全局水族固定深色表面形成错误的低对比组合。
+- 模式切换链为 `KeyboardWindow.notifyBarLayoutChanged()` → `InputView.setDesktopKeyboardMode()` → `KawaiiBarComponent.setDesktopKeyboardMode()`。因此把颜色覆盖接在这一链路上，可以精确限定全局键盘，而无需修改候选引擎、全局主题或普通键盘。
+
 ### 修改
 - `CandidateItemUi` 和 `CandidateViewHolder` 增加可选候选正文/注释颜色覆盖，并把覆盖色纳入 ViewHolder 重绑定状态，保证普通键盘与全局键盘来回切换时同一批候选也会立即重绘。
 - `HorizontalCandidateViewAdapter` 增加颜色覆盖接口；全局模式普通候选使用白色，候选注释使用 80% 白色，首个活动组合态直命中仍保持 `#4285F4` 蓝色。
 - `KawaiiBarComponent.setDesktopKeyboardMode()` 只在进入全局键盘时启用覆盖，退出时清空覆盖并恢复当前主题；候选数量、排序、选择索引、展开分页和输入引擎均未修改。
+
+### 逐文件改动
+
+| 文件 | 具体职责 | 修改结果 |
+|---|---|---|
+| `input/bar/KawaiiBarComponent.kt` | 接收普通/全局键盘模式切换 | 进入全局模式时下发高对比覆盖，退出时同步清除；不改变候选栏尺寸、状态机和语音覆盖层。 |
+| `input/candidates/CandidateItemUi.kt` | 绘制候选正文和注释 | 增加可空的正文/注释覆盖色；direct hit 优先级仍最高，并继续显式调用 `AutoScaleTextView.setTextColor()`。 |
+| `input/candidates/CandidateViewHolder.kt` | 缓存候选绑定状态 | 把两种覆盖色加入差异判断；即使候选文本和索引没变，普通/全局切换也会触发重绘，避免 RecyclerView 复用旧颜色。 |
+| `input/candidates/horizontal/HorizontalCandidateViewAdapter.kt` | 管理横向候选 ViewHolder | 保存覆盖色并在变化时 `notifyDataSetChanged()`；每个绑定都携带当前模式颜色，不修改候选数组和稳定 ID。 |
+| `input/candidates/horizontal/HorizontalCandidateComponent.kt` | 连接候选事件与适配器 | 全局正文设为 `Color.WHITE`，注释设为 `0xCCFFFFFF`；普通模式传 `null`，回退到用户主题。 |
+
+### 行为边界与风险控制
+- 只改变横向候选的绘制颜色，不改 `CandidateWord`、候选数量、排序、学习、选择索引、长按操作、展开分页或提交文本，因而不会改变输入结果。
+- direct hit 仍仅在预编辑/面板组合态存在时着蓝；选择“你”上屏后，联想项全部为白色，不会错误地把联想第一项继续标成命中蓝色。
+- 展开候选页继续使用自身主题逻辑；普通键盘恢复 `null` 覆盖后继续服从内置或自定义主题，避免为了全局深色表面永久改坏其他页面。
+- 模式切换会执行一次整栏重绑定，但只发生在用户进入或退出全局键盘时；普通按键输入仍走原有候选刷新路径，不在高频输入链增加额外布局层或网络/native 操作。
 
 ### 验证
 - `:app:compileReleaseKotlin` 和完整 `./scripts/assemble-release-local.sh` 均成功，没有构建或安装 Debug。
 - 正式 APK 为 `fcitx5-android/build/kboard.apk`：`versionName=529adb53`、`versionCode=112`、大小 46,191,389 字节、SHA-256 `35008f75e71616782fa8c657f752b502cd942444f4e6a4bd4d3c2430b86d07d7`；v1/v2 验签成功，证书 SHA-256 仍为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
 - 63 无损覆盖安装返回 `Success`。全局键盘输入 `n` 后截图清晰显示“你、n、能、拿、年、那、内、…”，点击“你”上屏后联想栏清晰显示“好、帮、读、单独、的、们、是、不”；普通键盘同一输入仍沿用原浅色主题。
 - 过滤日志无 `FATAL EXCEPTION`、EGL/GLSL 或 `Aquarium renderer stopped`。
+
+### 真机回归矩阵
+
+| 场景 | 期望 | 63 实测 |
+|---|---|---|
+| 普通中文键盘输入 `n` | 首项蓝色，其余沿用浅色主题深色字 | 通过，整行候选可见，普通主题未改变。 |
+| 普通键盘切到全局后输入 `n` | 首项蓝色，其余候选白色 | 通过，显示“你、n、能、拿、年、那、内、…”等。 |
+| 全局模式选择“你” | 提交“你”，展示多项白色联想 | 通过，显示“好、帮、读、单独、的、们、是、不”。 |
+| 候选存在时观察水族与键盘 | 鱼、按键和候选同时正常 | 通过，未出现候选层遮挡、渲染停止或崩溃。 |
+| Release 覆盖安装 | 保留应用数据与默认输入法升级链 | 通过，`install -r` 成功，包名、版本和证书一致。 |
 
 ### 待办
 - 候选栏仍按现有单行宽度最多展示首屏可容纳项，更多项通过右侧展开入口查看；本次修复的是“已有候选因低对比度不可见”，没有改变候选生成数量或分页策略。

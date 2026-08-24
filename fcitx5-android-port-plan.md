@@ -399,6 +399,28 @@ m fcitx5-android/lib/fcitx5-chinese-addons/src/main/cpp/fcitx5-chinese-addons
 - 硬件键盘浮动候选使用普通 `TextView`，可通过 Span 单独设置候选正文颜色。两条 UI 路径必须一起验证。
 - 全局水族键盘使用固定深色背景，不能直接沿用浅色主题的深色 `candidateTextColor`。`529adb53` 在进入全局模式时只对横向候选正文/注释启用白色覆盖，首个活动组合态仍为 `#4285F4`；退出全局模式时清空覆盖，普通键盘、展开候选页和自定义主题不受影响。若截图中只有首项蓝色可见，先检查其余候选是否以低对比深色实际存在，不要误判为引擎只返回一个。
 
+候选“只显示首项”的排查顺序：
+
+1. 先看截图中是否仍有候选分隔线或暗色字形；有则优先检查前景色/背景色对比度。
+2. 再核对 `CandidateListEvent.Data.candidates.size`、`total` 和 `HorizontalCandidateViewAdapter.itemCount`；三者确认是否属于数据截断。
+3. 若数据完整但模式切换后颜色没变，检查 `CandidateViewHolder` 是否把颜色覆盖纳入缓存差异条件。只调用 `notifyDataSetChanged()` 不足以保证自定义 Holder 绘制更新，因为 Holder 可能因候选对象与 direct-hit 状态相同而跳过重绘。
+4. `AutoScaleTextView` 的自定义 Canvas 绘制会把 Spannable 扁平为字符串，必须更新真实 `currentTextColor`；只增加颜色 Span 在该路径无效。
+5. 回归必须覆盖“普通输入候选”“全局输入候选”“选择首项后的联想”“带 comment 候选”“普通/全局来回切换”五种状态，不能只看首次输入的一张截图。
+
+`529adb53` 的模式隔离路径为：
+
+```text
+KeyboardWindow.notifyBarLayoutChanged()
+  -> InputView.setDesktopKeyboardMode(enabled)
+  -> KawaiiBarComponent.setDesktopKeyboardMode(enabled)
+  -> HorizontalCandidateComponent.setDesktopKeyboardMode(enabled)
+  -> HorizontalCandidateViewAdapter.setCandidateColorOverride(...)
+  -> CandidateViewHolder.update(...颜色状态...)
+  -> CandidateItemUi.updateCandidate() / AutoScaleTextView.setTextColor()
+```
+
+这个链路只处理表现层。严禁为了修复对比度去修改 native 候选上限、拼音预测数量、排序或提交逻辑；否则会把纯视觉缺陷扩大成输入行为变化。
+
 #### 物理键盘去毛刺
 
 - 过滤维度为 `(deviceId, keyCode)`，只处理真实物理设备的可打印键；虚拟键、`FLAG_VIRTUAL_HARD_KEY`、修饰键和控制键不进入过滤。
