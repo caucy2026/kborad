@@ -9,6 +9,7 @@ import android.content.Context
 import android.graphics.Color
 import android.view.MotionEvent
 import android.view.View
+import android.widget.ImageView
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.allViews
 import androidx.core.view.updateLayoutParams
@@ -30,6 +31,7 @@ class DesktopKeyboard private constructor(
     context: Context,
     theme: Theme,
     private val aquariumView: DesktopAquariumView,
+    private val aquariumTransitionOverlay: ImageView,
     private val compositionHeader: View
 ) :
     BaseKeyboard(
@@ -45,6 +47,7 @@ class DesktopKeyboard private constructor(
         context,
         theme,
         DesktopAquariumView(context),
+        createAquariumTransitionOverlay(context),
         createHeader(context)
     )
 
@@ -57,6 +60,15 @@ class DesktopKeyboard private constructor(
                 ConstraintLayout.LayoutParams.MATCH_PARENT
             )
         )
+        addView(
+            aquariumTransitionOverlay,
+            1,
+            ConstraintLayout.LayoutParams(
+                ConstraintLayout.LayoutParams.MATCH_PARENT,
+                ConstraintLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        aquariumView.bindTransitionOverlay(aquariumTransitionOverlay)
         setBackgroundColor(DESKTOP_DECK_COLOR)
         setPadding(0, 0, 0, 0)
         aquariumView.isClickable = true
@@ -137,6 +149,12 @@ class DesktopKeyboard private constructor(
         // Preedit is layered over this transparent composition area.
         private fun createHeader(context: Context) = View(context).apply {
             setBackgroundColor(Color.TRANSPARENT)
+        }
+
+        private fun createAquariumTransitionOverlay(context: Context) = ImageView(context).apply {
+            scaleType = ImageView.ScaleType.FIT_XY
+            isClickable = false
+            isFocusable = false
         }
 
         private val ShiftedSymbols = mapOf(
@@ -557,6 +575,7 @@ class DesktopKeyboard private constructor(
         super.onLayout(changed, left, top, right, bottom)
         // ConstraintLayout respects the key-row bottom padding, but the pond must cover it.
         aquariumView.layout(0, 0, right - left, bottom - top)
+        aquariumTransitionOverlay.layout(0, 0, right - left, bottom - top)
     }
 
 }

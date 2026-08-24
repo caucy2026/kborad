@@ -7,7 +7,6 @@ package org.fcitx.fcitx5.android.input.keyboard.aquarium
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
-import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.opengl.EGL14
 import android.opengl.EGLConfig
@@ -16,9 +15,10 @@ import android.opengl.EGLDisplay
 import android.opengl.EGLSurface
 import android.opengl.GLES30
 import android.util.Log
-import android.view.Gravity
 import android.view.Surface
 import android.view.TextureView
+import android.view.View
+import android.widget.ImageView
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -59,16 +59,21 @@ class DesktopAquariumView(context: Context) : TextureView(context),
     private var renderThread: AquariumRenderThread? = null
     private var active = false
     private var waitingForFirstFrame = true
+    private var transitionOverlay: ImageView? = null
 
     init {
         // TextureView gets a new BufferQueue whenever Android 12 recreates the IME window.
-        // Until GLES submits its first buffer, an opaque TextureView exposes the solid deck
-        // underneath for one or more frames. Keep the last aquarium frame behind the new
-        // texture and remove it only after onSurfaceTextureUpdated confirms a real GPU frame.
-        showTransitionFrame()
+        // TextureView itself rejects background drawables, so DesktopKeyboard supplies a
+        // separate ImageView above this surface and below every key. It holds the last aquarium
+        // frame until onSurfaceTextureUpdated confirms a real replacement GPU frame.
         isClickable = false
         isFocusable = false
         surfaceTextureListener = this
+    }
+
+    fun bindTransitionOverlay(overlay: ImageView) {
+        transitionOverlay = overlay
+        showTransitionFrame()
     }
 
     fun activate() {
@@ -130,8 +135,7 @@ class DesktopAquariumView(context: Context) : TextureView(context),
     override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
         if (!waitingForFirstFrame) return
         waitingForFirstFrame = false
-        background = null
-        isOpaque = true
+        transitionOverlay?.visibility = View.INVISIBLE
         Log.i(AquariumRenderThread.TAG, "first GPU frame replaced transition frame")
     }
 
@@ -147,13 +151,20 @@ class DesktopAquariumView(context: Context) : TextureView(context),
     }
 
     private fun showTransitionFrame() {
-        isOpaque = false
-        background = lastTransitionFrame?.let { frame ->
-            BitmapDrawable(resources, frame).apply { gravity = Gravity.FILL }
-        } ?: GradientDrawable(
-            GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(0xFF06394C.toInt(), 0xFF031526.toInt())
-        )
+        transitionOverlay?.apply {
+            val frame = lastTransitionFrame
+            if (frame != null) {
+                background = null
+                setImageBitmap(frame)
+            } else {
+                setImageDrawable(null)
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    intArrayOf(0xFF06394C.toInt(), 0xFF031526.toInt())
+                )
+            }
+            visibility = View.VISIBLE
+        }
     }
 
     private fun startRenderer(surface: SurfaceTexture, width: Int, height: Int) {
