@@ -567,12 +567,14 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - 服务端 `pressedDesktopModifiers` 才是“已经向远端发送 DOWN”的最终真值。重复 DOWN 被忽略；两枚 Shift 只产生一组 DOWN/UP；每个 UP 使用原 DOWN 的 downTime，metaState 包含当前全部修饰键的通用位和 LEFT 位。
 - `DesktopKeyboard.onDetach()`、`onWindowHidden()`、`onFinishInputView()`、`onFinishInput()`、`onUnbindInput()` 和 `onDestroy()` 都必须先释放仍按下的修饰键。以后增加全局键盘退出入口时也必须走这些兜底，不能只清 UI 高亮。
 - Windows/Linux 多选使用 Ctrl+鼠标，macOS Finder 多选使用 ⌘+鼠标；KBoard 不根据远端系统交换 Ctrl 与 Command。最终验收必须在真实远程会话完成，Android 本地编辑器只能验证事件配对，不能证明远端文件管理器语义。
+- `a83a4179` 正式 Release 已在 63 无损覆盖：`versionCode=112`，APK SHA-256 `d82f37e40b1c8cdb243a3524aaa5a04fbbe48b833f4d5347e1679a79291a6873`，v1/v2 签名和平台证书指纹均通过。真机受控 Ctrl DOWN/UP 与 Alt DOWN/CANCEL 已确认高亮、组合提示和释放复原一致，且没有崩溃；KEMI 真实远程鼠标复选仍须由连接中的 Windows/macOS 会话验收。
 
 #### V900 隐藏键盘触摸穿透（2026-08-24）
 
 - 隐藏按钮和候选栏下滑入口必须完整消费 ACTION_DOWN/UP，在 ACTION_UP 完成后由根 View 延后 100ms 单次调用 `requestHideSelf(0)`。立即移除 IME 窗口会让 V900 Android 12 把同一手势尾部重新命中 KEMI 下层按钮。
 - 延时期间触发 View 禁用，重复隐藏请求合并；ACTION_CANCEL 只复位状态，不隐藏；`InputView.onDetachedFromWindow()` 取消尚未执行的任务并恢复按钮。不要增加长期悬浮遮罩，也不要让 KEMI 永久禁用底栏按钮。
 - 真机验收必须在 D0/D2 两个方向各循环 30 次，并同时检查 KEMI 页面、键盘是否异常回弹以及来源屏 `PointerDown/open_timeout` 日志；仅观察键盘消失不算通过。
+- `a83a4179` 在 63 完成一次主屏隐藏路径检查，`mInputShown` 正常变为 false，过滤日志无 `PointerDown`、`open_timeout` 和崩溃；这只是烟雾验证，不能替代上述双向各 30 次循环。
 
 #### 中继自动启用与全键盘单音效
 

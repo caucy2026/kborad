@@ -1435,10 +1435,13 @@ KEMI 设置页品牌化与动态名称中文化。
 ### 验证
 - `git diff --check` 通过。
 - `:app:compileReleaseKotlin` 成功，66 个任务完成；全程没有构建 Debug。
-- 标准修饰事件、63 覆盖安装、DOWN/UP 日志配对和 Windows/macOS 真实远程复选将在正式签名 Release 完成后补充。
+- 完整 `./scripts/assemble-release-local.sh` 成功，Kotlin、R8、Lint Vital、arm64 原生组件与 Release 签名流程通过；正式 APK 为 `fcitx5-android/build/kboard.apk`，包名 `org.fcitx.fcitx5.android`、`versionName=a83a4179`、`versionCode=112`、SHA-256 `d82f37e40b1c8cdb243a3524aaa5a04fbbe48b833f4d5347e1679a79291a6873`。
+- `apksigner` 确认 v1/v2 有效，证书 SHA-256 仍为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。63 使用 `install -r` 无损覆盖返回 `Success`，设备查询为 `versionName=a83a4179`、`versionCode=112`，默认输入法仍是主 `FcitxInputMethodService`。
+- 63 全局水族键盘实测保留六行键位、鱼群、语音和中英状态。受控 Ctrl DOWN 截图显示 Ctrl 高亮且标准组合功能提示同步出现，UP 后高亮和提示恢复；Alt 的 DOWN→CANCEL 后也恢复原键面，没有卡住修饰状态。
+- 点击一次隐藏键盘后 `mInputShown=false`；过滤日志未见 `FATAL EXCEPTION`、`AndroidRuntime`、`PointerDown`、`open_timeout` 或 Aquarium/EGL/GLSL 异常。本次只验证代码路径和单次真机动作，没有代替用户操作真实远程文件。
 
 ### 待办
-- 在 63 对 Ctrl/Alt/Shift/⌘ 各执行 50 次按下/松开，确认 DOWN/UP 数量一致；分别连接 Windows 与 macOS 验证 Ctrl/⌘+鼠标复选、Shift 范围选择、滚轮和拖动。
+- 在 63 对 Ctrl/Alt/Shift/⌘ 各执行 50 次按下/松开，确认 KEMI 接收端 DOWN/UP 数量一致；分别连接 Windows 与 macOS 验证 Ctrl/⌘+鼠标复选、Shift 范围选择、滚轮和拖动。当前真机只完成单次 Ctrl DOWN/UP 与 Alt DOWN/CANCEL 的 UI/生命周期验证，不能替代远端文件管理器语义。
 - 在 D0/D2 两个方向各执行 30 次“打开键盘 -> 隐藏”，确认 KEMI 不断开、不换页、不重新弹出键盘，且日志没有本次触摸造成的下层 `PointerDown`。
 - 继续回归 Ctrl+C/V、Command+C/V、Alt+F4、Shift+Tab、中文拼音、候选、Enter、语音和普通键盘；本次不改变这些功能的输入协议。
 
