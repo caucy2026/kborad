@@ -13,7 +13,7 @@ android {
     namespace = "org.fcitx.fcitx5.android"
 
     defaultConfig {
-        applicationId = "org.fcitx.fcitx5.android"
+        applicationId = "com.newlink.kemi.kboard"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         @Suppress("UnstableApiUsage")
@@ -30,6 +30,12 @@ android {
                     "androidnotification"
                 )
             }
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix = ""
         }
     }
 
