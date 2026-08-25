@@ -1530,6 +1530,42 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.51 - 2026-08-25
+
+### 主题
+修复 Android 12 双屏远程桌面反复显示全局键盘时的 View 泄漏和 OOM，发布 KBoard 0.1.6 / arm64 versionCode 142 正式版。
+
+### 过程
+- 63 在副屏远程桌面连接后反复点击底部键盘按钮，旧版本约 1 分钟可残留 2 万多个 View；原始 100 次压力测试在约第 57 轮达到 384 MiB Java heap 上限并触发 `OutOfMemoryError`，崩溃栈最终落在被重复保留的 ConstraintLayout/View 创建路径。
+- 对 Java heap 执行标准 HPROF 转换和 Eclipse MAT 引用链分析，确认第一条应用侧强保留链为进程级 `ConnectivityManager` 回调表 -> `KawaiiBarComponent.voiceNetworkCallback` -> `KawaiiBarComponent` -> 完整 `InputView`。每个未注销回调会保留一棵完整键盘界面，原始 heap 中一个旧实例约包含 211 个 ConstraintLayout/View 对象。
+- 注销应用侧回调后，完整键盘树已不再重复，但 Android 12 双屏固件仍会在每次远程键盘显示时销毁并重建 `FcitxInputMethodService`，且系统以 JNI Global 保留旧 `IInputMethodSessionWrapper` -> `InputMethodSessionImpl` -> Service。系统 `InputMethodService.onDestroy()` 只关闭窗口，没有清空 `mRootView`、`mInputFrame`、`mCandidatesFrame`、`mWindow` 等直接引用，因此仍会留下小型框架 View 树。
+- 该行为在相同远程桌面路径上使用 Gboard 对照时不产生完整键盘树累积；KBoard 必须在应用可控边界主动把旧 Service 收缩成不携带 UI 的轻量外壳，不能等待该固件回收 Session。
+
+### 修改
+- `KawaiiBarComponent` 改用 application Context 获取 `ConnectivityManager`，记录网络回调注册状态，并新增幂等 `dispose()`：注销语音网络回调、剪贴板监听和三组偏好监听，取消剪贴板/语音任务，清空语音按钮的触摸与手势引用。
+- `InputView.dispose()` 改为幂等完整释放：停止事件处理与水族渲染、注销组件、清空 Scope/View 容器，并显式调用 `KawaiiBarComponent.dispose()`；`InputDeviceManager.clearViews()` 同步解除输入区和候选区引用。
+- `FcitxInputMethodService` 增加进程内弱引用所有者。Android 12 双屏固件先创建新 Service、后销毁旧 Service 时，新实例会先使旧实例执行一次 `releaseOwnedResources("superseded")`，避免短暂重叠窗口继续持有完整键盘。
+- Service 释放路径统一处理延迟隐藏请求、桌面修饰键、InputView/CandidatesView、偏好与主题监听、协程任务、Fcitx daemon 连接和宿主 FrameLayout；`onDestroy()` 后清空自身 content/decor 引用。
+- 仅在 Android 12 且 `super.onDestroy()` 完成之后，以字段类型清除 `InputMethodService` 的 10 个私有 View 引用，并清除已失效的私有 `mWindow`。每轮设备日志均记录 `cleared Android 12 framework View fields=10 mWindow=true`；其他 Android 版本不执行该反射兼容分支。
+- 输入法窗口隐藏时立即停掉水族 GLES 渲染线程和触摸命令队列，并保留稳定过渡帧；窗口重新显示时再激活，避免固件保留 `SurfaceTexture` 时后台持续离屏渲染。
+- 版本基础码由 13 增加为 14，基础版本名由 0.1.5 增加为 0.1.6；按 ABI 编码规则 arm64-v8a 正式 `versionCode=142`。
+
+### 验证
+- 修复预检：63 从基线 812 Views / 2 ViewRoot 连续执行 10 个“隐藏 -> 显示”循环并强制 GC，结果仍为 812 Views / 2 ViewRoot；旧 Service 每轮均成功清除 10 个框架 View 字段和 `mWindow`。
+- 完整闭环：在 `192.168.3.63:5555` 的 Display 2 远程桌面工具栏坐标 `(240,1155)` 连续执行 100 个完整隐藏/显示循环，共 200 次按钮点击。PID 始终为 `30104`，第 20、30、40、60、100 轮稳定采样均为 812 Views / 2 ViewRoot；事务尚未落稳的个别瞬时采样最高为 836 Views / 5 ViewRoot，等待后全部回落。
+- 第 100 轮完成并执行 heap GC 后仍为 812 Views / 2 ViewRoot，View 净增量为 0；PSS 采样约 99–140 MiB，未出现原来的线性上升、384 MiB OOM、进程重启或界面崩溃。
+- crash buffer 为 0 行，`FATAL EXCEPTION`、`OutOfMemoryError` 和目标进程 AndroidRuntime 异常均为 0；最终默认输入法和窗口状态仍为 KBoard、`mInputShown=true`。
+- 正式 `./scripts/assemble-release-local.sh` 完整成功，只生成 Release。APK 包名 `org.fcitx.fcitx5.android`、`versionCode=142`、`versionName=398998f5`、minSdk 23、targetSdk 36、ABI 仅 `arm64-v8a`，大小 46,193,191 字节。
+- `apksigner` 确认 v1/v2 签名有效，证书 SHA-256 保持 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`；正式 APK SHA-256 为 `6179c85d97857e04ccfdb6518066d23699bf6856b6b2f9a3c3199d2136b662ff`。
+- 发布物为 `bin/KEMI-0.1.6-142-398998f5-arm64-v8a-release.apk`，对应校验文件为 `bin/KEMI-0.1.6-142-398998f5-SHA256SUMS.txt`；`bin` 副本与构建产物逐字节一致。
+
+### 待办
+- 该 Android 12 双屏固件仍由系统 JNI Global 保留已经销毁的输入法 Session，因此 `AppContexts` 会随固件反复重建 Service 增加；110 轮期间从 6 增至 172。应用无权释放系统持有的 Binder/JNI Session，本修复把这些对象收缩为不再携带 View、窗口、监听器、协程和 GLES 线程的轻量外壳。后续固件若可修改，应在输入法切换/代理销毁时正确执行 Session `finishSession()` 并释放 JNI Global。
+- Android 12 专项反射依赖框架私有字段；当前目标固件实测 100 轮稳定，后续 ROM 升级必须重新核对字段和迟到回调。反射失败时会记录警告并跳过对应字段，不应扩展到其他 Android 版本。
+- 本轮已在 63 完成 100 轮压力测试和正式 Release 构建；发布归档不再次覆盖安装，避免在用户验收中的当前设备状态上进行额外写入。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。
