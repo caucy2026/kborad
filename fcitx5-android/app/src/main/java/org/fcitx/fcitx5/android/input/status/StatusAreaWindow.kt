@@ -16,7 +16,6 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.Action
 import org.fcitx.fcitx5.android.core.SubtypeManager
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
-import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
@@ -81,8 +80,8 @@ class StatusAreaWindow : InputWindow.ExtendedInputWindow<StatusAreaWindow>(),
     }
 
     private fun activateAction(action: Action) {
-        fcitx.launchOnReady {
-            it.activateAction(action.id)
+        service.postFcitxJob {
+            activateAction(action.id)
         }
     }
 
@@ -141,10 +140,10 @@ class StatusAreaWindow : InputWindow.ExtendedInputWindow<StatusAreaWindow>(),
                                 context, it.uniqueName, it.displayName
                             )
                         }
-                        ReloadConfig -> fcitx.launchOnReady { f ->
-                            f.reloadConfig()
+                        ReloadConfig -> service.postFcitxJob {
+                            reloadConfig()
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                                SubtypeManager.syncWith(f.enabledIme())
+                                SubtypeManager.syncWith(enabledIme())
                             }
                             service.lifecycleScope.launch {
                                 Toast.makeText(service, R.string.done, Toast.LENGTH_SHORT).show()
@@ -207,8 +206,8 @@ class StatusAreaWindow : InputWindow.ExtendedInputWindow<StatusAreaWindow>(),
     override fun onCreateBarExtension() = barExtension
 
     override fun onAttached() {
-        fcitx.launchOnReady {
-            val data = it.statusArea()
+        service.postFcitxJob {
+            val data = statusArea()
             service.lifecycleScope.launch {
                 onStatusAreaUpdate(data)
             }

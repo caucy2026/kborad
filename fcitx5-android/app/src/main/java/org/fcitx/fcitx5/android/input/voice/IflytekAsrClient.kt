@@ -62,6 +62,7 @@ class IflytekAsrClient(
     var state = State.Idle
         private set
 
+    @Volatile
     private var generation = 0
     private var authCall: Call? = null
     private var webSocket: WebSocket? = null
@@ -278,6 +279,7 @@ class IflytekAsrClient(
     private fun finish(text: String) {
         if (state == State.Idle) return
         generation += 1
+        val callbackGeneration = generation
         stopAudio()
         webSocket?.close(1000, null)
         webSocket = null
@@ -287,7 +289,9 @@ class IflytekAsrClient(
         updateState(State.Idle)
         if (text.isNotBlank()) {
             Timber.i("iFlytek ASR final text length=${text.length}")
-            mainHandler.post { onFinal(text) }
+            mainHandler.post {
+                if (generation == callbackGeneration) onFinal(text)
+            }
         }
     }
 
@@ -295,6 +299,7 @@ class IflytekAsrClient(
     private fun fail(message: String) {
         Timber.w("iFlytek ASR: $message")
         generation += 1
+        val callbackGeneration = generation
         authCall?.cancel()
         authCall = null
         stopAudio()
@@ -303,7 +308,9 @@ class IflytekAsrClient(
         confirmedText = ""
         latestText = ""
         updateState(State.Idle)
-        mainHandler.post { onError(message) }
+        mainHandler.post {
+            if (generation == callbackGeneration) onError(message)
+        }
     }
 
     private fun stopAudio() {
@@ -319,12 +326,20 @@ class IflytekAsrClient(
 
     private fun updateState(newState: State) {
         state = newState
-        mainHandler.post { onStateChanged(newState) }
+        val callbackGeneration = generation
+        mainHandler.post {
+            if (generation == callbackGeneration && state == newState) {
+                onStateChanged(newState)
+            }
+        }
     }
 
     private fun publishPartial(text: String) {
         if (text.isNotBlank()) {
-            mainHandler.post { onPartial(text) }
+            val callbackGeneration = generation
+            mainHandler.post {
+                if (isCurrent(callbackGeneration)) onPartial(text)
+            }
         }
     }
 

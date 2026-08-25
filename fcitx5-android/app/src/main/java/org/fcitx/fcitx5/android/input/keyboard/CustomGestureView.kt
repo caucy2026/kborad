@@ -335,6 +335,17 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
         super.setOnLongClickListener(l)
     }
 
+    override fun onDetachedFromWindow() {
+        // View removal does not guarantee ACTION_CANCEL on every Android 12 vendor build. Stop
+        // repeat/long-press jobs here so a key removed during layout/display migration cannot keep
+        // typing or retain the obsolete keyboard until the whole service is destroyed.
+        isPressed = false
+        animate().cancel()
+        clearAnimation()
+        resetState()
+        super.onDetachedFromWindow()
+    }
+
     companion object {
         val longPressDelay by AppPrefs.getInstance().keyboard.longPressDelay
         const val RepeatInterval = 50L

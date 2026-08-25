@@ -221,6 +221,13 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         (currentKeyboard as? DesktopKeyboard)?.onImeWindowHidden()
     }
 
+    /** Permanently release every keyboard created for this InputView generation. */
+    fun dispose() {
+        currentKeyboard?.onDetach()
+        keyboards.values.forEach { it.dispose() }
+        if (::keyboardView.isInitialized) keyboardView.removeAllViews()
+    }
+
     override fun onImeUpdate(ime: InputMethodEntry) {
         currentKeyboard?.onInputMethodUpdate(ime)
     }

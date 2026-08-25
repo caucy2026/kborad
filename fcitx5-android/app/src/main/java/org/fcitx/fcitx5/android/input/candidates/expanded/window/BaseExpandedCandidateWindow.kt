@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.core.CandidateAction
 import org.fcitx.fcitx5.android.core.FcitxEvent
-import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.BooleanKey.ExpandedCandidatesEmpty
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.TransitionEvent.ExpandedCandidatesAttached
@@ -105,7 +104,7 @@ abstract class BaseExpandedCandidateWindow<T : BaseExpandedCandidateWindow<T>> :
     val tabsAdapter by lazy {
         object : CandidateTabActionsAdapter(theme, false) {
             override fun onTriggerTabAction(id: Int) {
-                fcitx.launchOnReady { it.triggerCandidateListTabAction(id) }
+                service.postFcitxJob { triggerCandidateListTabAction(id) }
             }
         }
     }
@@ -113,7 +112,7 @@ abstract class BaseExpandedCandidateWindow<T : BaseExpandedCandidateWindow<T>> :
     val pinnedTabsAdapter by lazy {
         object : CandidateTabActionsAdapter(theme, true) {
             override fun onTriggerTabAction(id: Int) {
-                fcitx.launchOnReady { it.triggerCandidateListTabAction(id) }
+                service.postFcitxJob { triggerCandidateListTabAction(id) }
             }
         }
     }
@@ -179,7 +178,7 @@ abstract class BaseExpandedCandidateWindow<T : BaseExpandedCandidateWindow<T>> :
 
     fun bindCandidateUiViewHolder(holder: CandidateViewHolder) {
         holder.itemView.setOnClickListener {
-            fcitx.launchOnReady { it.select(holder.idx) }
+            service.postFcitxJob { select(holder.idx) }
         }
         holder.itemView.setOnLongClickListener {
             inputView.showCandidateActionMenu(holder.idx, holder.candidate.text, holder.ui.root)

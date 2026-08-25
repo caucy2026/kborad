@@ -25,7 +25,6 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CapabilityFlags
 import org.fcitx.fcitx5.android.core.FcitxEvent
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
-import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import org.fcitx.fcitx5.android.data.theme.Theme
@@ -384,8 +383,8 @@ class InputView(
         setupScope()
 
         // restore punctuation mapping in case of InputView recreation
-        fcitx.launchOnReady {
-            punctuation.updatePunctuationMapping(it.statusAreaActionsCached)
+        service.postFcitxJob {
+            punctuation.updatePunctuationMapping(statusAreaActionsCached)
         }
 
         // make sure KeyboardWindow's view has been created before it receives any broadcast
@@ -950,6 +949,7 @@ class InputView(
         onImeWindowHidden()
         service.cancelPendingTouchHideRequest()
         kawaiiBar.dispose()
+        keyboardWindow.dispose()
         keyboardPrefs.unregisterOnChangeListener(onKeyboardSizeChangeListener)
         keyboardPrefs.unregisterOnChangeListener(onFloatingKeyboardChangeListener)
         scope.clear()

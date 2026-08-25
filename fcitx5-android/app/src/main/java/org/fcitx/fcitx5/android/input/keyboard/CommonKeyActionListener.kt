@@ -9,7 +9,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.core.FcitxAPI
-import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.broadcast.PreeditEmptyStateComponent
 import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateComponent
@@ -82,9 +81,10 @@ class CommonKeyActionListener :
     }
 
     private fun showInputMethodPicker() {
-        fcitx.launchOnReady {
+        service.postFcitxJob {
+            val dialog = InputMethodPickerDialog.build(this, service, context)
             service.lifecycleScope.launch {
-                service.showDialog(InputMethodPickerDialog.build(it, service, context))
+                service.showDialog(dialog)
             }
         }
     }

@@ -97,6 +97,8 @@ import kotlin.math.max
 class FcitxInputMethodService : LifecycleInputMethodService() {
 
     private lateinit var fcitx: FcitxConnection
+    private val fcitxClientName =
+        "${javaClass.name}@${System.identityHashCode(this)}"
 
     private var jobs = Channel<Job>(capacity = Channel.UNLIMITED)
 
@@ -245,10 +247,19 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
      * [postFcitxJob] ensures that operations are executed sequentially.
      */
     fun postFcitxJob(block: suspend FcitxAPI.() -> Unit): Job {
-        val job = fcitx.lifecycleScope.launch(start = CoroutineStart.LAZY) {
-            fcitx.runOnReady(block)
+        val job = lifecycleScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                fcitx.runOnReady(block)
+            } catch (_: FcitxDaemon.DisconnectedException) {
+                // A queued operation can lose ownership when Android 12 replaces this service
+                // before the queue reaches it. It belongs to the retired generation and must not
+                // be forwarded to the replacement connection or treated as an application crash.
+                Timber.d("Drop queued fcitx operation from retired IME generation")
+            }
         }
-        jobs.trySend(job)
+        if (ownedResourcesReleased || jobs.trySend(job).isFailure) {
+            job.cancel()
+        }
         return job
     }
 
@@ -300,9 +311,14 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         // This minimizes the interval in which a vendor IME callback can observe partial state.
         super.onCreate()
         claimProcessImeInstance()
-        fcitx = FcitxDaemon.connect(javaClass.name)
+        fcitx = FcitxDaemon.connect(fcitxClientName)
         lifecycleScope.launch {
-            jobs.consumeEach { it.join() }
+            jobs.consumeEach {
+                // Be explicit: join() currently starts a LAZY coroutine, but relying on that
+                // subtle contract makes the ownership/serialization guarantee easy to break.
+                it.start()
+                it.join()
+            }
         }
         lifecycleScope.launch {
             fcitx.runImmediately { eventFlow }.collect {
@@ -351,6 +367,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         )
         cancelPendingTouchHideRequest()
         releaseDesktopModifierKeys()
+        hardwareKeyAnomalyFilter.reset()
+        cachedKeyEvents.evictAll()
+        showingDialog?.dismiss()
+        showingDialog = null
         inputView?.dispose()
         inputViewHost?.removeAllViews()
         candidatesView?.handleEvents = false
@@ -375,7 +395,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
         prefs.candidates.unregisterOnChangeListener(recreateCandidatesViewListener)
         ThemeManager.removeOnChangedListener(onThemeChangeListener)
-        FcitxDaemon.disconnect(javaClass.name)
+        FcitxDaemon.disconnect(fcitxClientName)
     }
 
     private fun handleFcitxEvent(event: FcitxEvent<*>) {
@@ -964,7 +984,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             null,
             object : BroadcastReceiver() {
                 override fun onReceive(context: Context?, intent: Intent?) {
-                    switchInputMethod(relayIme)
+                    // The ordered vendor policy callback can arrive after the dual-display
+                    // firmware has already replaced this service generation.
+                    if (!ownedResourcesReleased) switchInputMethod(relayIme)
                 }
             },
             null,
@@ -1478,66 +1500,23 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             }
         }
         super.onDestroy()
-        // Android 12 dual-display firmware keeps obsolete IInputMethodSessionWrapper instances
-        // as JNI globals after onDestroy(). We cannot release that framework-owned session, but
-        // we can ensure the retained service shell has no window/View subtree attached to it.
-        contentViewRef?.removeAllViews()
-        (decorViewRef as? ViewGroup)?.removeAllViews()
+        // Android 12 dual-display firmware may keep an obsolete IInputMethodSessionWrapper and
+        // deliver hide/update callbacks after onDestroy(). Keep the framework-owned window and
+        // its lightweight internal Views intact: nulling private fields (or tearing down their
+        // hierarchy reflectively) makes those valid late callbacks crash in
+        // InputMethodService.updateFullscreenMode(). The heavyweight KBoard hierarchy was
+        // already disposed and replaced with an application-context placeholder above.
         contentViewRef = null
         decorViewRef = null
-        clearAndroid12FrameworkViewReferences()
-    }
-
-    /**
-     * Android 12's InputMethodService.onDestroy() dismisses its window but keeps private direct
-     * references such as mRootView, mInputFrame and mCandidatesFrame. On the dual-display build,
-     * stale IInputMethodSessionWrapper JNI globals retain the destroyed service, so those private
-     * fields otherwise leave a small framework View hierarchy per keyboard toggle even after our
-     * own InputView has been disposed.
-     *
-     * Run only after super.onDestroy(): every framework field whose declared type is a View is
-     * dead at this point. This is deliberately type-based so it also covers vendor-added View
-     * fields without touching binder/session/window state that may still receive a late callback.
-     */
-    private fun clearAndroid12FrameworkViewReferences() {
-        if (Build.VERSION.SDK_INT != Build.VERSION_CODES.S) return
-        var cleared = 0
-        android.inputmethodservice.InputMethodService::class.java.declaredFields.forEach { field ->
-            if (java.lang.reflect.Modifier.isStatic(field.modifiers) ||
-                !View::class.java.isAssignableFrom(field.type)
-            ) {
-                return@forEach
-            }
-            runCatching {
-                field.isAccessible = true
-                field.set(this, null)
-                cleared += 1
-            }.onFailure { error ->
-                Log.w(
-                    IME_LIFECYCLE_TAG,
-                    "failed to clear Android 12 framework View field ${field.name}",
-                    error
-                )
-            }
-        }
-        val windowCleared = runCatching {
-            android.inputmethodservice.InputMethodService::class.java
-                .getDeclaredField("mWindow")
-                .apply { isAccessible = true }
-                .set(this, null)
-            true
-        }.onFailure { error ->
-            Log.w(IME_LIFECYCLE_TAG, "failed to clear Android 12 framework mWindow", error)
-        }.getOrDefault(false)
-        Log.i(
-            IME_LIFECYCLE_TAG,
-            "cleared Android 12 framework View fields=$cleared mWindow=$windowCleared"
-        )
     }
 
     private var showingDialog: Dialog? = null
 
     fun showDialog(dialog: Dialog) {
+        if (ownedResourcesReleased) {
+            dialog.dismiss()
+            return
+        }
         showingDialog?.dismiss()
         dialog.window?.also {
             it.attributes.apply {

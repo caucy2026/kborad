@@ -177,6 +177,11 @@ class TextKeyboard(
         showLangSwitchKey.registerOnChangeListener(showLangSwitchKeyListener)
     }
 
+    override fun dispose() {
+        showLangSwitchKey.unregisterOnChangeListener(showLangSwitchKeyListener)
+        super.dispose()
+    }
+
     private val textKeys: List<TextKeyView> by lazy {
         allViews.filterIsInstance(TextKeyView::class.java).toList()
     }

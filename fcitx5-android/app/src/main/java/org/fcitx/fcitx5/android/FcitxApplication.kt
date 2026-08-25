@@ -12,6 +12,7 @@ import android.content.IntentFilter
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Process
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
@@ -90,7 +91,11 @@ class FcitxApplication : Application() {
         val ctx = directBootAwareContext
 
         if (!BuildConfig.DEBUG) {
-            Thread.setDefaultUncaughtExceptionHandler { _, e ->
+            Thread.setDefaultUncaughtExceptionHandler { thread, e ->
+                // Keep the real Release stack in logcat as well as the in-app crash page. Without
+                // this, exitProcess(10) is reported as a clean self-exit and hides the root cause
+                // from Android's crash buffer.
+                Log.e("KBoardCrash", "Uncaught exception on ${thread.name}", e)
                 val crashTime = System.currentTimeMillis()
                 val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(ctx)
                 val lastCrashTimePrefKey = "last_crash_time"

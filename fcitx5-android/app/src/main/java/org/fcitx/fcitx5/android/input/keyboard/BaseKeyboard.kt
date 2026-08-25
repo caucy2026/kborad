@@ -532,4 +532,17 @@ abstract class BaseKeyboard(
         // do nothing by default
     }
 
+    /**
+     * Permanently release observers owned by this keyboard instance.
+     *
+     * This is intentionally separate from [onDetach]: layouts are detached and reattached while
+     * switching symbol/number/desktop pages, but preference observers must live only until their
+     * owning InputView generation is disposed.
+     */
+    open fun dispose() {
+        spaceSwipeMoveCursor.unregisterOnChangeListener(spaceSwipeChangeListener)
+        keyActionListener = null
+        popupActionListener = null
+    }
+
 }

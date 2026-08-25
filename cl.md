@@ -1566,6 +1566,46 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.52 - 2026-08-25
+
+### 主题
+修正 Android 12 迟到输入法回调导致的二次崩溃，收口 Fcitx、候选、键盘、水族和 ASR 的代际所有权，并在 63 完成 100 次真实可见切换压力测试。
+
+### 过程
+- 复盘 V1.51 的私有字段清理方案后确认：V900 Android 12 双屏固件会在 `InputMethodService.onDestroy()` 之后继续通过旧 `IInputMethodSessionWrapper` 调用 `updateFullscreenMode()` 等框架方法。把 `mRootView`、`mInputFrame`、`mCandidatesFrame` 或 `mWindow` 反射置空虽然能缩小旧 Service，却破坏了这些合法迟到回调的框架前置条件，造成包名仍指向 KBoard 的系统崩溃。
+- 新方案保留 Android 框架拥有的轻量窗口壳，只释放 KBoard 自己拥有的 InputView、候选、监听器、任务和 GLES 资源；不再修改 `InputMethodService` 私有字段。
+- 进一步检查发现旧 Service 排队的 Fcitx 任务、候选分页、状态栏操作、ASR 主线程回调和水族 Shader 创建失败路径都可能跨越 Service/InputView 代际。所有这些路径必须在执行点再次校验所有权，而不能只在入队或创建时校验一次。
+- 63 压力测试最初只读取 `dumpsys input_method.mIsInputViewShown`，截图复核发现 Android 12 会在键盘实际已经隐藏时短暂继续报告 `true`。正式计数因此改为同时要求前台窗口是 `ClipboardEditActivity`、served view 是有效 `EditText`、token 位于 Display 0，并用阶段截图验证键盘真实可见；无效样本全部作废，不计入 100 次通过。
+
+### 修改
+- `FcitxApplication`：Release 未捕获异常在退出前以 `KBoardCrash` 输出完整线程与堆栈，避免自定义崩溃页调用 `exitProcess()` 后丢失根因。
+- `FcitxDaemon`：每个 Service 使用唯一连接名和连接对象身份校验；客户端表改为并发映射，`runImmediately/runOnReady/runIfReady` 在真正执行前再次验证连接，退休代际抛出明确的 `DisconnectedException` 或安全丢弃。
+- `FcitxInputMethodService`：Fcitx 作业改由当前 Service 生命周期拥有并保持串行；释放后拒绝新任务，取消缓存键、异常过滤器、对话框和迟到切换输入法回调；删除 Android 12 私有 View/Window 反射清空逻辑，保留能承接系统迟到回调的轻量框架壳。
+- 候选、展开候选、状态区和输入法选择器统一通过 `service.postFcitxJob()`，旧 UI 代际不能再直接向共享 native 生命周期投递操作；已断开的候选分页返回 `LoadResult.Invalid()`。
+- `InputView/KeyboardWindow/BaseKeyboard/TextKeyboard/CustomGestureView`：增加幂等的永久释放链，注销键盘偏好监听，解除按键监听器，停止长按/重复输入和动画，并清空旧键盘容器。
+- `KawaiiBarComponent/IflytekAsrClient`：ASR 使用 application Context；释放时取消录音、鉴权、WebSocket、提交任务和输入预览，恢复物理键盘声音；所有 State/Partial/Final/Error 主线程回调绑定会话 generation，旧会话回调不能更新新界面。
+- `DesktopAquariumView`：无论 EGL 初始化、Shader 编译、Program 链接、绘制还是交换缓冲在哪一步失败，都在当前 GL Context 释放已创建的 Shader、Program、Engine 和 Surface，避免快速切换时累积 GPU 资源。
+- `DisplaySwitchInputMethodService`：销毁时移除厂商双屏中继 Handler 的全部待执行回调，防止旧中继实例回跳。
+
+### 验证
+- 当前正式 Release 为 `fcitx5-android/build/kboard.apk`：包名 `org.fcitx.fcitx5.android`、`versionCode=142`、`versionName=76957053`、大小 46,193,543 字节、SHA-256 `75d468f678c9197a8f1c6fe31be83f8dd2d0b15fa940ed3801512a5e31f9db3f`。
+- `apksigner` 验证 v1/v2 签名有效，证书 SHA-256 保持 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`；63 已安装 `base.apk` 与本地正式 Release 的 SHA-256 完全一致。
+- 63 真机完成 100 次真实可见切换：默认键盘隐藏/唤起 25 次、默认键盘 Activity 结束/重建 25 次、全局键盘与普通键盘往返 50 次。每轮校验前台窗口、EditText 输入连接、IME token 和可见截图；有效样本 100/100。
+- 测试期间 KBoard PID 始终为 `8723`，进程重启 0 次；`FATAL EXCEPTION`、`KBoardCrash`、`OutOfMemoryError` 和目标包 ANR 均为 0。
+- 内存和 View/ViewRoot 在 Activity 与全局布局重建时短暂波动，随后回落，不再呈现旧版本每轮线性增长。补测结束为约 139,976 KiB TOTAL PSS、825 Views、4 ViewRoot；测试起点已包含此前多轮运行，数据仅用于确认趋势，不作为冷启动基线。
+
+### 发布物
+- 将上述已在 63 验证的正式 APK 归档为 `bin/KEMI-0.1.6-142-76957053-arm64-v8a-release.apk`。
+- 校验文件为 `bin/KEMI-0.1.6-142-76957053-SHA256SUMS.txt`；归档 APK、本地构建产物和 63 已安装 APK 三者 SHA-256 一致。
+- 推送前远端 `main` 新增 `66b449e2`，把后续源码构建的 `applicationId` 改为 `com.newlink.kemi.kboard`；本次归档 APK 是该提交之前已经在 63 完整验证的 `org.fcitx.fcitx5.android` 包，不能当作新 applicationId 的构建产物。生命周期源码已无冲突地合并到新配置之上，但新包名 APK 必须重新构建、签名和专项安装验证后才能发布。
+
+### 待办与风险
+- 额外专项动作发现：全局键盘被 Back 隐藏后，再直接点击同一个已保持焦点的编辑框，偶尔不会真实重新显示键盘，但 Android 12 仍报告 `mIsInputViewShown=true`。该路径的 25 个样本已全部作废，没有混入 100 次通过统计。后续应依据窗口 Insets/实际 IME Surface，而不是单独相信 `mIsInputViewShown`，定位并修复重新请求显示逻辑。
+- Android 12 固件仍可能由系统 JNI Global 保留旧 Session；应用不能释放系统 Binder/JNI 对象。当前策略是让旧 Service 只保留框架迟到回调所需的轻量壳，所有 KBoard 自有资源必须按代际释放。
+- 本轮压力测试使用项目内 `ClipboardEditActivity` 建立稳定、可重复的输入焦点；远程桌面 D0/D2 的业务级焦点迁移仍需结合 KEMI 客户端单独回归，不能用内部编辑器结果替代跨屏端到端验收。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

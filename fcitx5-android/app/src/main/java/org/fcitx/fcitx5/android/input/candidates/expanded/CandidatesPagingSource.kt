@@ -8,6 +8,7 @@ import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import org.fcitx.fcitx5.android.core.CandidateWord
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
+import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import timber.log.Timber
 
 class CandidatesPagingSource(val fcitx: FcitxConnection, val total: Int, val offset: Int) :
@@ -18,8 +19,16 @@ class CandidatesPagingSource(val fcitx: FcitxConnection, val total: Int, val off
         val startIndex = params.key ?: offset
         val pageSize = params.loadSize
         Timber.d("getCandidates(offset=$startIndex, limit=$pageSize)")
-        val candidates = fcitx.runOnReady {
-            getCandidates(startIndex, pageSize)
+        val candidates = try {
+            fcitx.runOnReady {
+                getCandidates(startIndex, pageSize)
+            }
+        } catch (_: FcitxDaemon.DisconnectedException) {
+            // Android 12 dual-display firmware can destroy an IME service while Paging still has
+            // a queued load. That page belongs to a dead UI generation, so invalidate it instead
+            // of escalating normal lifecycle cancellation into an application crash.
+            Timber.d("Ignore candidate page from disconnected IME generation")
+            return LoadResult.Invalid()
         }
         val prevKey = if (startIndex >= pageSize) startIndex - pageSize else null
         val nextKey = if (total > 0) {

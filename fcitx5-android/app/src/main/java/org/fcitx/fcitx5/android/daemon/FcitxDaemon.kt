@@ -25,6 +25,7 @@ import org.fcitx.fcitx5.android.daemon.FcitxDaemon.disconnect
 import org.fcitx.fcitx5.android.utils.appContext
 import org.fcitx.fcitx5.android.utils.notificationManager
 import timber.log.Timber
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -42,45 +43,71 @@ import kotlin.concurrent.withLock
  */
 object FcitxDaemon {
 
+    class DisconnectedException(name: String) :
+        IllegalStateException("$name is disconnected")
+
     private val realFcitx by lazy { Fcitx(appContext) }
 
     // don't leak fcitx instance
     private val fcitxImpl by lazy { object : FcitxAPI by realFcitx {} }
 
-    private fun mkConnection(name: String) = object : FcitxConnection {
+    private fun mkConnection(name: String): FcitxConnection {
+        lateinit var connection: FcitxConnection
+        connection = object : FcitxConnection {
 
-        private inline fun <T> ensureConnected(block: () -> T) =
-            if (name in clients)
-                block()
-            else throw IllegalStateException("$name is disconnected")
-
-        override fun <T> runImmediately(block: suspend FcitxAPI.() -> T): T = ensureConnected {
-            runBlocking(realFcitx.lifeCycleScope.coroutineContext) {
-                block(fcitxImpl)
+            private fun ensureConnected() {
+                if (!isConnected(name, connection)) throw DisconnectedException(name)
             }
-        }
 
-        override suspend fun <T> runOnReady(block: suspend FcitxAPI.() -> T): T = ensureConnected {
-            realFcitx.lifecycle.whenReady { block(fcitxImpl) }
-        }
+            override fun <T> runImmediately(block: suspend FcitxAPI.() -> T): T {
+                ensureConnected()
+                return runBlocking(realFcitx.lifeCycleScope.coroutineContext) {
+                    // disconnect() can run while dispatching onto the native lifecycle thread.
+                    ensureConnected()
+                    block(fcitxImpl)
+                }
+            }
 
-        override fun runIfReady(block: suspend FcitxAPI.() -> Unit) {
-            ensureConnected {
-                if (realFcitx.isReady)
+            override suspend fun <T> runOnReady(block: suspend FcitxAPI.() -> T): T {
+                ensureConnected()
+                return realFcitx.lifecycle.whenReady {
+                    // A client can be retired while whenReady() is suspended.
+                    ensureConnected()
+                    block(fcitxImpl)
+                }
+            }
+
+            override fun runIfReady(block: suspend FcitxAPI.() -> Unit) {
+                if (!isConnected(name, connection)) {
+                    Timber.d("Ignore runIfReady for disconnected client $name")
+                    return
+                }
+                if (realFcitx.isReady) {
                     realFcitx.lifeCycleScope.launch {
-                        block(fcitxImpl)
+                        // The client can disconnect while this launch waits for dispatch.
+                        if (isConnected(name, connection)) {
+                            block(fcitxImpl)
+                        }
                     }
+                }
             }
+
+            override val lifecycleScope: CoroutineScope
+                get() = realFcitx.lifecycle.lifecycleScope
+
         }
-
-        override val lifecycleScope: CoroutineScope
-            get() = realFcitx.lifecycle.lifecycleScope
-
+        return connection
     }
+
+    private fun isConnected(name: String, connection: FcitxConnection): Boolean =
+        clients[name] === connection
 
     private val lock = ReentrantLock()
 
-    private val clients = mutableMapOf<String, FcitxConnection>()
+    // Connection calls execute on both Android and native lifecycle threads. Reads must not take
+    // [lock], because stop/restart holds that lock while native teardown can complete callbacks.
+    // A concurrent identity lookup prevents both data races and lock inversion.
+    private val clients = ConcurrentHashMap<String, FcitxConnection>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val stopIfUnused = Runnable {
         lock.withLock {
@@ -96,7 +123,7 @@ object FcitxDaemon {
      */
     fun connect(name: String): FcitxConnection = lock.withLock {
         mainHandler.removeCallbacks(stopIfUnused)
-        if (name in clients)
+        if (clients.containsKey(name))
             return@withLock clients.getValue(name)
         if (realFcitx.lifecycle.currentState == FcitxLifecycle.State.STOPPED) {
             Timber.d("FcitxDaemon start fcitx")
@@ -111,7 +138,7 @@ object FcitxDaemon {
      * Dispose the connection
      */
     fun disconnect(name: String): Unit = lock.withLock {
-        if (name !in clients)
+        if (!clients.containsKey(name))
             return
         clients -= name
         if (clients.isEmpty()) {
@@ -180,7 +207,9 @@ object FcitxDaemon {
     /**
      * Reuse a connection for remote service
      */
-    fun getFirstConnectionOrNull() = clients.firstNotNullOfOrNull { it.value }
+    fun getFirstConnectionOrNull() = lock.withLock {
+        clients.firstNotNullOfOrNull { it.value }
+    }
 
 
     private const val CHANNEL_ID = "fcitx-daemon"

@@ -245,9 +245,10 @@ private class AquariumRenderThread(
 
     override fun run() {
         var egl: EglWindow? = null
+        var engine: AquariumEngine? = null
         try {
             egl = EglWindow(surface)
-            val engine = AquariumEngine()
+            engine = AquariumEngine()
             engine.create()
             var appliedWidth = 0
             var appliedHeight = 0
@@ -267,10 +268,13 @@ private class AquariumRenderThread(
                 val remaining = TARGET_FRAME_NS - (System.nanoTime() - frameStart)
                 if (remaining > 0) LockSupport.parkNanos(remaining)
             }
-            engine.destroy()
         } catch (error: Throwable) {
             Log.e(TAG, "Aquarium renderer stopped", error)
         } finally {
+            // create()/draw()/swapBuffers() can all fail during rapid display migration. Always
+            // delete the resources that were successfully created before releasing the context.
+            runCatching { engine?.destroy() }
+                .onFailure { Log.w(TAG, "Failed to release aquarium GL resources", it) }
             egl?.release()
             surface.release()
         }
@@ -1704,27 +1708,40 @@ private class AquariumEngine {
 
     private fun createProgram(vertexSource: String, fragmentSource: String): Int {
         val vertex = compileShader(GLES30.GL_VERTEX_SHADER, vertexSource)
-        val fragment = compileShader(GLES30.GL_FRAGMENT_SHADER, fragmentSource)
-        val program = GLES30.glCreateProgram()
-        GLES30.glAttachShader(program, vertex)
-        GLES30.glAttachShader(program, fragment)
-        GLES30.glLinkProgram(program)
-        val status = IntArray(1)
-        GLES30.glGetProgramiv(program, GLES30.GL_LINK_STATUS, status, 0)
-        check(status[0] == GLES30.GL_TRUE) { GLES30.glGetProgramInfoLog(program) }
-        GLES30.glDeleteShader(vertex)
-        GLES30.glDeleteShader(fragment)
-        return program
+        var fragment = 0
+        var program = 0
+        try {
+            fragment = compileShader(GLES30.GL_FRAGMENT_SHADER, fragmentSource)
+            program = GLES30.glCreateProgram()
+            GLES30.glAttachShader(program, vertex)
+            GLES30.glAttachShader(program, fragment)
+            GLES30.glLinkProgram(program)
+            val status = IntArray(1)
+            GLES30.glGetProgramiv(program, GLES30.GL_LINK_STATUS, status, 0)
+            check(status[0] == GLES30.GL_TRUE) { GLES30.glGetProgramInfoLog(program) }
+            return program
+        } catch (error: Throwable) {
+            if (program != 0) GLES30.glDeleteProgram(program)
+            throw error
+        } finally {
+            GLES30.glDeleteShader(vertex)
+            if (fragment != 0) GLES30.glDeleteShader(fragment)
+        }
     }
 
     private fun compileShader(type: Int, source: String): Int {
         val shader = GLES30.glCreateShader(type)
-        GLES30.glShaderSource(shader, source)
-        GLES30.glCompileShader(shader)
-        val status = IntArray(1)
-        GLES30.glGetShaderiv(shader, GLES30.GL_COMPILE_STATUS, status, 0)
-        check(status[0] == GLES30.GL_TRUE) { GLES30.glGetShaderInfoLog(shader) }
-        return shader
+        try {
+            GLES30.glShaderSource(shader, source)
+            GLES30.glCompileShader(shader)
+            val status = IntArray(1)
+            GLES30.glGetShaderiv(shader, GLES30.GL_COMPILE_STATUS, status, 0)
+            check(status[0] == GLES30.GL_TRUE) { GLES30.glGetShaderInfoLog(shader) }
+            return shader
+        } catch (error: Throwable) {
+            if (shader != 0) GLES30.glDeleteShader(shader)
+            throw error
+        }
     }
 
     private fun floatBuffer(values: FloatArray): FloatBuffer = ByteBuffer

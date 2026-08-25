@@ -393,8 +393,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     }
 
     private fun refreshVoiceInputAvailability() {
+        if (disposed) return
         view.post {
-            if (shouldShowVoiceInput) updateHideKeyboardButton()
+            if (!disposed && shouldShowVoiceInput) updateHideKeyboardButton()
         }
     }
 
@@ -459,10 +460,11 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         } else false
     }
 
-    private val asrClient by lazy {
+    private val asrClientDelegate = lazy {
         IflytekAsrClient(
-            context,
+            context.applicationContext,
             onStateChanged = { state ->
+                if (disposed) return@IflytekAsrClient
                 InputFeedbacks.setPhysicalKeyboardSoundSuppressed(
                     desktopKeyboardMode && state != IflytekAsrClient.State.Idle
                 )
@@ -499,6 +501,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 }
             },
             onFinal = { text ->
+                if (disposed) return@IflytekAsrClient
                 showVoiceFeedback(text)
                 voiceCommitJob?.cancel()
                 voiceCommitJob = service.lifecycleScope.launch {
@@ -515,6 +518,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 }
             },
             onError = { message ->
+                if (disposed) return@IflytekAsrClient
                 cancelVoiceEditorPreview()
                 hideVoiceFeedback()
                 Toast.makeText(
@@ -524,11 +528,13 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 ).show()
             },
             onPartial = { text ->
+                if (disposed) return@IflytekAsrClient
                 if (!desktopKeyboardMode) service.updateVoiceComposing(text)
                 showVoiceFeedback(text)
             }
         )
     }
+    private val asrClient by asrClientDelegate
 
     private fun cancelVoiceEditorPreview() {
         if (!desktopKeyboardMode) service.cancelVoiceComposing()
@@ -886,6 +892,13 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         clipboardTimeoutJob = null
         voiceCommitJob = null
         voiceStartJob = null
+
+        if (asrClientDelegate.isInitialized()) {
+            cancelVoiceEditorPreview()
+            asrClient.cancel()
+        }
+        InputFeedbacks.setPhysicalKeyboardSoundSuppressed(false)
+        voicePressActive = false
 
         ClipboardManager.removeOnUpdateListener(onClipboardUpdateListener)
         clipboardSuggestion.unregisterOnChangeListener(onClipboardSuggestionUpdateListener)

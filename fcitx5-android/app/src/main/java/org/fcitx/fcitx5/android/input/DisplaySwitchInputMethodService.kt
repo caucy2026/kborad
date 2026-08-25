@@ -42,4 +42,11 @@ class DisplaySwitchInputMethodService : InputMethodService() {
         returnPosted = false
         super.onFinishInput()
     }
+
+    override fun onDestroy() {
+        // Vendor multi-display teardown does not always pair onStartInput/onFinishInput.
+        mainHandler.removeCallbacksAndMessages(null)
+        returnPosted = false
+        super.onDestroy()
+    }
 }
