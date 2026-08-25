@@ -25,6 +25,7 @@ import android.text.SpannableString
 import android.text.Spanned
 import android.text.InputType
 import android.text.style.BackgroundColorSpan
+import android.util.Log
 import android.util.LruCache
 import android.util.Size
 import android.view.KeyCharacterMap
@@ -53,6 +54,7 @@ import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.launch
@@ -89,6 +91,7 @@ import splitties.bitflags.hasFlag
 import splitties.dimensions.dp
 import splitties.resources.styledColor
 import timber.log.Timber
+import java.lang.ref.WeakReference
 import kotlin.math.max
 
 class FcitxInputMethodService : LifecycleInputMethodService() {
@@ -117,10 +120,17 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     private lateinit var pkgNameCache: PackageNameCache
 
-    private lateinit var decorView: View
-    private lateinit var contentView: FrameLayout
+    private var decorViewRef: View? = null
+    private val decorView: View
+        get() = checkNotNull(decorViewRef)
+    private var contentViewRef: FrameLayout? = null
+    private val contentView: FrameLayout
+        get() = checkNotNull(contentViewRef)
+    private var inputViewHost: FrameLayout? = null
     private var inputView: InputView? = null
     private var candidatesView: CandidatesView? = null
+    private var inputViewGeneration = 0
+    private var ownedResourcesReleased = false
 
     private val navbarMgr = NavigationBarManager()
     private val inputDeviceMgr = InputDeviceManager { isVirtualKeyboard ->
@@ -168,11 +178,30 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         prefs.advanced.ignoreSystemWindowInsets,
     )
 
-    private fun replaceInputView(theme: Theme): InputView {
+    private fun createInputView(theme: Theme): InputView {
+        inputView?.dispose()
+        inputViewHost?.removeAllViews()
         val newInputView = InputView(this, fcitx, theme)
-        setInputView(newInputView)
+        val newHost = FrameLayout(this).apply {
+            addView(
+                newInputView,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
+        }
         inputDeviceMgr.setInputView(newInputView)
+        inputViewHost = newHost
         inputView = newInputView
+        inputViewGeneration += 1
+        Log.i(IME_LIFECYCLE_TAG, "created input view generation=$inputViewGeneration")
+        return newInputView
+    }
+
+    private fun replaceInputView(theme: Theme): InputView {
+        val newInputView = createInputView(theme)
+        setInputView(checkNotNull(inputViewHost))
         return newInputView
     }
 
@@ -270,6 +299,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         // Initialize InputMethodService and its window before connecting the native daemon.
         // This minimizes the interval in which a vendor IME callback can observe partial state.
         super.onCreate()
+        claimProcessImeInstance()
         fcitx = FcitxDaemon.connect(javaClass.name)
         lifecycleScope.launch {
             jobs.consumeEach { it.join() }
@@ -290,9 +320,62 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 SubtypeManager.syncWith(enabledIme())
             }
         }
-        decorView = window.window!!.decorView
-        contentView = decorView.findViewById(android.R.id.content)
+        decorViewRef = window.window!!.decorView
+        contentViewRef = decorView.findViewById(android.R.id.content)
         lastKnownConfig = resources.configuration
+        Log.i(IME_LIFECYCLE_TAG, "created service instance=${System.identityHashCode(this)}")
+    }
+
+    /**
+     * Android 12 dual-display firmware can construct the next InputMethodService instance before
+     * delivering onDestroy() to the previous one. Retire that stale in-process owner explicitly,
+     * otherwise every remote keyboard show leaves a full keyboard tree and lifecycle collectors.
+     */
+    private fun claimProcessImeInstance() {
+        val previous = synchronized(PROCESS_IME_INSTANCE_LOCK) {
+            val old = processImeInstance?.get()
+            processImeInstance = WeakReference(this)
+            old
+        }
+        if (previous != null && previous !== this) {
+            previous.releaseOwnedResources("superseded")
+        }
+    }
+
+    private fun releaseOwnedResources(reason: String) {
+        if (ownedResourcesReleased) return
+        ownedResourcesReleased = true
+        Log.i(
+            IME_LIFECYCLE_TAG,
+            "release service instance=${System.identityHashCode(this)} reason=$reason"
+        )
+        cancelPendingTouchHideRequest()
+        releaseDesktopModifierKeys()
+        inputView?.dispose()
+        inputViewHost?.removeAllViews()
+        candidatesView?.handleEvents = false
+        contentViewRef?.let { oldContentView ->
+            try {
+                // Replace the private framework mInputView as well as our own reference so an
+                // obsolete IME window cannot retain the heavyweight hierarchy.
+                super.setInputView(View(applicationContext))
+            } catch (error: RuntimeException) {
+                Log.w(IME_LIFECYCLE_TAG, "failed to detach superseded input view", error)
+            }
+            oldContentView.removeView(candidatesView)
+        }
+        inputView = null
+        inputViewHost = null
+        candidatesView = null
+        inputDeviceMgr.clearViews()
+        jobs.close()
+        lifecycleScope.coroutineContext.cancelChildren()
+        recreateInputViewPrefs.forEach {
+            it.unregisterOnChangeListener(recreateInputViewListener)
+        }
+        prefs.candidates.unregisterOnChangeListener(recreateCandidatesViewListener)
+        ThemeManager.removeOnChangedListener(onThemeChangeListener)
+        FcitxDaemon.disconnect(javaClass.name)
     }
 
     private fun handleFcitxEvent(event: FcitxEvent<*>) {
@@ -756,6 +839,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onWindowShown() {
         super.onWindowShown()
+        inputView?.onImeWindowShown()
         try {
             highlightColor = styledColor(android.R.attr.colorAccent).alpha(0.4f)
         } catch (_: Exception) {
@@ -767,16 +851,28 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     override fun onWindowHidden() {
         cancelPendingTouchHideRequest()
         releaseDesktopModifierKeys()
+        inputView?.onImeWindowHidden()
         super.onWindowHidden()
     }
 
     override fun onCreateInputView(): View? {
+        inputView?.takeIf { it.reusableForImeShow }?.let {
+            Log.i(IME_LIFECYCLE_TAG, "reused input view generation=$inputViewGeneration")
+            // This Android 12 dual-display firmware requires the legacy/manual installation
+            // contract used by KBoard: setInputView() is called by replaceInputView() and this
+            // callback returns null. Returning the View makes the firmware repeatedly tear down
+            // and rebind the whole InputMethodService. If the installed view is still reusable,
+            // there is nothing to rebuild or reinstall here.
+            return null
+        }
         replaceInputViews(ThemeManager.activeTheme)
-        // We will call `setInputView` by ourselves. This is fine.
         return null
     }
 
     override fun setInputView(view: View) {
+        // KBoard installs its input view manually and onCreateInputView() returns null. Keep the
+        // framework call centralized here; onCreateInputView() avoids calling us again while the
+        // current hierarchy remains reusable.
         super.setInputView(view)
         // input method layout has not changed in 11 years:
         // https://android.googlesource.com/platform/frameworks/base/+/ae3349e1c34f7aceddc526cd11d9ac44951e97b6/core/res/res/layout/input_method.xml
@@ -1335,6 +1431,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         Timber.d("onFinishInputView: finishingInput=$finishingInput")
         cancelPendingTouchHideRequest()
         releaseDesktopModifierKeys()
+        inputView?.onImeWindowHidden()
         decorLocationUpdated = false
         inputDeviceMgr.onFinishInputView()
         currentInputConnection?.apply {
@@ -1374,16 +1471,68 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onDestroy() {
-        cancelPendingTouchHideRequest()
-        releaseDesktopModifierKeys()
-        recreateInputViewPrefs.forEach {
-            it.unregisterOnChangeListener(recreateInputViewListener)
+        releaseOwnedResources("framework_destroy")
+        synchronized(PROCESS_IME_INSTANCE_LOCK) {
+            if (processImeInstance?.get() === this) {
+                processImeInstance = null
+            }
         }
-        prefs.candidates.unregisterOnChangeListener(recreateCandidatesViewListener)
-        ThemeManager.removeOnChangedListener(onThemeChangeListener)
         super.onDestroy()
-        // Fcitx might be used in super.onDestroy()
-        FcitxDaemon.disconnect(javaClass.name)
+        // Android 12 dual-display firmware keeps obsolete IInputMethodSessionWrapper instances
+        // as JNI globals after onDestroy(). We cannot release that framework-owned session, but
+        // we can ensure the retained service shell has no window/View subtree attached to it.
+        contentViewRef?.removeAllViews()
+        (decorViewRef as? ViewGroup)?.removeAllViews()
+        contentViewRef = null
+        decorViewRef = null
+        clearAndroid12FrameworkViewReferences()
+    }
+
+    /**
+     * Android 12's InputMethodService.onDestroy() dismisses its window but keeps private direct
+     * references such as mRootView, mInputFrame and mCandidatesFrame. On the dual-display build,
+     * stale IInputMethodSessionWrapper JNI globals retain the destroyed service, so those private
+     * fields otherwise leave a small framework View hierarchy per keyboard toggle even after our
+     * own InputView has been disposed.
+     *
+     * Run only after super.onDestroy(): every framework field whose declared type is a View is
+     * dead at this point. This is deliberately type-based so it also covers vendor-added View
+     * fields without touching binder/session/window state that may still receive a late callback.
+     */
+    private fun clearAndroid12FrameworkViewReferences() {
+        if (Build.VERSION.SDK_INT != Build.VERSION_CODES.S) return
+        var cleared = 0
+        android.inputmethodservice.InputMethodService::class.java.declaredFields.forEach { field ->
+            if (java.lang.reflect.Modifier.isStatic(field.modifiers) ||
+                !View::class.java.isAssignableFrom(field.type)
+            ) {
+                return@forEach
+            }
+            runCatching {
+                field.isAccessible = true
+                field.set(this, null)
+                cleared += 1
+            }.onFailure { error ->
+                Log.w(
+                    IME_LIFECYCLE_TAG,
+                    "failed to clear Android 12 framework View field ${field.name}",
+                    error
+                )
+            }
+        }
+        val windowCleared = runCatching {
+            android.inputmethodservice.InputMethodService::class.java
+                .getDeclaredField("mWindow")
+                .apply { isAccessible = true }
+                .set(this, null)
+            true
+        }.onFailure { error ->
+            Log.w(IME_LIFECYCLE_TAG, "failed to clear Android 12 framework mWindow", error)
+        }.getOrDefault(false)
+        Log.i(
+            IME_LIFECYCLE_TAG,
+            "cleared Android 12 framework View fields=$cleared mWindow=$windowCleared"
+        )
     }
 
     private var showingDialog: Dialog? = null
@@ -1409,6 +1558,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     @Suppress("ConstPropertyName")
     companion object {
+        private const val IME_LIFECYCLE_TAG = "KBoardImeLifecycle"
+        private val PROCESS_IME_INSTANCE_LOCK = Any()
+        private var processImeInstance: WeakReference<FcitxInputMethodService>? = null
         const val DeleteSurroundingFlag = "org.fcitx.fcitx5.android.DELETE_SURROUNDING"
         private const val ACTION_SET_DISPLAY_IME_POLICY =
             "com.newlink.action.SET_DISPLAY_IME_POLICY"

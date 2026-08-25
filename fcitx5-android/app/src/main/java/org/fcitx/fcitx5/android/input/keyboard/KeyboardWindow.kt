@@ -213,6 +213,14 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     fun onDesktopPondTouch(event: MotionEvent): Boolean =
         (currentKeyboard as? DesktopKeyboard)?.onExternalPondTouch(event) ?: false
 
+    fun onImeWindowShown() {
+        (currentKeyboard as? DesktopKeyboard)?.onImeWindowShown()
+    }
+
+    fun onImeWindowHidden() {
+        (currentKeyboard as? DesktopKeyboard)?.onImeWindowHidden()
+    }
+
     override fun onImeUpdate(ime: InputMethodEntry) {
         currentKeyboard?.onInputMethodUpdate(ime)
     }

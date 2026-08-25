@@ -395,6 +395,14 @@ class DesktopKeyboard private constructor(
         super.onDetach()
     }
 
+    fun onImeWindowShown() {
+        aquariumView.activate()
+    }
+
+    fun onImeWindowHidden() {
+        aquariumView.deactivate()
+    }
+
     override fun onInputMethodUpdate(ime: InputMethodEntry) {
         currentImeName = ime.uniqueName
         currentImeLanguageCode = ime.languageCode

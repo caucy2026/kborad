@@ -122,6 +122,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private var voiceCommitJob: Job? = null
     private var voiceStartJob: Job? = null
     private var lastVoicePermissionPromptAt = 0L
+    private var voiceNetworkCallbackRegistered = false
+    private var disposed = false
 
     private var isClipboardFresh: Boolean = false
     private var isInlineSuggestionPresent: Boolean = false
@@ -156,6 +158,13 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
 
         override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) =
             refreshVoiceInputAvailability()
+    }
+
+    // ConnectivityManager is process-global on Android 12. Initializing it with the IME service
+    // context makes the framework singleton retain that service and its complete View tree after
+    // a dual-display rebind, so always obtain it from the application context.
+    private val voiceConnectivityManager by lazy {
+        context.applicationContext.getSystemService(ConnectivityManager::class.java)
     }
 
     private enum class NumberRowState { Auto, ForceShow, ForceHide }
@@ -851,12 +860,51 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         floatingKeyboard.registerOnChangeListener(onFloatingKeyboardUpdateListener)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             runCatching {
-                context.getSystemService(ConnectivityManager::class.java)
-                    ?.registerDefaultNetworkCallback(voiceNetworkCallback)
+                voiceConnectivityManager?.registerDefaultNetworkCallback(voiceNetworkCallback)
+                voiceNetworkCallbackRegistered = voiceConnectivityManager != null
             }.onFailure {
                 Timber.w(it, "Unable to observe voice network state")
             }
         }
+    }
+
+    /**
+     * Release process-global observers before this IME service is destroyed.
+     *
+     * The Android 12 dual-display remote client destroys and recreates InputMethodService for
+     * every keyboard toggle while keeping the Linux process alive. ConnectivityManager stores
+     * callbacks in a process-global map, so an unregistered callback retains KawaiiBarComponent
+     * and the entire keyboard View tree.
+     */
+    fun dispose() {
+        if (disposed) return
+        disposed = true
+
+        clipboardTimeoutJob?.cancel()
+        voiceCommitJob?.cancel()
+        voiceStartJob?.cancel()
+        clipboardTimeoutJob = null
+        voiceCommitJob = null
+        voiceStartJob = null
+
+        ClipboardManager.removeOnUpdateListener(onClipboardUpdateListener)
+        clipboardSuggestion.unregisterOnChangeListener(onClipboardSuggestionUpdateListener)
+        clipboardItemTimeout.unregisterOnChangeListener(onClipboardTimeoutUpdateListener)
+        floatingKeyboard.unregisterOnChangeListener(onFloatingKeyboardUpdateListener)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && voiceNetworkCallbackRegistered) {
+            runCatching {
+                voiceConnectivityManager?.unregisterNetworkCallback(voiceNetworkCallback)
+            }.onFailure {
+                Timber.w(it, "Unable to unregister voice network observer")
+            }
+            voiceNetworkCallbackRegistered = false
+        }
+
+        desktopVoiceButton?.setOnTouchListener(null)
+        desktopVoiceButton?.onGestureListener = null
+        desktopVoiceButton = null
+        desktopVoicePondTouch = null
     }
 
     override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {

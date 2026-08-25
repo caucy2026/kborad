@@ -84,6 +84,14 @@ class DesktopAquariumView(context: Context) : TextureView(context),
     }
 
     fun deactivate() {
+        if (active) {
+            // Some Android 12 dual-display builds keep a TextureView's SurfaceTexture alive
+            // after the IME window is hidden. Capture the stable frame here because waiting for
+            // onSurfaceTextureDestroyed would leave the GL thread rendering off-screen forever.
+            captureTransitionFrame()
+            waitingForFirstFrame = true
+            showTransitionFrame()
+        }
         active = false
         stopRenderer()
         touchCommands.clear()

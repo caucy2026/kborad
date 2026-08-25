@@ -77,6 +77,11 @@ class InputView(
     theme: Theme
 ) : BaseInputView(service, fcitx, theme) {
 
+    private var disposed = false
+
+    val reusableForImeShow: Boolean
+        get() = !disposed
+
     private val keyBorder by ThemeManager.prefs.keyBorder
 
     private val customBackground = imageView {
@@ -925,17 +930,42 @@ class InputView(
         broadcaster.onSelectionUpdate(start, end)
     }
 
+    fun onImeWindowShown() {
+        keyboardWindow.onImeWindowShown()
+    }
+
+    fun onImeWindowHidden() {
+        keyboardWindow.onImeWindowHidden()
+    }
+
+    /**
+     * Release every listener and render resource that can retain this complete keyboard tree.
+     * Android 12 dual-display builds do not consistently detach the IME view before rebinding
+     * the service, so cleanup must not depend only on onDetachedFromWindow().
+     */
+    fun dispose() {
+        if (disposed) return
+        disposed = true
+        handleEvents = false
+        onImeWindowHidden()
+        service.cancelPendingTouchHideRequest()
+        kawaiiBar.dispose()
+        keyboardPrefs.unregisterOnChangeListener(onKeyboardSizeChangeListener)
+        keyboardPrefs.unregisterOnChangeListener(onFloatingKeyboardChangeListener)
+        scope.clear()
+        // Some Android 12 vendor builds retain the obsolete IME root View after service
+        // destruction. Sever the root-to-children graph so that retention costs one empty shell
+        // instead of the complete keyboard, all key ConstraintLayouts and aquarium surface.
+        removeAllViews()
+    }
+
     @RequiresApi(Build.VERSION_CODES.R)
     fun handleInlineSuggestions(response: InlineSuggestionsResponse): Boolean {
         return kawaiiBar.handleInlineSuggestions(response)
     }
 
     override fun onDetachedFromWindow() {
-        service.cancelPendingTouchHideRequest()
-        keyboardPrefs.unregisterOnChangeListener(onKeyboardSizeChangeListener)
-        keyboardPrefs.unregisterOnChangeListener(onFloatingKeyboardChangeListener)
-        // clear DynamicScope, implies that InputView should not be attached again after detached.
-        scope.clear()
+        dispose()
         super.onDetachedFromWindow()
     }
 
