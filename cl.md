@@ -1606,6 +1606,44 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.53 - 2026-08-26
+
+### 主题
+修复 Android 12 新 IME 服务在窗口 token 挂载前收到显示请求导致的首次使用崩溃，并建立旧包名正式维护构建路径。
+
+### 现场、根因与既有测试盲区
+- 63 于 2026-08-26 10:29:34 的 KBoard 崩溃栈为 `IllegalStateException: Window token is not set yet.`，调用链为 `SoftInputWindow.show()` -> `InputMethodService.showWindow()` -> `InputMethodService$InputMethodImpl.showSoftInput()`；包名和进程均明确属于 `org.fcitx.fcitx5.android`。
+- 崩溃前 KEMI `KeyboardProxyActivity` 在约 30–60ms 间隔内连续调用 `restartInput/showSoftInput`。Android 12 固件同时销毁旧 `FcitxInputMethodService`、创建多个新代际，并在新代际完成 `attachToken()` 前投递了显示请求。
+- 既有 `onShowInputRequested()` 防护只处理旧 Service 销毁后私有 `SettingsObserver` 为空的 NPE。本次异常发生在该方法正常返回之后的框架 `SoftInputWindow.show()`，因此旧防护不可能捕获。
+- 此前 300 次测试主要复用已经完成 token 挂载的服务实例，没有反复覆盖“新 Service + token 未挂载 + 立即显示”的首次时序；循环次数很多不代表覆盖了这个竞态。
+
+### 修改
+- `FcitxInputMethodService.onCreateInputMethodInterface()` 的 Android 12 专用 `InputMethodImpl` 增加 `showSoftInput()` 边界保护。只拦截 SDK 31、异常消息精确为 `Window token is not set yet.`，且堆栈同时包含 `SoftInputWindow.show()` 和 `InputMethodService.showWindow()` 的平台异常；其他 Android 版本、其他消息或其他调用栈仍原样抛出。
+- 无效请求被拒绝后不销毁服务、不重建 View，也不保存 `ResultReceiver`。系统完成 `attachToken()` 后的下一次请求仍走原框架路径，避免因一次过早回调终止整个输入法进程。
+- `Android12ImeFrameworkCompatTest` 增加精确命中、错误 SDK、错误消息、错误窗口类和错误 Service 调用点的正反单测，防止以后扩大为吞掉所有 `IllegalStateException`。
+- `app/build.gradle.kts` 保持主线默认 `applicationId=com.newlink.kemi.kboard`，新增显式 `-PkboardApplicationId=...` 维护参数。本次用 `org.fcitx.fcitx5.android` 构建，才能无损覆盖 62/63 仍在使用的旧升级链；默认新包构建行为不变。
+
+### 内存与生命周期边界
+- 本修复没有新增 View、Context、协程、监听器、Handler、静态强引用或长期集合；异常对象和 `ResultReceiver` 只存在于单次 Binder 回调栈，返回后不持有。
+- 既有 `releaseOwnedResources()` 仍负责幂等释放 InputView、候选、偏好/主题监听、桌面按键状态、ASR/水族资源、协程任务和 Fcitx 连接；本次没有重新引入 Android 12 私有窗口字段反射清空。
+- 62 的 100 个有效冷启动样本中，View 为 726–740，PSS 为 91,416–96,433 KiB，没有随轮次线性增长；每轮为新进程/新 Service，主要用于验证首次创建，不替代同进程远程代理的长期泄漏测试。
+
+### 构建与验证
+- `Android12ImeFrameworkCompatTest` 定向单测通过；项目没有 Release 单测变体，因此测试使用 JVM `testDebugUnitTest`，未生成或安装 Debug APK。`compileReleaseKotlin` 和完整正式 `assemble-release-local.sh` 均成功。
+- 正式 APK 为 `fcitx5-android/build/kboard.apk`：包名 `org.fcitx.fcitx5.android`、`versionCode=142`、`versionName=c7bdcd1e`、arm64-v8a、SHA-256 `5b1bec0e976741320984cce04b3721b025fd849d65158dbc720c98835e753650`。
+- `apksigner` 验证 v1/v2 有效，证书 SHA-256 为既有升级证书 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 62 以 3 秒间隔执行 D0 冷启动：每轮 force-stop 后重新创建 KBoard 进程、Service、EditText 输入连接和 IME token。得到 100/100 个有效首次显示样本，`KBoardCrash`、`FATAL EXCEPTION`、`Window token is not set yet`、OOM 均为 0。
+- 原第 46 轮在 3 秒采样时未显示。事件日志证明同一时刻外部 DOCX Intent 启动 `org.kemi.koffice` 的 `ExternalDocumentActivity/LOActivity`，KBoard 获得焦点约 1.1 秒后被系统收走 top-resumed；PID 无异常栈。该外部焦点干扰样本作废并补跑 1 轮通过，没有用 99/100 掩盖。
+- D2 隔离页虽实际位于 Display 2，但该固件仍把 served input connection 留给 D0 KOffice，`mInputShown=false`，因此这些样本未计入结果，也没有冒充跨屏验收。
+- 同一正式 APK 在 62 验证后重新 `install -r` 到 63。63 回读 `c7bdcd1e/142`，默认输入法仍为 KBoard，设备 `base.apk` SHA-256 与本地/62 验证文件逐字节一致；按用户要求未在 63 继续代操作测试。
+
+### 待办与风险
+- 62 当时没有已连接的 KEMI 远程会话，因此 100 个有效样本验证的是 Android 12 冷启动首次显示和内存稳定性，不等价于 `KeyboardProxyActivity` 的 D0/D2 端到端路径。用户在 63 的第一次真实远程打开仍是最终验收。
+- KEMI 代理在 30–60ms 内密集请求显示会放大固件竞态。KBoard 现在能安全拒绝 token 未就绪的一次请求，但远程端仍应避免无边界重试，并以实际 Insets 可见状态而不是 `showSoftInput(true)` 作为成功依据。
+- 如果以后出现相同文字但堆栈不包含 `SoftInputWindow.show()` 与 `InputMethodService.showWindow()`，当前防护会有意继续抛出，必须按新现场重新分析，不能扩大为通用异常吞噬。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。
