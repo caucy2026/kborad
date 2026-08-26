@@ -31,6 +31,19 @@ class Android12ImeFrameworkCompatTest {
         )
     }
 
+    private fun missingWindowTokenFailure(
+        message: String = "Window token is not set yet.",
+        windowClassName: String = "android.inputmethodservice.SoftInputWindow",
+        windowMethodName: String = "show",
+        serviceClassName: String = "android.inputmethodservice.InputMethodService",
+        serviceMethodName: String = "showWindow"
+    ) = IllegalStateException(message).apply {
+        stackTrace = arrayOf(
+            StackTraceElement(windowClassName, windowMethodName, "SoftInputWindow.java", 273),
+            StackTraceElement(serviceClassName, serviceMethodName, "InputMethodService.java", 2264)
+        )
+    }
+
     @Test
     fun ignoresExactAndroid12FrameworkRace() {
         assertTrue(
@@ -93,6 +106,48 @@ class Android12ImeFrameworkCompatTest {
             Android12ImeFrameworkCompat.canRejectShowAfterDestroy(
                 31,
                 missingSettingsObserverFailure(className = "org.fcitx.SomeClass")
+            )
+        )
+    }
+
+    @Test
+    fun rejectsExactAndroid12ShowBeforeAttachTokenRace() {
+        assertTrue(
+            Android12ImeFrameworkCompat.canRejectShowBeforeAttachToken(
+                31,
+                missingWindowTokenFailure()
+            )
+        )
+    }
+
+    @Test
+    fun doesNotRejectTokenRaceOnOtherAndroidVersions() {
+        assertFalse(
+            Android12ImeFrameworkCompat.canRejectShowBeforeAttachToken(
+                32,
+                missingWindowTokenFailure()
+            )
+        )
+    }
+
+    @Test
+    fun doesNotRejectUnrelatedIllegalStateExceptionsDuringShow() {
+        assertFalse(
+            Android12ImeFrameworkCompat.canRejectShowBeforeAttachToken(
+                31,
+                missingWindowTokenFailure(message = "different failure")
+            )
+        )
+        assertFalse(
+            Android12ImeFrameworkCompat.canRejectShowBeforeAttachToken(
+                31,
+                missingWindowTokenFailure(windowClassName = "org.fcitx.SomeWindow")
+            )
+        )
+        assertFalse(
+            Android12ImeFrameworkCompat.canRejectShowBeforeAttachToken(
+                31,
+                missingWindowTokenFailure(serviceMethodName = "onCreate")
             )
         )
     }

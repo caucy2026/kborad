@@ -13,7 +13,10 @@ android {
     namespace = "org.fcitx.fcitx5.android"
 
     defaultConfig {
-        applicationId = "com.newlink.kemi.kboard"
+        // Keep the new product id as the default. The explicit override is only for signed
+        // maintenance builds that must update already deployed legacy-package devices in place.
+        applicationId = providers.gradleProperty("kboardApplicationId")
+            .getOrElse("com.newlink.kemi.kboard")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         @Suppress("UnstableApiUsage")

@@ -19,6 +19,7 @@ import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
+import android.os.ResultReceiver
 import android.os.SystemClock
 import android.hardware.display.DisplayManager
 import android.text.SpannableString
@@ -281,6 +282,24 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                         Timber.w(
                             error,
                             "Ignored Android 12 bindInput-before-initialize framework race"
+                        )
+                    }
+                }
+
+                override fun showSoftInput(flags: Int, resultReceiver: ResultReceiver?) {
+                    try {
+                        super.showSoftInput(flags, resultReceiver)
+                    } catch (error: IllegalStateException) {
+                        if (!Android12ImeFrameworkCompat.canRejectShowBeforeAttachToken(
+                                Build.VERSION.SDK_INT,
+                                error
+                            )
+                        ) {
+                            throw error
+                        }
+                        Timber.w(
+                            error,
+                            "Rejected Android 12 showSoftInput-before-attachToken framework race"
                         )
                     }
                 }
