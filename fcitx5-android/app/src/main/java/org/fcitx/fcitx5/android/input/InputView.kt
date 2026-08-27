@@ -986,7 +986,9 @@ class InputView(
         const val DESKTOP_PREEDIT_GAP_DP = 0
         const val DESKTOP_SIDE_PADDING_DP = 0
         const val DESKTOP_VERTICAL_INSET_DP = 20
-        const val DESKTOP_TOUCHPAD_HEIGHT_DP = 112
+        // DesktopKeyboard uses the upper 160dp for its touchpad/buttons; the lower 48dp is the
+        // overlaid candidate/tool rail. This affects global mode only.
+        const val DESKTOP_TOUCHPAD_HEIGHT_DP = 208
         const val DESKTOP_ROW_COUNT = 6f
         const val DESKTOP_LAYOUT_WIDTH_UNITS = 15f
         const val DESKTOP_MIN_HEIGHT_PERCENT = 35

@@ -33,10 +33,14 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
     var onMouseButton: ((String, Boolean) -> Unit)? = null
 
     private val density = resources.displayMetrics.density
-    private val cornerRadius = 14f * density
-    private val outerInset = 5f * density
-    private val gap = 4f * density
-    private val buttonHeight = 35f * density
+    private val cornerRadius = 16f * density
+    private val outerInset = 7f * density
+    private val gap = 6f * density
+    private val buttonHeight = 48f * density
+    // KawaiiBar is positioned over the bottom of DesktopKeyboard's header so candidates and
+    // tools remain directly above row one. Keep mouse controls out of that overlay instead of
+    // drawing them underneath it and leaving only their top border visible.
+    private val candidateBarInset = 48f * density
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val panelRect = RectF()
     private val touchRect = RectF()
@@ -52,6 +56,7 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
         context.getString(R.string.desktop_mouse_right)
     )
     private val touchpadHint = context.getString(R.string.desktop_mouse_touchpad_hint)
+    private val touchpadGestureHint = context.getString(R.string.desktop_mouse_touchpad_gesture_hint)
 
     private val glassPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -75,6 +80,12 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
         strokeWidth = 1.5f * density
         color = 0x6DEAF8FF
     }
+    private val contactGlowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x4D76DDFF
+    }
+    private val contactDotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFEAFBFF.toInt()
+    }
     private val buttonPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -84,12 +95,24 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
     private val hintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xB8EAF7FF.toInt()
         textAlign = Paint.Align.CENTER
-        textSize = 11f * density
+        textSize = 13f * density
+    }
+    private val gestureHintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x8FD7ECF7.toInt()
+        textAlign = Paint.Align.CENTER
+        textSize = 10f * density
     }
 
     private var movementPointerId = MotionEvent.INVALID_POINTER_ID
     private var lastX = 0f
     private var lastY = 0f
+    private var movementDownX = 0f
+    private var movementDownY = 0f
+    private var movementDownTime = 0L
+    private var movementExceededTapSlop = false
+    private var contactVisible = false
+    private var contactX = 0f
+    private var contactY = 0f
     private var pendingDx = 0f
     private var pendingDy = 0f
     private var frameScheduled = false
@@ -107,28 +130,25 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        panelRect.set(outerInset, outerInset, w - outerInset, h - outerInset)
+        panelRect.set(
+            outerInset,
+            outerInset,
+            w - outerInset,
+            (h - candidateBarInset - outerInset).coerceAtLeast(outerInset)
+        )
         val stackedMinimumHeight = buttonHeight + gap + 42f * density
         compactHorizontalLayout = panelRect.height() < stackedMinimumHeight
         if (!compactHorizontalLayout) {
             val stripTop = max(panelRect.top + 28f * density, panelRect.bottom - buttonHeight)
             touchRect.set(panelRect.left, panelRect.top, panelRect.right, stripTop - gap)
-            val buttonWidth = (panelRect.width() - gap * 2f) / 3f
-            buttonRects.forEachIndexed { index, rect ->
-                val left = panelRect.left + index * (buttonWidth + gap)
-                rect.set(left, stripTop, left + buttonWidth, panelRect.bottom)
-            }
+            layoutMouseButtons(panelRect.left, panelRect.right, stripTop, panelRect.bottom)
         } else {
             // Android 12 V900 constrains the IME header to 48dp. In that compact shape, place
             // mouse buttons beside the pad instead of silently clipping them below the view.
             val controlsWidth = panelRect.width() * 0.36f
             val controlsLeft = panelRect.right - controlsWidth
             touchRect.set(panelRect.left, panelRect.top, controlsLeft - gap, panelRect.bottom)
-            val buttonWidth = (controlsWidth - gap * 2f) / 3f
-            buttonRects.forEachIndexed { index, rect ->
-                val left = controlsLeft + index * (buttonWidth + gap)
-                rect.set(left, panelRect.top, left + buttonWidth, panelRect.bottom)
-            }
+            layoutMouseButtons(controlsLeft, panelRect.right, panelRect.top, panelRect.bottom)
         }
         glassPaint.shader = LinearGradient(
             panelRect.left,
@@ -139,6 +159,17 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
             floatArrayOf(0f, 0.52f, 1f),
             Shader.TileMode.CLAMP
         )
+    }
+
+    private fun layoutMouseButtons(left: Float, right: Float, top: Float, bottom: Float) {
+        val availableWidth = right - left - gap * 2f
+        val weights = floatArrayOf(0.46f, 0.22f, 0.32f)
+        var cursor = left
+        buttonRects.forEachIndexed { index, rect ->
+            val width = availableWidth * weights[index]
+            rect.set(cursor, top, cursor + width, bottom)
+            cursor += width + gap
+        }
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -168,9 +199,19 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
             canvas.drawText(
                 touchpadHint,
                 touchRect.centerX(),
-                touchRect.centerY() - guideHalfHeight - hintPaint.descent() - 3f * density,
+                touchRect.centerY() - guideHalfHeight - hintPaint.descent() - 5f * density,
                 hintPaint
             )
+            canvas.drawText(
+                touchpadGestureHint,
+                touchRect.centerX(),
+                touchRect.centerY() + guideHalfHeight - gestureHintPaint.ascent() + 5f * density,
+                gestureHintPaint
+            )
+            if (contactVisible) {
+                canvas.drawCircle(contactX, contactY, 20f * density, contactGlowPaint)
+                canvas.drawCircle(contactX, contactY, 4.5f * density, contactDotPaint)
+            }
         }
 
         buttonRects.forEachIndexed { index, rect ->
@@ -230,6 +271,14 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
             movementPointerId = pointerId
             lastX = x
             lastY = y
+            movementDownX = x
+            movementDownY = y
+            movementDownTime = android.os.SystemClock.uptimeMillis()
+            movementExceededTapSlop = false
+            contactVisible = true
+            contactX = x
+            contactY = y
+            invalidate()
         }
     }
 
@@ -242,6 +291,14 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
         val dy = y - lastY
         lastX = x
         lastY = y
+        contactX = x.coerceIn(touchRect.left, touchRect.right)
+        contactY = y.coerceIn(touchRect.top, touchRect.bottom)
+        if (!movementExceededTapSlop &&
+            hypot(x - movementDownX, y - movementDownY) > touchSlop
+        ) {
+            movementExceededTapSlop = true
+        }
+        invalidate()
         if (dx == 0f && dy == 0f) return
         val distance = hypot(dx, dy)
         val acceleration = when {
@@ -260,8 +317,19 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
             invalidate()
         }
         if (pointerId == movementPointerId) {
+            val isTap = !movementExceededTapSlop &&
+                android.os.SystemClock.uptimeMillis() - movementDownTime <= TAP_TIMEOUT_MS
             movementPointerId = MotionEvent.INVALID_POINTER_ID
+            contactVisible = false
             flushMotion()
+            // A second finger on the touch surface is commonly used while holding a mouse
+            // button for dragging. Do not turn that release into an extra click or release the
+            // held button unexpectedly.
+            if (isTap && pressedButtons.isEmpty()) {
+                onMouseButton?.invoke(RemoteMouseInputProtocol.BUTTON_LEFT, true)
+                onMouseButton?.invoke(RemoteMouseInputProtocol.BUTTON_LEFT, false)
+            }
+            invalidate()
         }
     }
 
@@ -290,6 +358,7 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
         pressedButtons.values.toList().forEach { onMouseButton?.invoke(buttonNames[it], false) }
         pressedButtons.clear()
         movementPointerId = MotionEvent.INVALID_POINTER_ID
+        contactVisible = false
         flushMotion()
         invalidate()
     }
@@ -302,6 +371,10 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
         frameScheduled = false
         onMouseMove = null
         onMouseButton = null
+    }
+
+    private companion object {
+        const val TAP_TIMEOUT_MS = 280L
     }
 
 }

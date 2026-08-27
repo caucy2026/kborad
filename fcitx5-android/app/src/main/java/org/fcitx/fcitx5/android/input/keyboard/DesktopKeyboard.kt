@@ -140,6 +140,11 @@ class DesktopKeyboard private constructor(
         private const val LayoutWidthInKeyUnits = 15f
         private const val DESKTOP_DECK_COLOR = 0xFF061827.toInt()
         private const val DESKTOP_OPERATION_WATER_HEIGHT_DP = 44
+        // Includes the 48dp candidate/tool rail that InputView overlays at the bottom of the
+        // desktop header. This leaves a genuine 160dp interaction zone for the pad and buttons.
+        private const val DESKTOP_TOUCHPAD_HEIGHT_DP = 208
+        private const val DESKTOP_MIN_ROW_HEIGHT_DP = 42
+        private const val DESKTOP_TOUCHPAD_MAX_HEIGHT_FRACTION = 0.43f
         private const val DESKTOP_ACTIVE_LANGUAGE_COLOR = 0xFF4285F4.toInt()
         private const val DESKTOP_KEY_TEXT_COLOR = 0xFFF4F8FC.toInt()
 
@@ -584,25 +589,33 @@ class DesktopKeyboard private constructor(
         return option.centerXOnScreen() to command.centerXOnScreen()
     }
 
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        super.onSizeChanged(w, h, oldw, oldh)
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val measuredHeight = View.MeasureSpec.getSize(heightMeasureSpec)
         val topPadding = 0
         // InputView overlays the desktop operation buttons on the bottom of this view. Keep the
         // key rows above them while the aquarium itself continues through the reserved water.
         val bottomPadding = context.dp(DESKTOP_OPERATION_WATER_HEIGHT_DP)
         val horizontalPadding = 0
-        val availableHeight = h - topPadding - bottomPadding
-        val rowHeight = (w - horizontalPadding * 2) / LayoutWidthInKeyUnits
-        val compositionHeight = (availableHeight - rowHeight * 6f)
-            .roundToInt()
-            .coerceAtLeast(0)
-        compositionHeader.updateLayoutParams<LayoutParams> {
-            height = compositionHeight
+        // Reserve a fingertip-sized pad before ConstraintLayout measures the key rows. Updating
+        // this in onSizeChanged() was too late on the V900 and retained the 48dp fallback.
+        val desiredTouchpadHeight = minOf(
+            context.dp(DESKTOP_TOUCHPAD_HEIGHT_DP),
+            (measuredHeight * DESKTOP_TOUCHPAD_MAX_HEIGHT_FRACTION).roundToInt()
+        )
+        val minimumRowsHeight = context.dp(DESKTOP_MIN_ROW_HEIGHT_DP * 6)
+        val maximumTouchpadHeight =
+            (measuredHeight - bottomPadding - minimumRowsHeight).coerceAtLeast(0)
+        val touchpadHeight = desiredTouchpadHeight.coerceAtMost(maximumTouchpadHeight)
+        if (compositionHeader.layoutParams.height != touchpadHeight) {
+            compositionHeader.updateLayoutParams<LayoutParams> {
+                height = touchpadHeight
+            }
         }
         // BaseKeyboard owns a real bottom constraint spacer. Padding alone is ignored by
         // ConstraintLayout's parent-edge anchors on the V900 ROM and allowed row 6 to render
         // underneath the operation rail.
         setPadding(horizontalPadding, topPadding, horizontalPadding, 0)
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
