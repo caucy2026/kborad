@@ -99,11 +99,15 @@ class DesktopKeyboard private constructor(
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        handleAquariumTouch(
-            event,
-            event.x / width.coerceAtLeast(1),
-            event.y / height.coerceAtLeast(1)
-        )
+        // The header is a real mouse surface, not pond space. Do not mix mouse gestures with
+        // aquarium feeding/ripple feedback or play a water sound on every cursor movement.
+        if (event.y >= compositionHeader.bottom) {
+            handleAquariumTouch(
+                event,
+                event.x / width.coerceAtLeast(1),
+                event.y / height.coerceAtLeast(1)
+            )
+        }
         // Observation only: key hit testing, gestures, repeat and text input keep their original
         // event stream. The clickable aquarium consumes otherwise-empty pond space.
         return super.dispatchTouchEvent(event)
@@ -604,8 +608,13 @@ class DesktopKeyboard private constructor(
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
         // ConstraintLayout respects the key-row bottom padding, but the pond must cover it.
-        aquariumView.layout(0, 0, right - left, bottom - top)
-        aquariumTransitionOverlay.layout(0, 0, right - left, bottom - top)
+        // GLSurfaceView uses an independent compositor surface on this Android 12 build. Keep
+        // that surface physically below the mouse header so it cannot cover the touchpad Canvas.
+        val pondTop = compositionHeader.bottom.coerceIn(0, bottom - top)
+        aquariumView.layout(0, pondTop, right - left, bottom - top)
+        aquariumTransitionOverlay.layout(0, pondTop, right - left, bottom - top)
+        compositionHeader.bringToFront()
+        touchpadView.bringToFront()
     }
 
 }

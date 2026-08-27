@@ -776,14 +776,17 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     fun sendDesktopMouseMove(dx: Int, dy: Int) {
         if (dx == 0 && dy == 0) return
-        currentInputConnection?.performPrivateCommand(
+        val accepted = currentInputConnection?.performPrivateCommand(
             RemoteMouseInputProtocol.ACTION,
             Bundle().apply {
                 putString(RemoteMouseInputProtocol.EXTRA_TYPE, RemoteMouseInputProtocol.TYPE_MOVE)
                 putInt(RemoteMouseInputProtocol.EXTRA_DX, dx.coerceIn(-240, 240))
                 putInt(RemoteMouseInputProtocol.EXTRA_DY, dy.coerceIn(-240, 240))
             }
-        )
+        ) == true
+        if (Log.isLoggable(REMOTE_MOUSE_LOG_TAG, Log.DEBUG)) {
+            Log.d(REMOTE_MOUSE_LOG_TAG, "move dx=$dx dy=$dy accepted=$accepted")
+        }
     }
 
     fun sendDesktopMouseButtonState(button: String, down: Boolean) {
@@ -798,6 +801,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 putBoolean(RemoteMouseInputProtocol.EXTRA_DOWN, down)
             }
         ) == true
+        if (Log.isLoggable(REMOTE_MOUSE_LOG_TAG, Log.DEBUG)) {
+            Log.d(REMOTE_MOUSE_LOG_TAG, "button=$button down=$down accepted=$accepted")
+        }
         if (down) {
             if (accepted) pressedDesktopMouseButtons.add(button)
         } else {
@@ -1606,6 +1612,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     @Suppress("ConstPropertyName")
     companion object {
         private const val IME_LIFECYCLE_TAG = "KBoardImeLifecycle"
+        private const val REMOTE_MOUSE_LOG_TAG = "KBoardRemoteMouse"
         private val PROCESS_IME_INSTANCE_LOCK = Any()
         private var processImeInstance: WeakReference<FcitxInputMethodService>? = null
         const val DeleteSurroundingFlag = "org.fcitx.fcitx5.android.DELETE_SURROUNDING"

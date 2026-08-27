@@ -63,6 +63,18 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
         strokeWidth = density
         color = 0x3DD8F2FF
     }
+    private val touchAreaPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xD92A526B.toInt()
+    }
+    private val touchAreaBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2f * density
+        color = 0xD96DE1FF.toInt()
+    }
+    private val guidePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        strokeWidth = 1.5f * density
+        color = 0x6DEAF8FF
+    }
     private val buttonPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -82,22 +94,41 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
     private var pendingDy = 0f
     private var frameScheduled = false
     private val pressedButtons = linkedMapOf<Int, Int>()
+    private var compactHorizontalLayout = false
 
     init {
         isClickable = true
         isFocusable = true
         contentDescription = context.getString(R.string.desktop_mouse_touchpad_description)
-        setLayerType(LAYER_TYPE_HARDWARE, null)
+        // The V900's Android 12 compositor may retain a zero-sized hardware layer when this
+        // view is created before the dynamic desktop header is measured. The panel is mostly
+        // static Canvas drawing, so a software layer is both cheap and deterministic here.
+        setLayerType(LAYER_TYPE_SOFTWARE, null)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         panelRect.set(outerInset, outerInset, w - outerInset, h - outerInset)
-        val stripTop = max(panelRect.top + 28f * density, panelRect.bottom - buttonHeight)
-        touchRect.set(panelRect.left, panelRect.top, panelRect.right, stripTop - gap)
-        val buttonWidth = (panelRect.width() - gap * 2f) / 3f
-        buttonRects.forEachIndexed { index, rect ->
-            val left = panelRect.left + index * (buttonWidth + gap)
-            rect.set(left, stripTop, left + buttonWidth, panelRect.bottom)
+        val stackedMinimumHeight = buttonHeight + gap + 42f * density
+        compactHorizontalLayout = panelRect.height() < stackedMinimumHeight
+        if (!compactHorizontalLayout) {
+            val stripTop = max(panelRect.top + 28f * density, panelRect.bottom - buttonHeight)
+            touchRect.set(panelRect.left, panelRect.top, panelRect.right, stripTop - gap)
+            val buttonWidth = (panelRect.width() - gap * 2f) / 3f
+            buttonRects.forEachIndexed { index, rect ->
+                val left = panelRect.left + index * (buttonWidth + gap)
+                rect.set(left, stripTop, left + buttonWidth, panelRect.bottom)
+            }
+        } else {
+            // Android 12 V900 constrains the IME header to 48dp. In that compact shape, place
+            // mouse buttons beside the pad instead of silently clipping them below the view.
+            val controlsWidth = panelRect.width() * 0.36f
+            val controlsLeft = panelRect.right - controlsWidth
+            touchRect.set(panelRect.left, panelRect.top, controlsLeft - gap, panelRect.bottom)
+            val buttonWidth = (controlsWidth - gap * 2f) / 3f
+            buttonRects.forEachIndexed { index, rect ->
+                val left = controlsLeft + index * (buttonWidth + gap)
+                rect.set(left, panelRect.top, left + buttonWidth, panelRect.bottom)
+            }
         }
         glassPaint.shader = LinearGradient(
             panelRect.left,
@@ -116,10 +147,28 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
         canvas.drawRoundRect(panelRect, cornerRadius, cornerRadius, borderPaint)
 
         if (touchRect.height() > 0f) {
+            canvas.drawRoundRect(touchRect, 10f * density, 10f * density, touchAreaPaint)
+            canvas.drawRoundRect(touchRect, 10f * density, 10f * density, touchAreaBorderPaint)
+            val guideHalfWidth = min(touchRect.width() * 0.1f, 60f * density)
+            val guideHalfHeight = min(touchRect.height() * 0.18f, 14f * density)
+            canvas.drawLine(
+                touchRect.centerX() - guideHalfWidth,
+                touchRect.centerY(),
+                touchRect.centerX() + guideHalfWidth,
+                touchRect.centerY(),
+                guidePaint
+            )
+            canvas.drawLine(
+                touchRect.centerX(),
+                touchRect.centerY() - guideHalfHeight,
+                touchRect.centerX(),
+                touchRect.centerY() + guideHalfHeight,
+                guidePaint
+            )
             canvas.drawText(
                 touchpadHint,
                 touchRect.centerX(),
-                touchRect.centerY() - (hintPaint.ascent() + hintPaint.descent()) / 2f,
+                touchRect.centerY() - guideHalfHeight - hintPaint.descent() - 3f * density,
                 hintPaint
             )
         }
@@ -128,13 +177,15 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
             buttonPaint.color = if (index in pressedButtons.values) {
                 if (index == 2) 0xD837A56D.toInt() else 0xD83B82F6.toInt()
             } else {
-                0x8A102C40.toInt()
+                0xEE17384D.toInt()
             }
             canvas.drawRoundRect(rect, 8f * density, 8f * density, buttonPaint)
+            canvas.drawRoundRect(rect, 8f * density, 8f * density, touchAreaBorderPaint)
             canvas.drawText(
                 buttonLabels[index],
                 rect.centerX(),
-                rect.centerY() - (labelPaint.ascent() + labelPaint.descent()) / 2f,
+                rect.centerY() - (labelPaint.ascent() + labelPaint.descent()) / 2f -
+                    (if (compactHorizontalLayout) 8f * density else 0f),
                 labelPaint
             )
             if (index < buttonRects.lastIndex) {

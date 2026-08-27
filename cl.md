@@ -1676,6 +1676,37 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.55 - 2026-08-27
+
+### 主题
+重做全局键盘虚拟鼠标区域的视觉和紧凑屏布局，并在 63 完成远程鼠标移动、三键状态、模式切换及稳定性闭环。
+
+### 过程
+- 首次真机截图确认原触控板并非单纯“颜色不明显”：水族 `GLSurfaceView` 的独立合成层覆盖了顶部 Canvas，同时 V900 Android 12 将组合区限制为约 48dp，原先上下排列的三键被裁到可视区域之外。
+- 尝试扩大父容器高度后，真机仍按固件紧凑 IME 高度合成。最终改为响应式布局：高度足够时采用“上滑动区、下三键”，紧凑高度下采用“左侧 64% 滑动区、右侧 36% 左/中/右键”，不增加整个输入法高度，也不压缩普通键盘。
+- 通过 Display 2 操作触控区、Display 0 观察远程 macOS 光标和界面反馈，并开启仅测试时生效的私有命令接收日志，确认事件不是只在 KBoard 内部绘制。
+
+### 修改
+- `DesktopTouchpadView.kt`：滑动区改为高对比蓝灰实体面板、青色描边、中心方向引导和明确提示；三键使用独立深色块及描边，按下时左/中键变蓝、右键变绿；增加紧凑横排/宽松上下排两套响应式布局，并修正紧凑模式文字位置。
+- `DesktopTouchpadView` 在该固件改用软件 Canvas 层，避免动态尺寸建立前缓存零尺寸硬件层；移动事件仍按 VSync 合并，不增加 Binder 发送频率。
+- `DesktopKeyboard.kt`：水族 Surface 和过渡层从触控板下沿开始布局，并把组合区、触控板显式置顶；触控板区域不再触发鱼群投喂、涟漪或水滴音，键区和鱼池原交互保持不变。
+- `FcitxInputMethodService.kt`：增加 `KBoardRemoteMouse` 条件诊断日志。只有系统显式打开该 tag 的 DEBUG 时才记录移动和按钮是否被当前 KEMI 输入连接接受，正式默认不输出高频移动日志。
+
+### 验证
+- 仅构建正式版：`./scripts/assemble-release-local.sh -PkboardApplicationId=org.fcitx.fcitx5.android` 成功，287 个 Release 任务完成；未构建、未安装 Debug APK。
+- 最终 APK 为 `fcitx5-android/build/kboard.apk`，包名 `org.fcitx.fcitx5.android`、`versionCode=152`、`versionName=1.4.1`，正式证书 SHA-256 保持 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`，APK SHA-256 为 `b69ab2236efa6a951d6d0385ed8e03c6c83852b8ae7bb369fe194a0d1d2a64f8`。
+- 最终 Release 已通过 `adb install -r` 安装至 `192.168.3.63:5555`。Display 2 截图确认左侧滑动区、左键、中键、右键全部可见，三键白字完整，按住左键显示蓝色按压态，释放后恢复。
+- 横向滑动产生连续相对位移，专用日志每帧均为 `accepted=true`；远程 Display 0 光标从左上区域移动到页面中部并触发悬停反馈。
+- 左、中、右键均得到成对 `down=true/false accepted=true`；额外长按左键约 2.3 秒后释放，DOWN/UP 完整且未卡键。
+- 以 3 秒间隔完成 3 次“隐藏全局键盘 -> 从远程工具栏重新显示”循环，最终 `mCurTokenDisplayId=2`、`mInputShown=true`；crash buffer、目标包 FATAL、ANR 均为空。
+- 从全局模式切回普通键盘截图确认普通布局、工具栏、语音键和输入按键均未改变；随后恢复全局模式成功。测试结束已把 `KBoardRemoteMouse` 日志级别恢复为 INFO。
+
+### 待办与风险
+- Shell `input` 只能生成单指触摸，无法可靠构造“一个手指持续按住鼠标键、第二个手指同时移动”的真实多点序列；该代码路径保留现有 pointerId 分离和统一补发 UP 机制，仍建议用户手动验收一次双指拖动手感。
+- KEMI/RustDesk 在 macOS 某些应用区域可能不显示系统右键菜单，中键也可能无界面动作；本轮以接收端返回 `accepted=true` 和完整 DOWN/UP 证明链路，业务端不同远程系统的具体中键行为仍由 RustDesk/目标系统决定。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。
