@@ -32,6 +32,10 @@ sealed class KeyAction {
      */
     data class ModifierStateAction(val state: KeyState, val down: Boolean) : KeyAction()
 
+    data class RemoteMouseMoveAction(val dx: Int, val dy: Int) : KeyAction()
+
+    data class RemoteMouseButtonAction(val button: String, val down: Boolean) : KeyAction()
+
     data object QuickPhraseAction : KeyAction()
 
     data object UnicodeAction : KeyAction()

@@ -9,6 +9,7 @@ import android.content.Context
 import android.graphics.Color
 import android.view.MotionEvent
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.ImageView
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.allViews
@@ -32,7 +33,8 @@ class DesktopKeyboard private constructor(
     theme: Theme,
     private val aquariumView: DesktopAquariumView,
     private val aquariumTransitionOverlay: ImageView,
-    private val compositionHeader: View
+    private val compositionHeader: FrameLayout,
+    private val touchpadView: DesktopTouchpadView
 ) :
     BaseKeyboard(
         context,
@@ -48,7 +50,8 @@ class DesktopKeyboard private constructor(
         theme,
         DesktopAquariumView(context),
         createAquariumTransitionOverlay(context),
-        createHeader(context)
+        createHeader(context),
+        DesktopTouchpadView(context)
     )
 
     init {
@@ -69,6 +72,13 @@ class DesktopKeyboard private constructor(
             )
         )
         aquariumView.bindTransitionOverlay(aquariumTransitionOverlay)
+        compositionHeader.addView(
+            touchpadView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
         setBackgroundColor(DESKTOP_DECK_COLOR)
         setPadding(0, 0, 0, 0)
         aquariumView.isClickable = true
@@ -79,6 +89,12 @@ class DesktopKeyboard private constructor(
             it.physicalReleaseSoundEnabled = false
         }
         configureHeldModifierKeys()
+        touchpadView.onMouseMove = { dx, dy ->
+            onAction(KeyAction.RemoteMouseMoveAction(dx, dy))
+        }
+        touchpadView.onMouseButton = { button, down ->
+            onAction(KeyAction.RemoteMouseButtonAction(button, down))
+        }
         InputFeedbacks.prepareRippleSoundAsync()
     }
 
@@ -147,7 +163,7 @@ class DesktopKeyboard private constructor(
             (value * resources.displayMetrics.density).roundToInt()
 
         // Preedit is layered over this transparent composition area.
-        private fun createHeader(context: Context) = View(context).apply {
+        private fun createHeader(context: Context) = FrameLayout(context).apply {
             setBackgroundColor(Color.TRANSPARENT)
         }
 
@@ -391,8 +407,14 @@ class DesktopKeyboard private constructor(
         modifierStates.clear()
         updateModifierKeys()
         updateShortcutHints()
+        touchpadView.releaseInputState()
         aquariumView.deactivate()
         super.onDetach()
+    }
+
+    override fun dispose() {
+        touchpadView.dispose()
+        super.dispose()
     }
 
     fun onImeWindowShown() {

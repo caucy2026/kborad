@@ -328,4 +328,9 @@
     <string name="hide_unsupported_emojis">隐藏不支持的表情</string>
     <string name="key_border_stroke">启用按键边框描边</string>
     <string name="preferred_voice_input">首选语音输入</string>
+    <string name="desktop_mouse_touchpad_hint">滑动控制鼠标</string>
+    <string name="desktop_mouse_touchpad_description">虚拟鼠标触控板</string>
+    <string name="desktop_mouse_left">左键</string>
+    <string name="desktop_mouse_middle">中键</string>
+    <string name="desktop_mouse_right">右键</string>
 </resources>

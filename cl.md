@@ -1644,6 +1644,38 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.54 - 2026-08-27
+
+### 主题
+在全局水族键盘顶部增加跨屏虚拟鼠标触控区，并通过当前远程输入连接提供左键、中键、右键。
+
+### 过程
+- 先拉取服务器 `origin/main`，确认远端新增 `be7ce351 build: set KBoard version to 1.4.1`；在保留本地 Android 12 首次显示修复的前提下完成合并，合并基线为 `c8fcc553`。
+- Android `InputConnection` 没有标准相对鼠标移动接口，因此采用仅面向当前编辑器的 `performPrivateCommand`。KBoard 只向当前输入连接发送相对位移和按钮状态，共享桌面的 `KeyboardProxyActivity` 再按 requestId、sessionId、visible、remote 四重门禁转发给 RustDesk 会话。
+- 触控位移在 KBoard 侧按显示帧合并，避免每个 MotionEvent 都跨 Binder/MethodChannel 发送；共享桌面侧保留小数余量并使用 RustDesk 已有 `move_relative` 协议，不增加服务端私有鼠标协议。
+- 鼠标按钮采用真实 DOWN/UP 生命周期。允许一个手指按住左/中/右键、另一个手指在触控区移动；重复 DOWN 被去重，隐藏键盘、切换输入、结束输入或销毁服务时统一补发 UP。
+
+### 修改
+- 新增 `DesktopTouchpadView.kt`：仅挂载到 `DesktopKeyboard`，绘制半透明磨砂面板、相对滑动区和左/中/右三键；快速滑动带有限加速，单帧位移限制为 ±240，按钮按下显示蓝色/绿色反馈。
+- 新增 `RemoteMouseInputProtocol.kt`，固定私有命令 action、move/button 类型、位移字段和按钮白名单。
+- `DesktopKeyboard` 把触控板放入全局键盘顶部组合区；`InputView` 仅为全局模式增加 112dp 触控预算并放宽沉浸高度，普通文字、数字、浮动键盘高度路径不变。
+- `KeyAction`、`CommonKeyActionListener` 和 `FcitxInputMethodService` 增加鼠标动作转发；Service 保存已被接收端确认的按钮 DOWN，并在所有既有桌面输入释放路径同时释放修饰键和鼠标键。
+- 增加中英文资源：触控提示、无障碍描述及左/中/右键名称。
+- 共享桌面端同步修改 `KeyboardProxyActivity.kt`、`KeyboardProxyManager.kt`、`server_page.dart` 和 `input_model.dart`，把私有输入命令转换为现有 RustDesk 相对移动及鼠标按键消息；按钮 UP 使用无条件释放通道，避免权限或会话切换造成远端卡键。
+
+### 验证
+- KBoard `./gradlew :app:compileReleaseKotlin` 成功，66 个任务完成；没有构建 Debug APK。
+- 共享桌面端 Flutter Release 构建参与的 `:app:compileReleaseKotlin` 成功，262 个任务完成；Android 接收层只有项目原有 `SOFT_INPUT_ADJUST_RESIZE` 弃用提示。
+- `dart format` 完成；定向 `dart analyze server_page.dart input_model.dart` 无新增 error/warning，只报告原文件已有的 57 条 Flutter RawKey/Material API 弃用 info。
+- 两个仓库的 `git diff --check` 均通过。
+
+### 待办与风险
+- 该功能必须同时部署本次 KBoard 和 KEMI 共享桌面端代码。只安装 KBoard 会显示触控区，但旧 KEMI 不识别私有命令，远端鼠标不会移动。
+- 尚未完成 D0/D2 真机端到端验收。正式验收至少覆盖慢速/快速移动、三键单击、左键按住拖动、修饰键加鼠标、双指“按键+移动”、隐藏键盘/断线时无卡键，以及普通键盘和语音输入不变。
+- 私有命令只在当前 InputConnection 内传递，并由 KEMI 会话门禁拒绝旧请求；不要改为全局广播、无障碍注入或 root 级输入注入，否则会扩大权限和跨会话误操作风险。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

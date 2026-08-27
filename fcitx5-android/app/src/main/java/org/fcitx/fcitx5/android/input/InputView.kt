@@ -290,8 +290,8 @@ class InputView(
         }
 
     /**
-     * Keep the six-row desktop layout compact enough not to become a full-screen sheet,
-     * while leaving enough height for near-square primary keys on wide displays.
+     * Keep near-square desktop keys while reserving a real touchpad above row one. Global mode is
+     * intentionally immersive; ordinary text/number keyboards continue to use their own height.
      */
     private val desktopKeyboardHeightPx: Int
         get() {
@@ -316,7 +316,7 @@ class InputView(
             val rowsHeight = contentWidth * DESKTOP_ROW_COUNT / DESKTOP_LAYOUT_WIDTH_UNITS
             val chromeHeight = dp(
                 KawaiiBarComponent.HEIGHT + DESKTOP_OPERATION_HEIGHT_DP +
-                        DESKTOP_VERTICAL_INSET_DP
+                        DESKTOP_VERTICAL_INSET_DP + DESKTOP_TOUCHPAD_HEIGHT_DP
             )
             val minimum = displayHeight * DESKTOP_MIN_HEIGHT_PERCENT / 100
             val maximum = displayHeight * DESKTOP_MAX_HEIGHT_PERCENT / 100
@@ -986,10 +986,11 @@ class InputView(
         const val DESKTOP_PREEDIT_GAP_DP = 0
         const val DESKTOP_SIDE_PADDING_DP = 0
         const val DESKTOP_VERTICAL_INSET_DP = 20
+        const val DESKTOP_TOUCHPAD_HEIGHT_DP = 112
         const val DESKTOP_ROW_COUNT = 6f
         const val DESKTOP_LAYOUT_WIDTH_UNITS = 15f
         const val DESKTOP_MIN_HEIGHT_PERCENT = 35
-        const val DESKTOP_MAX_HEIGHT_PERCENT = 72
+        const val DESKTOP_MAX_HEIGHT_PERCENT = 94
         const val DESKTOP_SURFACE_COLOR = 0xFF061827.toInt()
         const val DESKTOP_KEY_COLOR = 0xFF29465C.toInt()
         const val DESKTOP_KEY_HIGHLIGHT_COLOR = 0xFF4EC7E8.toInt()

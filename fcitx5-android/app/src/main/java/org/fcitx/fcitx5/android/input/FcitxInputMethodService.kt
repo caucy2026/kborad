@@ -80,6 +80,7 @@ import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.cursor.CursorRange
 import org.fcitx.fcitx5.android.input.cursor.CursorTracker
+import org.fcitx.fcitx5.android.input.keyboard.RemoteMouseInputProtocol
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.fcitx.fcitx5.android.utils.alpha
 import org.fcitx.fcitx5.android.utils.forceShowSelf
@@ -116,6 +117,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     /** Modifier DOWN events already forwarded to the current remote InputConnection. */
     private val pressedDesktopModifiers = linkedMapOf<KeyState, Long>()
+
+    /** Mouse button DOWN events accepted by the current remote InputConnection. */
+    private val pressedDesktopMouseButtons = linkedSetOf<String>()
 
     private var pendingTouchHideRequest: Runnable? = null
     private var pendingTouchHideHost: View? = null
@@ -385,7 +389,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             "release service instance=${System.identityHashCode(this)} reason=$reason"
         )
         cancelPendingTouchHideRequest()
-        releaseDesktopModifierKeys()
+        releaseDesktopInputStates()
         hardwareKeyAnomalyFilter.reset()
         cachedKeyEvents.evictAll()
         showingDialog?.dismiss()
@@ -770,6 +774,51 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
     }
 
+    fun sendDesktopMouseMove(dx: Int, dy: Int) {
+        if (dx == 0 && dy == 0) return
+        currentInputConnection?.performPrivateCommand(
+            RemoteMouseInputProtocol.ACTION,
+            Bundle().apply {
+                putString(RemoteMouseInputProtocol.EXTRA_TYPE, RemoteMouseInputProtocol.TYPE_MOVE)
+                putInt(RemoteMouseInputProtocol.EXTRA_DX, dx.coerceIn(-240, 240))
+                putInt(RemoteMouseInputProtocol.EXTRA_DY, dy.coerceIn(-240, 240))
+            }
+        )
+    }
+
+    fun sendDesktopMouseButtonState(button: String, down: Boolean) {
+        if (button !in RemoteMouseInputProtocol.BUTTONS) return
+        if (down && button in pressedDesktopMouseButtons) return
+        if (!down && button !in pressedDesktopMouseButtons) return
+        val accepted = currentInputConnection?.performPrivateCommand(
+            RemoteMouseInputProtocol.ACTION,
+            Bundle().apply {
+                putString(RemoteMouseInputProtocol.EXTRA_TYPE, RemoteMouseInputProtocol.TYPE_BUTTON)
+                putString(RemoteMouseInputProtocol.EXTRA_BUTTON, button)
+                putBoolean(RemoteMouseInputProtocol.EXTRA_DOWN, down)
+            }
+        ) == true
+        if (down) {
+            if (accepted) pressedDesktopMouseButtons.add(button)
+        } else {
+            // A retired InputConnection may reject the final UP. The receiver independently
+            // releases held buttons when its keyboard session closes, so never retain stale
+            // local state and retry an old UP against a future editor.
+            pressedDesktopMouseButtons.remove(button)
+        }
+    }
+
+    private fun releaseDesktopMouseButtons() {
+        pressedDesktopMouseButtons.toList().asReversed().forEach { button ->
+            sendDesktopMouseButtonState(button, down = false)
+        }
+    }
+
+    private fun releaseDesktopInputStates() {
+        releaseDesktopMouseButtons()
+        releaseDesktopModifierKeys()
+    }
+
     /**
      * Defer IME window removal until the click's ACTION_UP has left the current dispatch stack.
      * This avoids the V900 ROM retargeting the tail of the gesture to KEMI's button underneath.
@@ -783,7 +832,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             pendingTouchHideHost = null
             pendingTouchHideSource = null
             source.isEnabled = true
-            releaseDesktopModifierKeys()
+            releaseDesktopInputStates()
             requestHideSelf(0)
         }
         pendingTouchHideRequest = request
@@ -889,7 +938,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onWindowHidden() {
         cancelPendingTouchHideRequest()
-        releaseDesktopModifierKeys()
+        releaseDesktopInputStates()
         inputView?.onImeWindowHidden()
         super.onWindowHidden()
     }
@@ -1471,7 +1520,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     override fun onFinishInputView(finishingInput: Boolean) {
         Timber.d("onFinishInputView: finishingInput=$finishingInput")
         cancelPendingTouchHideRequest()
-        releaseDesktopModifierKeys()
+        releaseDesktopInputStates()
         inputView?.onImeWindowHidden()
         decorLocationUpdated = false
         inputDeviceMgr.onFinishInputView()
@@ -1490,7 +1539,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     override fun onFinishInput() {
         Timber.d("onFinishInput")
         cancelPendingTouchHideRequest()
-        releaseDesktopModifierKeys()
+        releaseDesktopInputStates()
         postFcitxJob {
             focus(false)
         }
@@ -1499,7 +1548,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onUnbindInput() {
         cancelPendingTouchHideRequest()
-        releaseDesktopModifierKeys()
+        releaseDesktopInputStates()
         cachedKeyEvents.evictAll()
         cachedKeyEventIndex = 0
         cursorUpdateIndex = 0
