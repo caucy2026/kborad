@@ -1738,6 +1738,132 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.57 - 2026-08-28
+
+### 主题
+将全局键盘触控板改为 Android 12 系统级虚拟鼠标，并按请求键盘的屏幕注入，同时扩大可滑动区域并修复鼠标事件回灌风险。
+
+### 过程
+- 复核确认 `/Users/newlink/kemi/keystore/debug.keystore` 的文件名只是历史遗留，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`，与 63 的 Android 平台证书完全一致；正式身份以证书内容为准，不能按文件名判断。此前变更记录中“不得使用该文件”的临时结论由本条纠正。
+- 原方案依赖当前编辑器的 `performPrivateCommand`，必须同时修改 KEMI/RustDesk 接收端才能移动远端光标。本轮利用平台签名授予的 `android.permission.INJECT_EVENTS`，构造 `SOURCE_MOUSE` 的 `MotionEvent`，使目标屏收到与本地插入鼠标同类的悬停、按下、释放事件；私有协议仅作为无系统权限环境的降级路径。
+- 53 真机包含 D0、D2 和 RustDesk 虚拟 Display 49。远程键盘代理位于请求屏幕的对屏，因此对已知远程编辑器包采用明确 D0↔D2 映射，不从活动 Display 列表猜测，避免误将鼠标注入 Display 49。
+- 初版真机注入暴露了事件回灌：系统鼠标落在键盘所在屏时，注入事件可能再次进入触控板并递归生成鼠标事件。修复后触控板只接收 `SOURCE_TOUCHSCREEN`，全局键盘明确拒绝 `SOURCE_MOUSE`，切断反馈环；输入结束、解绑和服务释放时同时清空合并中的位移，避免下次打开产生残留跳动。
+
+### 修改
+- `AndroidManifest.xml` 增加签名级 `android.permission.INJECT_EVENTS` 请求。
+- 新增 `SystemMouseInjector.kt`：维护每个 Display 的绝对光标位置，把触控板相对位移转换为系统 `HOVER_MOVE`，并为左、中、右键生成完整 DOWN/BUTTON_PRESS 和 BUTTON_RELEASE/UP 序列；事件带目标 `displayId`、`SOURCE_MOUSE` 和鼠标工具类型。
+- `FcitxInputMethodService.kt` 优先走系统注入；普通编辑器注入 IME 所在屏，KEMI/RustDesk 跨屏代理按 D0↔D2 注入请求屏；权限或框架注入不可用时回退既有私有命令。输入结束和解绑时释放按钮并清理待发送位移。
+- `InputView.kt` 与 `DesktopKeyboard.kt` 仅把全局模式触控预算从 208dp 扩到 280dp，约 232dp 用作连续滑动区、48dp 保留候选/工具栏；普通键盘高度路径不变。
+- `DesktopTouchpadView.kt` 和 `DesktopKeyboard.kt` 增加输入源隔离，系统鼠标事件不能再次驱动触控板。
+
+### 验证
+- 53 使用相同平台证书安装独立测试包后，`INJECT_EVENTS` 与 `WRITE_SECURE_SETTINGS` 均为 `granted=true`；系统鼠标指针可见并随触控板移动，左键一次点击仅产生一组成对 DOWN/UP，修复后无递归按钮日志、无 `SecurityException`、无 FATAL。
+- 完整签名 Release 构建成功，287 个任务通过且没有生成 Debug APK。最终 APK 为 `fcitx5-android/build/kboard.apk`，包名 `org.fcitx.fcitx5.android`、`versionCode=152`、`versionName=1.4.1`，证书 SHA-256 为上述平台证书，APK SHA-256 为 `12fc5607013a8f571504f720a65885ac8faf2527d32852ee25c9cbeded94155b`。
+- 63 原安装包位于 `/data/app` 且使用错误证书，两项签名权限均未授予。卸载旧数据包、安装平台签名 Release 后已恢复 KBoard 为默认输入法；设备回读 `WRITE_SECURE_SETTINGS: granted=true`、`INJECT_EVENTS: granted=true`，安装后近期日志无目标包 FATAL 或权限异常。
+
+### 待办与风险
+- 53 当前没有建立中的真实远程桌面会话，因此已验证系统注入、显示路由条件和事件闭环，但 D0/D2 远程业务端的最终光标手感仍由用户在 63 实际会话验收。
+- 系统注入属于平台签名能力，若未来更换证书或改用普通签名，Android 会拒绝 `INJECT_EVENTS`，届时只会回退到要求接收端配合的私有协议。
+- 本次因 63 旧包证书不同必须卸载后重装，旧 KBoard 应用数据已由 Android 删除；后续只要保持当前平台证书即可使用 `install -r` 无损升级。
+
+---
+
+## V1.58 - 2026-08-28
+
+### 主题
+继续扩大全局键盘鼠标滑动区，重排完整尺寸方向键，并在鼠标控制条增加发送给远程会话的 HOME/BACK 标准键。
+
+### 过程
+- 63 的 1920×1280 截图确认鼠标面板上方存在约 48dp 无效带。根因是 KawaiiBar 已被移动到第一排按键上方，但桌面键盘窗口仍在顶部为它重复预留一次空间。
+- 将桌面窗口起点改到父容器顶部，并把回收的 48dp 全部并入鼠标 header；外层总高度保持不变，因此 F1 以下六排按键的位置和高度不变，普通键盘仍从 KawaiiBar 下方开始。
+- 原方向区把 ↑/↓ 塞进一个普通行高，各只有半高且难以命中。改成完整倒 T：↑ 位于上一行，←/↓/→ 位于最下一行，四键均为完整行高并继续支持长按连发。
+- 第一版倒 T 真机截图发现 ↑/↓ 中心约差 36px；按两行实际权重反算后，将 `/`、↑、右 Shift 调整为 1.26/1.40/1.14 单位，使 1920px 下 ↑/↓ 中心误差小于 1px。
+- 用户进一步明确 HOME/BACK 必须发送给远程会话，不能触发 KBoard 本机的 Android 导航。因此按钮通过当前远程 `InputConnection` 发送标准 `KEYCODE_HOME`、`KEYCODE_BACK` DOWN/UP，由 KEMI/RustDesk 转交远端系统处理。
+
+### 修改
+- `InputView.kt`：桌面模式取消顶部重复候选栏占位，鼠标 header 从 280dp 增加至 328dp；高度公式同步扣除重复 KawaiiBar，保证物理键盘整体不下移。退出全局模式时恢复普通键盘原有顶部约束。
+- `DesktopKeyboard.kt`：方向区改为完整尺寸倒 T；适度缩短过宽空格和右 Shift，保留 Ctrl、Alt、中英、Command、语音及全部字符键；接入 HOME/BACK 系统键动作。
+- `DesktopTouchpadView.kt`：控制条由三键扩展为 `HOME / BACK / 左键 / 中键 / 右键` 五键，保持每键完整 48dp 高度和独立按压反馈；HOME/BACK 与鼠标键均保留真实按下/释放生命周期。
+- `KeyAction.kt`、`CommonKeyActionListener.kt`、`FcitxInputMethodService.kt`：增加远程导航键转发、重复 DOWN 防护，并把 DOWN 与当时的远程 `InputConnection` 绑定；输入结束时向原连接补发 UP，既避免卡键，也不会误发给下一次远程会话。`SystemMouseInjector` 只负责鼠标，不处理 HOME/BACK。
+- 中英文资源增加 HOME/BACK 固定标签；普通键盘资源和布局未改。
+
+### 验证
+- 平台签名 Release 完整构建成功，287 个任务通过，没有生成 Debug APK；`git diff --check` 通过。
+- 最终 APK 为 `fcitx5-android/build/kboard.apk`，包名 `org.fcitx.fcitx5.android`、`versionCode=152`、`versionName=1.4.1`，SHA-256 为 `4ca6b2c0df7b85a39eb5f9f6b159dfadb7df29b5277bced60126a1398de5c2c9`。
+- 正式 APK 已覆盖安装到 63，设备保持 `INJECT_EVENTS: granted=true`。真机截图确认滑动面板顶边从约 y=216 上移至 y=120，增加约 96px/48dp，F1 行仍在约 y=768；HOME、BACK 和鼠标三键全部完整可见。
+- 最终截图中 ↑/↓ 中心均约为 x=1684，视觉和命中区域上下对齐；四个方向键均为完整行高。安装后 crash buffer 未发现 KBoard FATAL。
+
+### 待办与风险
+- 为避免影响用户当前远程页面，本轮没有自动点击 HOME/BACK；标准远程按键事件构造、原连接绑定和释放生命周期已闭环，最终远端系统的 Home/Back 语义由用户手动验收。
+- HOME/BACK 不再走本地 `INJECT_EVENTS`，不会把 63 的 D0/D2 切回本地桌面；远端 Windows/macOS/Android 对这两个标准键的最终行为由 RustDesk 映射和远端系统决定。
+
+---
+
+## V1.59 - 2026-08-29
+
+### 主题
+修复 V900 Android 12 副屏 Display 2 全局键盘底部功能键被 75px 系统导航栏遮挡的视觉与触摸问题，并将四个 KBoard 功能键重排为单行等宽布局。
+
+### 过程
+- ADB 确认 D2 导航栏为 `frame=[0,1205][1920,1280]`，高度 75px；IME 窗口仍可绘制到 y=1280，但 y=1205–1280 的触摸归系统导航栏所有。
+- 全局模式原先在 `InputView.updateKeyboardSize()` 中直接贴父容器底部，绕过了普通键盘的 `bottomPaddingSpace`；跨 D0/D2 复用 View 时还可能保留上一个 Display 的 Insets。
+- 首版单纯增加底部避让会压缩六排物理键和鼠标区。最终改为只从可伸缩的上方触控区扣除当前 Display 的底部 Insets，物理键行高和底部操作行保持不变。
+- 真机截图发现四个 KBoard 操作键的旧布局视觉上类似 2×2，不适合 1920px 宽屏。已统一为“退出全局 / 切换屏幕 / 语音 / 隐藏键盘”单行等宽卡片；其下独立的一行为 Android 系统导航栏，按要求不隐藏、不改为沉浸模式。
+
+### 修改
+- `BaseInputView.kt`：按当前 View 所在 Display 合并 `navigationBars`、忽略可见性的稳定导航 Insets、`mandatorySystemGestures` 及当前 Display 的 real/app metrics 差值；不写死 75px。
+- `InputView.kt`：全局键盘和操作行统一锚定在 `bottomPaddingSpace` 之上，底部距离每次直接赋予当前 Display Insets，不累加；进入全局、窗口显示和延迟布局后都会重新申请 Insets。
+- `FcitxInputMethodService.kt`：在 `onWindowShown`、`onStartInputView` 和配置变化时重新向当前 inputView 请求 Insets，避免跨屏或旋转后沿用旧 Display 缓存。
+- `DesktopKeyboard.kt`、`KeyboardWindow.kt`：将当前底部 Insets 传给全局组合区，只收缩可弹性的触控板 header，不压缩六排键盘。
+- `ToolButton.kt`、`KawaiiBarComponent.kt`：四个底部键使用一致的实体卡片背景、边框和按下反馈；语音按钮在手势结束或 ASR 回到 Idle 后也恢复同一背景，不再出现第三个键透明。
+
+### 验证
+- 正式 Release 使用已有平台证书覆盖安装到 `192.168.3.63:5555`，包名 `org.fcitx.fcitx5.android`、`versionCode=152`、`versionName=1.4.1`；没有 `pm clear`，默认输入法和用户配置保留。
+- D2 实测日志为 `navigationBottom=75`，D0 为 `navigationBottom=96`；D2 最终四个 KBoard 功能键全部在 y=1205 之上且为单行等宽，视觉位置与命中区一致。
+- 在 KEMI 双屏桌面共享保持运行时，以 D2 本地编辑器固定副屏 IME token，完成 300 轮“全局退回普通 -> 等待 3 秒 -> 普通进入全局 -> 等待 3 秒”真实点击，共 600 次模式按钮操作。结果 `completed=300 failures=0`，起始/结束 PID 均为 `25612`，全程 `mCurTokenDisplayId=2`、`mInputShown=true`。
+- 内存抽样在约 136–140MB PSS 间波动，最终 `TOTAL PSS=133441KB`、`TOTAL RSS=243888KB`；最终 `ViewRootImpl=2`（编辑页 + IME），没有随轮次线性增长。
+- 测试时段过滤 `FATAL EXCEPTION`、KBoard ANR、`WindowLeaked`、输入分发超时和 IME 显示超时均为 0；最终 D2 系统导航区仍为 `[0,1205][1920,1280]`。
+
+### 待办与风险
+- KEMI 共享桌面的“键盘”按钮在当前会话中仍会先创建 D0 IME token，即使 KEMI 窗口本身是 D2；通过 KBoard 跨屏中继可在 D2 本地编辑器持续聚焦时正确重建为 D2 token。该 KEMI 唤起行为没有通过修改远程客户端规避，本轮 300 次结果不将“KEMI 直接唤起 D2”冒充为已验收。
+- Android 系统导航栏依然是独立的最底一行；这是为了保留系统导航和遵循“不强制沉浸、不隐藏导航栏”约束，不是 KBoard 再增加了一行功能键。
+
+---
+
+## V1.60 - 2026-08-29
+
+### 主题
+扩大全局键盘鼠标区并恢复六排物理键尺寸，将 Enter 移至底部操作行，同时修复“浮动键盘快速切全局”主线程崩溃。
+
+### 过程
+- 63 真机截图确认，首版全屏高度计算把同一份底部导航 Insets 重复扣除：`bottomPaddingSpace` 已避让一次，`DesktopKeyboard` 又从可伸缩触控头部让出一次，外层 `keyboardView` 仍再次减去 Insets，最终把整块键盘上移空间浪费掉并压矮 A/B/C/D 等六排主键。
+- 按要求保留鼠标区与 F1 之间的 48dp 输入/候选缓冲区，不通过删除缓冲区放大按键；改为让全局外层继续使用物理屏完整高度，底部安全距离只在内部约束中应用一次。
+- 真机复现到一次独立竞态：先进入浮动键盘、退出浮动后立即切全局，旧的 `post` 布局回调会在全屏尺寸上继续执行浮动键盘位置限制，产生 `min=56、max=0` 的空区间并由 Kotlin `coerceIn()` 抛出 `IllegalArgumentException`。
+
+### 修改
+- `InputView.kt`：全局键盘外层不再重复减去导航栏 Insets；触控区、候选缓冲区和底部安全锚点保持原设计，回收的整条系统栏高度全部归还六排物理键。
+- 在不改变六排物理键高度和 F1 上方输入/候选缓冲区的前提下，将鼠标滑动区由 320dp 收到 272dp、底部操作带由 64dp 收到 56dp，并将全局窗口上限设为物理屏高度减 56dp；三处改动等量配平，使远程桌面顶部重新露出而不压缩 A/B/C/D 等主键。
+- 全局底部操作行调整为“退出 / 语音 / Enter”三颗等宽大键；原主键区 Enter 的宽度按比例归还 Caps、A-L 和标点键；Enter 使用独立青绿色强调色并继续经过 `DesktopKeyboard.onAction()`，保留 Ctrl/Alt/Shift/Cmd 组合状态。
+- 底部 Enter 关闭本地按下与释放两条物理键音效通道，只保留远端实际回车链路的单次反馈，避免一次点击听到两个声音；事件发送与组合键状态不变。
+- `KeyDrawable.kt` / `KeyView.kt` 为水族深色键帽增加可选静止配色参数；仅 Backspace 使用明显可辨但不刺眼的暖红棕渐变与红色描边，尺寸、触摸区域、白字、按压描边及连删行为均保持不变。
+- 修正首次配色未命中的原因：全局 Backspace 是 `DesktopSymKey`，原键定义没有 `button_backspace` 标识，不能依赖外层 View 的默认 id 判断；现由 `DesktopSymKey` 接收可选 `viewId`，并在 Backspace 定义处明确写入唯一 id，配色绑定不再依赖显示文字或位置。
+- 全局语音键按住时只改变麦克风图标颜色，不播放按下/释放音效，不触发触觉、Ripple、键帽位移或鱼群反应；普通键盘语音行为不变。
+- `InputView.updateFloatingKeyboardPosition()` 增加当前模式复查、非浮动位移归零和空区间安全夹取；所有延迟浮动布局回调在执行前再次确认仍处于浮动且非全局模式，避免旧回调污染新布局。
+
+### 验证
+- 使用现有平台证书完成正式 Release 构建，`assembleRelease`、R8 和 `lintVitalRelease` 成功；APK 输出为 `fcitx5-android/build/kboard.apk`，没有生成或安装 Debug APK。
+- 正式 APK 通过 `adb install -r` 覆盖安装到 `192.168.3.63:5555`，未清除 KBoard 数据。真机截图确认全局键盘从屏幕顶部开始使用空间，A/B/C/D 与其余六排按键恢复大尺寸，F1 上方输入缓冲区保留，底部三颗操作键完整位于系统栏之上。
+- 最终 Release 再次通过 `adb install -r` 覆盖安装到 63；APK 回读为包名 `org.fcitx.fcitx5.android`、`versionName=1.4.1`、`versionCode=152`，SHA-256 为 `c107380f320cc3837161e97486a544635a9ebd921bf47a8e939932d731470817`。稳定画面确认顶部保留约 56dp 远程内容、鼠标区仍具备完整滑动面积、六排键高未变、底部三键未被导航栏遮挡；安装后日志没有新增目标包 FATAL/ANR。
+- 已按实际崩溃路径执行一次“普通 -> 浮动 -> 恢复 -> 全局”快速切换；全局键盘正常显示，`mInputShown=true`，修复安装后没有新增 `Cannot coerce value to an empty range`、目标包 FATAL 或 ANR。09:47:34 的旧 FATAL 属于修复前 PID 17306，堆栈已留档并与修复点一致。
+- 63 副屏 11:31 现场出现“当前权限无法继续 / 设置数据库参数失败：database is locked”弹窗。窗口焦点和 owner 均属于 `com.newlinksz.kemi.remote`（UID 10089），KBoard 为独立的 `org.fcitx.fcitx5.android`（UID 10091）且现场只拥有标准 `InputMethod` 窗口；KBoard 源码与日志均没有该提示或 SQLite 错误。同期 KEMI `KeyboardProxyActivity` 被连续重建并存在多条自身 `InputService` DEAD connection，因此直接原因是 KEMI 客户端数据库并发写入；本轮反复覆盖安装和模式切换可能触发其已有竞争窗口，但不是 KBoard 访问或锁定了 KEMI 私有数据库。本轮未修改 KEMI 项目。
+
+### 待办与风险
+- 本轮只复现一次刚才的精确崩溃路径，没有用 Monkey 或高频无间隔脚本代替真实交互；后续压力回归应继续保持用户要求的约 3 秒操作间隔。
+- Backspace 最终配色已通过唯一 `viewId` 绑定并完成 Release 编译、覆盖安装；因副屏随后被 KEMI 数据库锁弹窗遮挡，本轮没有将遮挡状态下的截图冒充为最终视觉验收，颜色观感仍留给用户实际界面确认。
+- 官方可安装技能列表中只有 Figma 设计/实现类技能，没有直接针对 Android IME `ConstraintLayout`、多 Display Insets 和系统输入窗口的人体工学布局技能；本轮按 1920×1280 真机像素、系统窗口 frame 和实际触摸安全区进行约束验收。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

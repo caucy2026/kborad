@@ -95,6 +95,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     var keyDownSoundEnabled = true
     var physicalKeySoundEnabled = false
     var physicalReleaseSoundEnabled = true
+    var gestureHapticEnabled = true
 
     private val touchSlop: Float = ViewConfiguration.get(ctx).scaledTouchSlop.toFloat()
 
@@ -152,7 +153,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                 if (!isEnabled) return false
                 drawableHotspotChanged(x, y)
                 isPressed = true
-                InputFeedbacks.hapticFeedback(this)
+                if (gestureHapticEnabled) InputFeedbacks.hapticFeedback(this)
                 if (keyDownSoundEnabled) {
                     if (physicalKeySoundEnabled) {
                         InputFeedbacks.physicalKeyDown(soundEffect)
@@ -166,7 +167,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                     longPressJob?.cancel()
                     longPressJob = lifecycleScope.launch {
                         delay(longPressDelay.toLong())
-                        if (longPressFeedbackEnabled) {
+                        if (longPressFeedbackEnabled && gestureHapticEnabled) {
                             InputFeedbacks.hapticFeedback(this@CustomGestureView, true)
                         }
                         longPressTriggered = performLongClick()
@@ -193,7 +194,9 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
             }
             MotionEvent.ACTION_UP -> {
                 isPressed = false
-                InputFeedbacks.hapticFeedback(this, longPress = true, keyUp = true)
+                if (gestureHapticEnabled) {
+                    InputFeedbacks.hapticFeedback(this, longPress = true, keyUp = true)
+                }
                 dispatchGestureEvent(GestureType.Up, event.x, event.y)
                 if (physicalKeySoundEnabled && physicalReleaseSoundEnabled) {
                     InputFeedbacks.physicalKeyUp()

@@ -9,6 +9,7 @@ import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.LayerDrawable
+import android.graphics.drawable.RippleDrawable
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ViewPropertyAnimator
@@ -48,8 +49,14 @@ class ToolButton(context: Context) : CustomGestureView(context) {
     }
 
     private var physicalKeyStyleEnabled = false
+    var physicalPressVisualEnabled = true
+        set(value) {
+            field = value
+            if (physicalKeyStyleEnabled) physicalRestColor?.let(::setPhysicalRestBackground)
+        }
     private var physicalPressedColor = 0
     private var physicalRestHighlightColor = 0
+    private var physicalRestColor: Int? = null
 
     var iconRotation: Float
         get() = image.rotation
@@ -74,9 +81,9 @@ class ToolButton(context: Context) : CustomGestureView(context) {
         image.imageTintList = ColorStateList.valueOf(color)
     }
 
-    fun useFullSizeIcon() {
+    fun useFullSizeIcon(sizeDp: Int = 24) {
         image.setPadding(0, 0, 0, 0)
-        image.layoutParams = LayoutParams(dp(24), dp(24), Gravity.CENTER)
+        image.layoutParams = LayoutParams(dp(sizeDp), dp(sizeDp), Gravity.CENTER)
     }
 
     fun setPressHighlightColor(@ColorInt color: Int) {
@@ -105,9 +112,13 @@ class ToolButton(context: Context) : CustomGestureView(context) {
                     GradientDrawable(
                         GradientDrawable.Orientation.TL_BR,
                         intArrayOf(0xFF3F8CFF.toInt(), 0xFF35E0A1.toInt())
-                    ).apply { shape = GradientDrawable.OVAL },
+                    ).apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = dp(8).toFloat()
+                    },
                     GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = dp(7).toFloat()
                         setColor(fillColor)
                     }
                 )
@@ -118,24 +129,49 @@ class ToolButton(context: Context) : CustomGestureView(context) {
         )
     }
 
+    private fun setPhysicalRestBackground(@ColorInt fillColor: Int) {
+        val keycap = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(8).toFloat()
+            setColor(fillColor)
+            setStroke(dp(1), 0x9958CBE8.toInt())
+        }
+        background = if (physicalPressVisualEnabled) {
+            RippleDrawable(
+                ColorStateList.valueOf(physicalRestHighlightColor),
+                keycap,
+                null
+            )
+        } else {
+            keycap
+        }
+    }
+
     fun setPhysicalKeyStyle(
         enabled: Boolean,
         @ColorInt pressedColor: Int,
-        @ColorInt restHighlightColor: Int
+        @ColorInt restHighlightColor: Int,
+        @ColorInt restColor: Int? = null
     ) {
         physicalKeyStyleEnabled = enabled
         physicalPressedColor = pressedColor
         physicalRestHighlightColor = restHighlightColor
+        physicalRestColor = restColor
         physicalKeySoundEnabled = enabled
         animate().cancel()
         translationY = 0f
         translationZ = 0f
         elevation = if (enabled) dp(PHYSICAL_KEY_TRAVEL_DP).toFloat() else 0f
-        if (!enabled) setPressHighlightColor(restHighlightColor)
+        if (!enabled) {
+            physicalRestColor = null
+            setPressHighlightColor(restHighlightColor)
+        } else {
+            restColor?.let(::setPhysicalRestBackground)
+        }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (physicalKeyStyleEnabled && isEnabled) {
+        if (physicalKeyStyleEnabled && physicalPressVisualEnabled && isEnabled) {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     animate().cancel()
@@ -148,7 +184,8 @@ class ToolButton(context: Context) : CustomGestureView(context) {
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     animate().cancel()
-                    setPressHighlightColor(physicalRestHighlightColor)
+                    physicalRestColor?.let(::setPhysicalRestBackground)
+                        ?: setPressHighlightColor(physicalRestHighlightColor)
                     animate()
                         .translationY(0f)
                         .translationZ(0f)

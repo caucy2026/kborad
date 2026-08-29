@@ -126,6 +126,7 @@
     <string name="expand_toolbar_by_default">預設展開工具列</string>
     <string name="desktop_keyboard">全鍵盤</string>
     <string name="exit_desktop_keyboard">退出全鍵盤</string>
+    <string name="desktop_enter">Enter</string>
     <string name="return_previous_input_method">返回上一輸入法</string>
     <string name="popup_on_key_press">按鍵時彈出顯示字元</string>
     <string name="disable_animation">停用動畫</string>

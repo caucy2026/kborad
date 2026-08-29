@@ -5,6 +5,7 @@
 
 package org.fcitx.fcitx5.android.input
 
+import android.util.DisplayMetrics
 import android.view.View
 import android.view.WindowInsets
 import android.widget.PopupMenu
@@ -114,10 +115,32 @@ abstract class BaseInputView(
         val insets = WindowInsetsCompat.toWindowInsetsCompat(windowInsets)
         // use navigation bar insets when available
         val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+        // Some Android 12 multi-display builds report the IME-relative visible inset smaller
+        // than the navigation bar's real touch-owned frame (V900 D2: 64px vs 75px). The
+        // ignoring-visibility value is still supplied by the current ViewRoot/Display, so it is
+        // safe across D0/D2 and rotation while avoiding a hard-coded device value.
+        val stableNavBars = runCatching {
+            insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.navigationBars())
+        }.getOrDefault(navBars)
         // in case navigation bar insets goes wrong (eg. on LineageOS 21+ with gesture navigation)
         // use mandatory system gesture insets
         val mandatory = insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())
-        var insetsBottom = max(navBars.bottom, mandatory.bottom)
+        // V900's vendor policy exposes D2's real app area as 1205px of a 1280px display even
+        // though both navigationBars variants are clipped to 64px for the IME ViewRoot. Derive
+        // this final candidate from the current Display itself; it is neither cached nor a
+        // device-specific constant, and rotation/display migration produce fresh metrics.
+        @Suppress("DEPRECATION")
+        val displayBottom = display?.let { currentDisplay ->
+            val appMetrics = DisplayMetrics()
+            val realMetrics = DisplayMetrics()
+            currentDisplay.getMetrics(appMetrics)
+            currentDisplay.getRealMetrics(realMetrics)
+            (realMetrics.heightPixels - appMetrics.heightPixels).coerceAtLeast(0)
+        } ?: 0
+        var insetsBottom = max(
+            max(max(navBars.bottom, stableNavBars.bottom), mandatory.bottom),
+            displayBottom
+        )
         if (insetsBottom <= 0) {
             // check system gesture insets and fallback to navigation_bar_frame_height just in case
             val gesturesBottom = insets.getInsets(WindowInsetsCompat.Type.systemGestures()).bottom

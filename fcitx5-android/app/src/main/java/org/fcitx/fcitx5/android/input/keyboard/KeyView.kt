@@ -237,13 +237,21 @@ abstract class KeyView(
         }
     }
 
-    fun setAquariumDepthStyle(enabled: Boolean) {
+    fun setAquariumDepthStyle(
+        enabled: Boolean,
+        @ColorInt normalTopColor: Int = 0x7329465C,
+        @ColorInt normalBottomColor: Int = 0x5C102536,
+        @ColorInt normalStrokeColor: Int = 0xFF426A84.toInt()
+    ) {
         if (!enabled) return
         appearanceView.background = aquariumDepthKeyBackgroundDrawable(
             radius = radius,
             hMargin = hMargin,
             vMargin = vMargin,
-            pressedBorderWidth = dp(2)
+            pressedBorderWidth = dp(2),
+            normalTopColor = normalTopColor,
+            normalBottomColor = normalBottomColor,
+            normalStrokeColor = normalStrokeColor
         )
         // The aquarium renderer owns the complete water-wave feedback. Keeping an
         // Android RippleDrawable here would add an unrelated circular animation.

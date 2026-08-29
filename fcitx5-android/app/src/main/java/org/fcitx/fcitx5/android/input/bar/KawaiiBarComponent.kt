@@ -133,7 +133,6 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private var shouldShowVoiceInput: Boolean = false
     private var desktopKeyboardMode: Boolean = false
     private var desktopVoiceButton: ToolButton? = null
-    private var desktopVoicePondTouch: ((MotionEvent) -> Unit)? = null
 
     private val desktopVoiceTranscript by lazy {
         TextView(context).apply {
@@ -299,12 +298,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         updateDesktopVoiceButton(useVoiceInput)
     }
 
-    fun setDesktopVoiceButton(
-        button: ToolButton?,
-        pondTouch: ((MotionEvent) -> Unit)? = null
-    ) {
+    fun setDesktopVoiceButton(button: ToolButton?) {
         desktopVoiceButton = button
-        desktopVoicePondTouch = pondTouch
         updateHideKeyboardButton()
     }
 
@@ -344,22 +339,21 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 )
                 keyDownSoundEnabled = true
                 physicalReleaseSoundEnabled = true
+                physicalPressVisualEnabled = true
+                gestureHapticEnabled = true
                 setOnTouchListener(null)
                 return@apply
             }
             setIcon(R.drawable.ic_baseline_keyboard_voice_24)
-            useFullSizeIcon()
-            setPressHighlightColor(DESKTOP_VOICE_HIGHLIGHT_COLOR)
-            setPhysicalKeyStyle(
-                true,
-                DESKTOP_VOICE_KEY_COLOR,
-                DESKTOP_VOICE_HIGHLIGHT_COLOR
-            )
-            // The aquarium provides the single water-contact sound in desktop mode. Observe the
-            // raw event without consuming it so hold-to-talk, movement cancellation and ASR
-            // lifecycle continue to receive their original gesture stream.
+            useFullSizeIcon(DESKTOP_VOICE_ICON_SIZE_DP)
+            physicalPressVisualEnabled = false
+            restoreDesktopVoiceRestStyle()
+            // Voice deliberately has no keycap animation, ripple, pond reaction, or sound.
+            // Its gesture stream remains intact; only the microphone tint reflects press/state.
             keyDownSoundEnabled = false
             physicalReleaseSoundEnabled = false
+            physicalPressVisualEnabled = false
+            gestureHapticEnabled = false
             contentDescription = context.getString(R.string.start_voice_input)
             isEnabled = isNetworkAvailableForVoice()
             isClickable = true
@@ -368,21 +362,19 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 if (isEnabled) Color.WHITE else DESKTOP_VOICE_DISABLED_COLOR
             )
             swipeEnabled = true
-            setOnTouchListener { _, event ->
-                desktopVoicePondTouch?.invoke(event)
-                false
-            }
+            setOnTouchListener(null)
             onGestureListener = CustomGestureView.OnGestureListener { view, event ->
                 when (event.type) {
                     CustomGestureView.GestureType.Down -> {
                         view.parent.requestDisallowInterceptTouchEvent(true)
-                        setCircleBackgroundColor(DESKTOP_VOICE_KEY_COLOR)
-                        setIconTintColor(Color.WHITE)
+                        setIconTintColor(DESKTOP_VOICE_ACTIVE_ICON_COLOR)
                     }
                     CustomGestureView.GestureType.Up -> {
                         view.parent.requestDisallowInterceptTouchEvent(false)
-                        setPressHighlightColor(DESKTOP_VOICE_HIGHLIGHT_COLOR)
-                        setIconTintColor(Color.WHITE)
+                        setIconTintColor(
+                            if (asrClient.state != IflytekAsrClient.State.Idle)
+                                DESKTOP_VOICE_ACTIVE_ICON_COLOR else Color.WHITE
+                        )
                     }
                     CustomGestureView.GestureType.Move -> {}
                 }
@@ -472,15 +464,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 desktopVoiceButton?.let { button ->
                     if (voicePressActive) {
                         button.setIconTintColor(
-                            if (state != IflytekAsrClient.State.Idle) 0xff34a853.toInt()
+                            if (state != IflytekAsrClient.State.Idle) DESKTOP_VOICE_ACTIVE_ICON_COLOR
                             else Color.WHITE
                         )
-                        button.setCircleBackgroundColor(
-                            if (state != IflytekAsrClient.State.Idle) theme.genericActiveBackgroundColor
-                            else DESKTOP_VOICE_KEY_COLOR
-                        )
                     } else {
-                        button.setPressHighlightColor(DESKTOP_VOICE_HIGHLIGHT_COLOR)
                         button.setIconTintColor(Color.WHITE)
                     }
                     button.contentDescription = context.getString(
@@ -549,6 +536,19 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         } else {
             idleUi.showVoiceTranscript(text)
         }
+    }
+
+    private fun ToolButton.restoreDesktopVoiceRestStyle() {
+        physicalPressVisualEnabled = false
+        setPhysicalKeyStyle(
+            true,
+            DESKTOP_VOICE_KEY_COLOR,
+            DESKTOP_VOICE_HIGHLIGHT_COLOR,
+            DESKTOP_VOICE_KEY_COLOR
+        )
+        keyDownSoundEnabled = false
+        physicalReleaseSoundEnabled = false
+        gestureHapticEnabled = false
     }
 
     private fun hideVoiceFeedback() {
@@ -917,7 +917,6 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         desktopVoiceButton?.setOnTouchListener(null)
         desktopVoiceButton?.onGestureListener = null
         desktopVoiceButton = null
-        desktopVoicePondTouch = null
     }
 
     override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
@@ -1035,9 +1034,11 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         const val VOICE_PERMISSION_REQUEST_COOLDOWN_MS = 2_000L
         const val VOICE_CANCEL_MOVE_THRESHOLD = 24f
         const val DESKTOP_VOICE_KEY_COLOR = 0xFF29465C.toInt()
+        const val DESKTOP_VOICE_ACTIVE_ICON_COLOR = 0xFF35E0A1.toInt()
         const val DESKTOP_VOICE_HIGHLIGHT_COLOR = 0xFF4EC7E8.toInt()
         const val DESKTOP_VOICE_DISABLED_COLOR = 0x66FFFFFF
         const val DESKTOP_VOICE_STATUS_BACKGROUND = 0xE6061827.toInt()
+        const val DESKTOP_VOICE_ICON_SIZE_DP = 32
     }
 
     fun onKeyboardLayoutSwitched(isNumber: Boolean) {

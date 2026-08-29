@@ -128,6 +128,7 @@
     <string name="dock_keyboard">停靠键盘</string>
     <string name="desktop_keyboard">全键盘</string>
     <string name="exit_desktop_keyboard">退出全键盘</string>
+    <string name="desktop_enter">回车</string>
     <string name="return_previous_input_method">返回上一输入法</string>
     <string name="move_floating_keyboard">移动悬浮键盘</string>
     <string name="resize_floating_keyboard">调整悬浮键盘大小</string>
@@ -334,4 +335,6 @@
     <string name="desktop_mouse_left">左键</string>
     <string name="desktop_mouse_middle">中键</string>
     <string name="desktop_mouse_right">右键</string>
+    <string name="desktop_system_home">HOME</string>
+    <string name="desktop_system_back">BACK</string>
 </resources>

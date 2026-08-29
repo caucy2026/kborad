@@ -36,6 +36,8 @@ sealed class KeyAction {
 
     data class RemoteMouseButtonAction(val button: String, val down: Boolean) : KeyAction()
 
+    data class RemoteSystemKeyAction(val keyCode: Int, val down: Boolean) : KeyAction()
+
     data object QuickPhraseAction : KeyAction()
 
     data object UnicodeAction : KeyAction()

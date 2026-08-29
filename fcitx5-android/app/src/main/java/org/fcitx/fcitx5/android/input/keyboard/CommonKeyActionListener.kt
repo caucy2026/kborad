@@ -28,6 +28,7 @@ import org.fcitx.fcitx5.android.input.keyboard.KeyAction.MoveSelectionAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.ModifierStateAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.RemoteMouseButtonAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.RemoteMouseMoveAction
+import org.fcitx.fcitx5.android.input.keyboard.KeyAction.RemoteSystemKeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.PickerSwitchAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.QuickPhraseAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.ScreenSwitchAction
@@ -106,6 +107,8 @@ class CommonKeyActionListener :
                     service.sendDesktopMouseMove(action.dx, action.dy)
                 is RemoteMouseButtonAction ->
                     service.sendDesktopMouseButtonState(action.button, action.down)
+                is RemoteSystemKeyAction ->
+                    service.sendDesktopSystemKeyState(action.keyCode, action.down)
                 is CommitAction -> service.postFcitxJob {
                     commitAndReset()
                     service.lifecycleScope.launch { service.commitText(action.text) }

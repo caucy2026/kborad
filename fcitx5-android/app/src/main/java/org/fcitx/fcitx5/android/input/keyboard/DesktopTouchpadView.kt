@@ -12,6 +12,8 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
 import android.view.Choreographer
+import android.view.InputDevice
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -31,6 +33,7 @@ import kotlin.math.roundToInt
 class DesktopTouchpadView(context: Context) : View(context), Choreographer.FrameCallback {
     var onMouseMove: ((Int, Int) -> Unit)? = null
     var onMouseButton: ((String, Boolean) -> Unit)? = null
+    var onSystemKey: ((Int, Boolean) -> Unit)? = null
 
     private val density = resources.displayMetrics.density
     private val cornerRadius = 16f * density
@@ -44,13 +47,16 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val panelRect = RectF()
     private val touchRect = RectF()
-    private val buttonRects = Array(3) { RectF() }
+    private val buttonRects = Array(5) { RectF() }
+    private val systemKeyCodes = intArrayOf(KeyEvent.KEYCODE_HOME, KeyEvent.KEYCODE_BACK)
     private val buttonNames = arrayOf(
         RemoteMouseInputProtocol.BUTTON_LEFT,
         RemoteMouseInputProtocol.BUTTON_MIDDLE,
         RemoteMouseInputProtocol.BUTTON_RIGHT
     )
     private val buttonLabels = arrayOf(
+        context.getString(R.string.desktop_system_home),
+        context.getString(R.string.desktop_system_back),
         context.getString(R.string.desktop_mouse_left),
         context.getString(R.string.desktop_mouse_middle),
         context.getString(R.string.desktop_mouse_right)
@@ -116,6 +122,8 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
     private var pendingDx = 0f
     private var pendingDy = 0f
     private var frameScheduled = false
+    private var lastDispatchFrameNanos = 0L
+    private var contactVisualDirty = false
     private val pressedButtons = linkedMapOf<Int, Int>()
     private var compactHorizontalLayout = false
 
@@ -123,10 +131,10 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
         isClickable = true
         isFocusable = true
         contentDescription = context.getString(R.string.desktop_mouse_touchpad_description)
-        // The V900's Android 12 compositor may retain a zero-sized hardware layer when this
-        // view is created before the dynamic desktop header is measured. The panel is mostly
-        // static Canvas drawing, so a software layer is both cheap and deterministic here.
-        setLayerType(LAYER_TYPE_SOFTWARE, null)
+        // Do not force a software layer here. The touch surface is composited above a live
+        // TextureView aquarium; repainting a full-width software bitmap for every raw touch
+        // sample can saturate the V900's shared memory/compositor path.
+        setLayerType(LAYER_TYPE_NONE, null)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -163,7 +171,9 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
 
     private fun layoutMouseButtons(left: Float, right: Float, top: Float, bottom: Float) {
         val availableWidth = right - left - gap * 2f
-        val weights = floatArrayOf(0.46f, 0.22f, 0.32f)
+        // HOME/BACK remain large enough for direct touch; primary mouse buttons retain more
+        // width than the less frequently used middle button.
+        val weights = floatArrayOf(0.17f, 0.17f, 0.28f, 0.14f, 0.24f)
         var cursor = left
         buttonRects.forEachIndexed { index, rect ->
             val width = availableWidth * weights[index]
@@ -216,7 +226,8 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
 
         buttonRects.forEachIndexed { index, rect ->
             buttonPaint.color = if (index in pressedButtons.values) {
-                if (index == 2) 0xD837A56D.toInt() else 0xD83B82F6.toInt()
+                if (index == buttonRects.lastIndex) 0xD837A56D.toInt()
+                else 0xD83B82F6.toInt()
             } else {
                 0xEE17384D.toInt()
             }
@@ -237,6 +248,10 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        // SystemMouseInjector deliberately creates SOURCE_MOUSE events. Never feed those events
+        // back into the virtual pad: on a same-display editor that would recursively turn an
+        // injected cursor/button event into another injected event until the system stalls.
+        if (!event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)) return false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val index = event.actionIndex
@@ -263,7 +278,7 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
         if (buttonIndex >= 0) {
             if (buttonIndex in pressedButtons.values) return
             pressedButtons[pointerId] = buttonIndex
-            onMouseButton?.invoke(buttonNames[buttonIndex], true)
+            dispatchControl(buttonIndex, true)
             invalidate()
             return
         }
@@ -293,12 +308,13 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
         lastY = y
         contactX = x.coerceIn(touchRect.left, touchRect.right)
         contactY = y.coerceIn(touchRect.top, touchRect.bottom)
+        contactVisualDirty = true
         if (!movementExceededTapSlop &&
             hypot(x - movementDownX, y - movementDownY) > touchSlop
         ) {
             movementExceededTapSlop = true
         }
-        invalidate()
+        scheduleFrame()
         if (dx == 0f && dy == 0f) return
         val distance = hypot(dx, dy)
         val acceleration = when {
@@ -313,7 +329,7 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
 
     private fun handlePointerUp(pointerId: Int) {
         pressedButtons.remove(pointerId)?.let { buttonIndex ->
-            onMouseButton?.invoke(buttonNames[buttonIndex], false)
+            dispatchControl(buttonIndex, false)
             invalidate()
         }
         if (pointerId == movementPointerId) {
@@ -321,7 +337,8 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
                 android.os.SystemClock.uptimeMillis() - movementDownTime <= TAP_TIMEOUT_MS
             movementPointerId = MotionEvent.INVALID_POINTER_ID
             contactVisible = false
-            flushMotion()
+            contactVisualDirty = true
+            scheduleFrame()
             // A second finger on the touch surface is commonly used while holding a mouse
             // button for dragging. Do not turn that release into an extra click or release the
             // held button unexpectedly.
@@ -329,7 +346,6 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
                 onMouseButton?.invoke(RemoteMouseInputProtocol.BUTTON_LEFT, true)
                 onMouseButton?.invoke(RemoteMouseInputProtocol.BUTTON_LEFT, false)
             }
-            invalidate()
         }
     }
 
@@ -341,8 +357,23 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
 
     override fun doFrame(frameTimeNanos: Long) {
         frameScheduled = false
+        val elapsed = frameTimeNanos - lastDispatchFrameNanos
+        if (lastDispatchFrameNanos != 0L && elapsed < TARGET_FRAME_NS) {
+            frameScheduled = true
+            val delayMs = ((TARGET_FRAME_NS - elapsed + NANOS_PER_MS - 1L) / NANOS_PER_MS)
+                .coerceAtLeast(1L)
+            Choreographer.getInstance().postFrameCallbackDelayed(this, delayMs)
+            return
+        }
+        lastDispatchFrameNanos = frameTimeNanos
         flushMotion()
-        if (abs(pendingDx) >= 0.5f || abs(pendingDy) >= 0.5f) scheduleFrame()
+        if (contactVisualDirty) {
+            contactVisualDirty = false
+            invalidate()
+        }
+        if (abs(pendingDx) >= 0.5f || abs(pendingDy) >= 0.5f) {
+            scheduleFrame()
+        }
     }
 
     private fun flushMotion() {
@@ -355,11 +386,13 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
     }
 
     private fun releaseAllPointers() {
-        pressedButtons.values.toList().forEach { onMouseButton?.invoke(buttonNames[it], false) }
+        pressedButtons.values.toList().forEach { dispatchControl(it, false) }
         pressedButtons.clear()
         movementPointerId = MotionEvent.INVALID_POINTER_ID
         contactVisible = false
-        flushMotion()
+        pendingDx = 0f
+        pendingDy = 0f
+        contactVisualDirty = false
         invalidate()
     }
 
@@ -369,12 +402,24 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
         releaseAllPointers()
         if (frameScheduled) Choreographer.getInstance().removeFrameCallback(this)
         frameScheduled = false
+        lastDispatchFrameNanos = 0L
         onMouseMove = null
         onMouseButton = null
+        onSystemKey = null
+    }
+
+    private fun dispatchControl(index: Int, down: Boolean) {
+        if (index < systemKeyCodes.size) {
+            onSystemKey?.invoke(systemKeyCodes[index], down)
+        } else {
+            onMouseButton?.invoke(buttonNames[index - systemKeyCodes.size], down)
+        }
     }
 
     private companion object {
         const val TAP_TIMEOUT_MS = 280L
+        const val TARGET_FRAME_NS = 33_333_334L
+        const val NANOS_PER_MS = 1_000_000L
     }
 
 }

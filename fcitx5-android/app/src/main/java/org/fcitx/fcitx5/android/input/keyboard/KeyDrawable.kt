@@ -119,7 +119,10 @@ fun aquariumDepthKeyBackgroundDrawable(
     radius: Float,
     hMargin: Int,
     vMargin: Int,
-    pressedBorderWidth: Int
+    pressedBorderWidth: Int,
+    normalTopColor: Int = 0x7329465C,
+    normalBottomColor: Int = 0x5C102536,
+    normalStrokeColor: Int = 0xFF426A84.toInt()
 ): Drawable {
     fun face(selected: Boolean): Drawable = LayerDrawable(
         arrayOf(
@@ -134,11 +137,11 @@ fun aquariumDepthKeyBackgroundDrawable(
                 if (selected) {
                     intArrayOf(0x8F297895.toInt(), 0x78123B55)
                 } else {
-                    intArrayOf(0x7329465C, 0x5C102536)
+                    intArrayOf(normalTopColor, normalBottomColor)
                 }
             ).apply {
                 cornerRadius = radius
-                setStroke(1, if (selected) 0xFF75DFFF.toInt() else 0xFF426A84.toInt())
+                setStroke(1, if (selected) 0xFF75DFFF.toInt() else normalStrokeColor)
             },
             GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,

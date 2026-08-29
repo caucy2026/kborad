@@ -210,8 +210,16 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     fun desktopOperationButtonCentersOnScreen(): Pair<Int, Int>? =
         (currentKeyboard as? DesktopKeyboard)?.operationButtonCentersOnScreen()
 
+    fun setDesktopSystemBottomInset(bottomInsetPx: Int) {
+        (currentKeyboard as? DesktopKeyboard)?.setSystemBottomInset(bottomInsetPx)
+    }
+
     fun onDesktopPondTouch(event: MotionEvent): Boolean =
         (currentKeyboard as? DesktopKeyboard)?.onExternalPondTouch(event) ?: false
+
+    fun sendDesktopEnter() {
+        (currentKeyboard as? DesktopKeyboard)?.sendEnterFromOperationBar()
+    }
 
     fun onImeWindowShown() {
         (currentKeyboard as? DesktopKeyboard)?.onImeWindowShown()

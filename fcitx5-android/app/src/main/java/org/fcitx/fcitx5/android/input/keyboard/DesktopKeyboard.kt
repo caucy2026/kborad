@@ -8,12 +8,12 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
 import android.view.MotionEvent
+import android.view.InputDevice
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.allViews
-import androidx.core.view.updateLayoutParams
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.FcitxKeyMapping
 import org.fcitx.fcitx5.android.core.InputMethodEntry
@@ -55,6 +55,10 @@ class DesktopKeyboard private constructor(
     )
 
     init {
+        // BaseKeyboard creates headers at its generic 48dp height. Desktop mode has a dedicated
+        // fixed touch surface; set it once during construction instead of mutating LayoutParams
+        // from onMeasure(), which caused a 30Hz requestLayout loop beside the TextureView.
+        compositionHeader.layoutParams.height = context.dp(DESKTOP_TOUCHPAD_HEIGHT_DP)
         addView(
             aquariumView,
             0,
@@ -84,7 +88,18 @@ class DesktopKeyboard private constructor(
         aquariumView.isClickable = true
         allViews.filterIsInstance<KeyView>().forEach {
             it.setPhysicalKeyStyle(true)
-            it.setAquariumDepthStyle(true)
+            if (it.def.viewId == R.id.button_backspace) {
+                // Backspace is a destructive key: distinguish it at rest without changing its
+                // size, hit target, label contrast, or the shared press/release animation.
+                it.setAquariumDepthStyle(
+                    enabled = true,
+                    normalTopColor = DESKTOP_BACKSPACE_TOP_COLOR,
+                    normalBottomColor = DESKTOP_BACKSPACE_BOTTOM_COLOR,
+                    normalStrokeColor = DESKTOP_BACKSPACE_STROKE_COLOR
+                )
+            } else {
+                it.setAquariumDepthStyle(true)
+            }
             it.keyDownSoundEnabled = false
             it.physicalReleaseSoundEnabled = false
         }
@@ -95,10 +110,31 @@ class DesktopKeyboard private constructor(
         touchpadView.onMouseButton = { button, down ->
             onAction(KeyAction.RemoteMouseButtonAction(button, down))
         }
+        touchpadView.onSystemKey = { keyCode, down ->
+            onAction(KeyAction.RemoteSystemKeyAction(keyCode, down))
+        }
         InputFeedbacks.prepareRippleSoundAsync()
     }
 
+    /**
+     * Keep the six physical-key rows at their designed height when the IME is hosted on a
+     * display with a bottom navigation bar. The desktop header is deliberately the flexible
+     * region: taking the system inset from its large touchpad is substantially more usable than
+     * squeezing every key row or clipping the bottom controls.
+     */
+    fun setSystemBottomInset(bottomInsetPx: Int) {
+        val targetHeight = (
+            context.dp(DESKTOP_TOUCHPAD_HEIGHT_DP) - bottomInsetPx.coerceAtLeast(0)
+        ).coerceAtLeast(context.dp(DESKTOP_TOUCHPAD_MIN_HEIGHT_DP))
+        if (compositionHeader.layoutParams.height == targetHeight) return
+        compositionHeader.layoutParams.height = targetHeight
+        compositionHeader.requestLayout()
+    }
+
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        // An injected mouse can be positioned over this IME when editor and keyboard share a
+        // display. The keyboard must never consume it as a new virtual-pad/key gesture.
+        if (event.isFromSource(InputDevice.SOURCE_MOUSE)) return false
         // The header is a real mouse surface, not pond space. Do not mix mouse gestures with
         // aquarium feeding/ripple feedback or play a water sound on every cursor movement.
         if (event.y >= compositionHeader.bottom) {
@@ -137,16 +173,19 @@ class DesktopKeyboard private constructor(
 
     companion object {
         const val Name = "Desktop"
-        private const val LayoutWidthInKeyUnits = 15f
         private const val DESKTOP_DECK_COLOR = 0xFF061827.toInt()
-        private const val DESKTOP_OPERATION_WATER_HEIGHT_DP = 44
-        // Includes the 48dp candidate/tool rail that InputView overlays at the bottom of the
-        // desktop header. This leaves a genuine 160dp interaction zone for the pad and buttons.
-        private const val DESKTOP_TOUCHPAD_HEIGHT_DP = 208
-        private const val DESKTOP_MIN_ROW_HEIGHT_DP = 42
-        private const val DESKTOP_TOUCHPAD_MAX_HEIGHT_FRACTION = 0.43f
+        private const val DESKTOP_OPERATION_WATER_HEIGHT_DP = 56
+        // The full-height desktop window contributes this extra band to pointer travel. The six
+        // physical-key rows remain at the proven 2026-08-27 size.
+        private const val DESKTOP_TOUCHPAD_HEIGHT_DP = 272
+        private const val DESKTOP_TOUCHPAD_MIN_HEIGHT_DP = 180
         private const val DESKTOP_ACTIVE_LANGUAGE_COLOR = 0xFF4285F4.toInt()
         private const val DESKTOP_KEY_TEXT_COLOR = 0xFFF4F8FC.toInt()
+        // Warm destructive-key palette: visibly distinct from the blue-gray alphanumeric keys,
+        // while remaining dark enough for the shared white legend and aquarium background.
+        private const val DESKTOP_BACKSPACE_TOP_COLOR = 0xB06E3540.toInt()
+        private const val DESKTOP_BACKSPACE_BOTTOM_COLOR = 0x98431E2A.toInt()
+        private const val DESKTOP_BACKSPACE_STROKE_COLOR = 0xFFE17882.toInt()
 
         // These keys model a physical desktop keyboard and must leave the IME as standard
         // Android KeyEvents. Marking them Virtual makes the service's text-oriented branch
@@ -252,7 +291,9 @@ class DesktopKeyboard private constructor(
                 shiftedSymbolKey("=", "+", 1f / 15f),
                 DesktopSymKey(
                     "Backspace", FcitxKeyMapping.FcitxKey_BackSpace, 2f / 15f,
-                    repeat = true, soundEffect = InputFeedbacks.SoundEffect.Delete
+                    repeat = true,
+                    viewId = R.id.button_backspace,
+                    soundEffect = InputFeedbacks.SoundEffect.Delete
                 )
             ),
             // Row 2: Tab Q-P [ ] \  (weightSum=15)
@@ -263,45 +304,38 @@ class DesktopKeyboard private constructor(
                 shiftedSymbolKey("]", "}", 1f / 15f),
                 shiftedSymbolKey("\\", "|", 1.5f / 15f)
             ),
-            // Row 3: Caps A-L ; ' Enter  (weightSum=15)
+            // Row 3: Enter lives in the large operation row. Redistribute its former width
+            // proportionally across Caps, A-L and punctuation so this row has no dead gap.
             listOf(
-                DesktopSymKey("Caps", FcitxKeyMapping.FcitxKey_Caps_Lock, 1.8f / 15f),
-                *"ASDFGHJKL".map { characterKey(it.toString(), 1f / 15f) }.toTypedArray(),
-                shiftedSymbolKey(";", ":", 1f / 15f),
-                shiftedSymbolKey("'", "\"", 1f / 15f),
-                DesktopSymKey(
-                    "Enter", FcitxKeyMapping.FcitxKey_Return, 2.2f / 15f,
-                    soundEffect = InputFeedbacks.SoundEffect.Return
-                )
+                DesktopSymKey("Caps", FcitxKeyMapping.FcitxKey_Caps_Lock, 1.8f / 12.8f),
+                *"ASDFGHJKL".map { characterKey(it.toString(), 1f / 12.8f) }.toTypedArray(),
+                shiftedSymbolKey(";", ":", 1f / 12.8f),
+                shiftedSymbolKey("'", "\"", 1f / 12.8f)
             ),
-            // Row 4: Shift Z-M , . / Shift  (weightSum=15)
+            // Row 4: Shift Z-M , . / ↑ Shift  (weightSum=15). Keep Up full-height instead of
+            // squeezing it into half of the bottom row; this begins a familiar inverted-T pad.
             listOf(
                 DesktopModifierKey("Shift", 2.2f / 15f),
                 *"ZXCVBNM".map { characterKey(it.toString(), 1f / 15f) }.toTypedArray(),
                 shiftedSymbolKey(",", "<", 1f / 15f),
                 shiftedSymbolKey(".", ">", 1f / 15f),
-                shiftedSymbolKey("/", "?", 1f / 15f),
-                DesktopModifierKey("Shift", 2.8f / 15f)
+                // The 1.26/1.40/1.14 split puts ↑ on the exact horizontal center of ↓ in the
+                // 18.3-unit bottom row while keeping both Slash and right Shift easy to hit.
+                shiftedSymbolKey("/", "?", 1.26f / 15f),
+                DesktopSymKey("↑", FcitxKeyMapping.FcitxKey_Up, 1.4f / 15f, repeat = true),
+                DesktopModifierKey("Shift", 1.14f / 15f)
             ),
-            // Row 5: Ctrl Alt 中/英 ──SPACE── ⌘ ← [↑/↓] →
+            // Row 5: Ctrl Alt 中/英 ──SPACE── ⌘ ← ↓ →. Each arrow is a full-height 1.5-unit
+            // target; the space bar remains the largest key while no desktop control is removed.
             listOf(
                 DesktopModifierKey("Ctrl", 2.2f / 18.3f),
                 DesktopModifierKey("Alt", 1.6f / 18.3f),
                 languageKey(1.6f / 18.3f),
-                DesktopSpaceKey(8f / 18.3f),
+                DesktopSpaceKey(6.8f / 18.3f),
                 DesktopModifierKey("\u2318", 1.6f / 18.3f),
-                DesktopSymKey("←", FcitxKeyMapping.FcitxKey_Left, 1f / 18.3f, repeat = true),
-                KeyDef(
-                    KeyDef.Appearance.VerticalGroup(
-                        listOf(
-                            DesktopSymKey("↑", FcitxKeyMapping.FcitxKey_Up, 1f, repeat = true),
-                            DesktopSymKey("↓", FcitxKeyMapping.FcitxKey_Down, 1f, repeat = true)
-                        ),
-                        1.3f / 18.3f
-                    ),
-                    emptySet()
-                ),
-                DesktopSymKey("→", FcitxKeyMapping.FcitxKey_Right, 1f / 18.3f, repeat = true)
+                DesktopSymKey("←", FcitxKeyMapping.FcitxKey_Left, 1.5f / 18.3f, repeat = true),
+                DesktopSymKey("↓", FcitxKeyMapping.FcitxKey_Down, 1.5f / 18.3f, repeat = true),
+                DesktopSymKey("→", FcitxKeyMapping.FcitxKey_Right, 1.5f / 18.3f, repeat = true)
             )
         )
 
@@ -362,6 +396,10 @@ class DesktopKeyboard private constructor(
     private val textKeys by lazy { allViews.filterIsInstance<TextKeyView>() }
     private var currentImeName: String = ""
     private var currentImeLanguageCode: String = ""
+
+    fun sendEnterFromOperationBar() {
+        onAction(KeyAction.SymAction(KeySym(FcitxKeyMapping.FcitxKey_Return)))
+    }
 
     override fun onAction(action: KeyAction, source: KeyActionListener.Source) {
         // Ctrl+Space → language switch
@@ -589,35 +627,6 @@ class DesktopKeyboard private constructor(
         return option.centerXOnScreen() to command.centerXOnScreen()
     }
 
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val measuredHeight = View.MeasureSpec.getSize(heightMeasureSpec)
-        val topPadding = 0
-        // InputView overlays the desktop operation buttons on the bottom of this view. Keep the
-        // key rows above them while the aquarium itself continues through the reserved water.
-        val bottomPadding = context.dp(DESKTOP_OPERATION_WATER_HEIGHT_DP)
-        val horizontalPadding = 0
-        // Reserve a fingertip-sized pad before ConstraintLayout measures the key rows. Updating
-        // this in onSizeChanged() was too late on the V900 and retained the 48dp fallback.
-        val desiredTouchpadHeight = minOf(
-            context.dp(DESKTOP_TOUCHPAD_HEIGHT_DP),
-            (measuredHeight * DESKTOP_TOUCHPAD_MAX_HEIGHT_FRACTION).roundToInt()
-        )
-        val minimumRowsHeight = context.dp(DESKTOP_MIN_ROW_HEIGHT_DP * 6)
-        val maximumTouchpadHeight =
-            (measuredHeight - bottomPadding - minimumRowsHeight).coerceAtLeast(0)
-        val touchpadHeight = desiredTouchpadHeight.coerceAtMost(maximumTouchpadHeight)
-        if (compositionHeader.layoutParams.height != touchpadHeight) {
-            compositionHeader.updateLayoutParams<LayoutParams> {
-                height = touchpadHeight
-            }
-        }
-        // BaseKeyboard owns a real bottom constraint spacer. Padding alone is ignored by
-        // ConstraintLayout's parent-edge anchors on the V900 ROM and allowed row 6 to render
-        // underneath the operation rail.
-        setPadding(horizontalPadding, topPadding, horizontalPadding, 0)
-        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-    }
-
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
         // ConstraintLayout respects the key-row bottom padding, but the pond must cover it.
@@ -626,8 +635,10 @@ class DesktopKeyboard private constructor(
         val pondTop = compositionHeader.bottom.coerceIn(0, bottom - top)
         aquariumView.layout(0, pondTop, right - left, bottom - top)
         aquariumTransitionOverlay.layout(0, pondTop, right - left, bottom - top)
-        compositionHeader.bringToFront()
-        touchpadView.bringToFront()
+        // The aquarium and its transition overlay are inserted at indices 0 and 1, so the
+        // existing header and key rows already stay above them. Calling bringToFront() from
+        // onLayout() asks ConstraintLayout for another layout while it is still laying out,
+        // producing a permanent requestLayout loop on the Android 12 dual-screen build.
     }
 
 }

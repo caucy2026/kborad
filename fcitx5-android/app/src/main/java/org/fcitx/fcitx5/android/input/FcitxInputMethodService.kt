@@ -40,6 +40,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InlineSuggestionsRequest
 import android.view.inputmethod.InlineSuggestionsResponse
 import android.view.inputmethod.InputBinding
+import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodSubtype
 import android.widget.FrameLayout
 import android.widget.Toast
@@ -54,6 +55,7 @@ import androidx.autofill.inline.v1.InlineSuggestionUi
 import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.Channel
@@ -120,6 +122,22 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     /** Mouse button DOWN events accepted by the current remote InputConnection. */
     private val pressedDesktopMouseButtons = linkedSetOf<String>()
+    /** HOME/BACK DOWN events sent to the remote editor, paired with their original connection. */
+    private val pressedDesktopRemoteNavigationKeys =
+        linkedMapOf<Int, Pair<InputConnection, Long>>()
+
+    /**
+     * Bounded mouse-move handoff. Only one Binder call may be in flight; while it is blocked,
+     * fresh deltas are accumulated into one capped slot instead of growing a main-thread queue.
+     */
+    private val desktopMouseMoveSignal = Channel<Unit>(capacity = Channel.CONFLATED)
+    private val desktopMouseMoveLock = Any()
+    private var pendingDesktopMouseDx = 0
+    private var pendingDesktopMouseDy = 0
+    private var pendingDesktopMouseConnection: InputConnection? = null
+    private val systemMouseInjector by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        SystemMouseInjector(applicationContext)
+    }
 
     private var pendingTouchHideRequest: Runnable? = null
     private var pendingTouchHideHost: View? = null
@@ -343,6 +361,11 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 it.join()
             }
         }
+        lifecycleScope.launch(Dispatchers.IO) {
+            desktopMouseMoveSignal.consumeEach {
+                dispatchPendingDesktopMouseMove()
+            }
+        }
         lifecycleScope.launch {
             fcitx.runImmediately { eventFlow }.collect {
                 handleFcitxEvent(it)
@@ -390,6 +413,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         )
         cancelPendingTouchHideRequest()
         releaseDesktopInputStates()
+        clearPendingDesktopMouseMove()
+        desktopMouseMoveSignal.close()
         hardwareKeyAnomalyFilter.reset()
         cachedKeyEvents.evictAll()
         showingDialog?.dismiss()
@@ -709,37 +734,43 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
     }
 
-    private fun sendDownKeyEvent(eventTime: Long, keyEventCode: Int, metaState: Int = 0) {
-        currentInputConnection?.sendKeyEvent(
-            KeyEvent(
-                eventTime,
-                eventTime,
-                KeyEvent.ACTION_DOWN,
-                keyEventCode,
-                0,
-                metaState,
-                KeyCharacterMap.VIRTUAL_KEYBOARD,
-                ScancodeMapping.keyCodeToScancode(keyEventCode),
-                KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE
-            )
+    private fun sendDownKeyEvent(
+        eventTime: Long,
+        keyEventCode: Int,
+        metaState: Int = 0,
+        connection: InputConnection? = currentInputConnection
+    ): Boolean = connection?.sendKeyEvent(
+        KeyEvent(
+            eventTime,
+            eventTime,
+            KeyEvent.ACTION_DOWN,
+            keyEventCode,
+            0,
+            metaState,
+            KeyCharacterMap.VIRTUAL_KEYBOARD,
+            ScancodeMapping.keyCodeToScancode(keyEventCode),
+            KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE
         )
-    }
+    ) == true
 
-    private fun sendUpKeyEvent(eventTime: Long, keyEventCode: Int, metaState: Int = 0) {
-        currentInputConnection?.sendKeyEvent(
-            KeyEvent(
-                eventTime,
-                SystemClock.uptimeMillis(),
-                KeyEvent.ACTION_UP,
-                keyEventCode,
-                0,
-                metaState,
-                KeyCharacterMap.VIRTUAL_KEYBOARD,
-                ScancodeMapping.keyCodeToScancode(keyEventCode),
-                KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE
-            )
+    private fun sendUpKeyEvent(
+        eventTime: Long,
+        keyEventCode: Int,
+        metaState: Int = 0,
+        connection: InputConnection? = currentInputConnection
+    ): Boolean = connection?.sendKeyEvent(
+        KeyEvent(
+            eventTime,
+            SystemClock.uptimeMillis(),
+            KeyEvent.ACTION_UP,
+            keyEventCode,
+            0,
+            metaState,
+            KeyCharacterMap.VIRTUAL_KEYBOARD,
+            ScancodeMapping.keyCodeToScancode(keyEventCode),
+            KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE
         )
-    }
+    ) == true
 
     /**
      * Forward a desktop modifier edge without entering Fcitx or collapsing it into a chord.
@@ -775,17 +806,68 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     fun sendDesktopMouseMove(dx: Int, dy: Int) {
-        if (dx == 0 && dy == 0) return
-        val accepted = currentInputConnection?.performPrivateCommand(
-            RemoteMouseInputProtocol.ACTION,
-            Bundle().apply {
-                putString(RemoteMouseInputProtocol.EXTRA_TYPE, RemoteMouseInputProtocol.TYPE_MOVE)
-                putInt(RemoteMouseInputProtocol.EXTRA_DX, dx.coerceIn(-240, 240))
-                putInt(RemoteMouseInputProtocol.EXTRA_DY, dy.coerceIn(-240, 240))
+        if (dx == 0 && dy == 0 || ownedResourcesReleased) return
+        val connection = currentInputConnection ?: return
+        synchronized(desktopMouseMoveLock) {
+            if (pendingDesktopMouseConnection !== connection) {
+                pendingDesktopMouseDx = 0
+                pendingDesktopMouseDy = 0
+                pendingDesktopMouseConnection = connection
             }
-        ) == true
+            pendingDesktopMouseDx = (pendingDesktopMouseDx + dx)
+                .coerceIn(-MAX_PENDING_MOUSE_DELTA, MAX_PENDING_MOUSE_DELTA)
+            pendingDesktopMouseDy = (pendingDesktopMouseDy + dy)
+                .coerceIn(-MAX_PENDING_MOUSE_DELTA, MAX_PENDING_MOUSE_DELTA)
+        }
+        desktopMouseMoveSignal.trySend(Unit)
+    }
+
+    private fun dispatchPendingDesktopMouseMove() {
+        val command = synchronized(desktopMouseMoveLock) {
+            val connection = pendingDesktopMouseConnection ?: return
+            val dx = pendingDesktopMouseDx
+            val dy = pendingDesktopMouseDy
+            pendingDesktopMouseDx = 0
+            pendingDesktopMouseDy = 0
+            Triple(connection, dx, dy)
+        }
+        if (command.second == 0 && command.third == 0) return
+        val targetDisplayId = desktopMouseTargetDisplayId()
+        if (systemMouseInjector.move(targetDisplayId, command.second, command.third)) {
+            if (Log.isLoggable(REMOTE_MOUSE_LOG_TAG, Log.DEBUG)) {
+                Log.d(
+                    REMOTE_MOUSE_LOG_TAG,
+                    "system move display=$targetDisplayId dx=${command.second} dy=${command.third}"
+                )
+            }
+            return
+        }
+        val accepted = runCatching {
+            command.first.performPrivateCommand(
+                RemoteMouseInputProtocol.ACTION,
+                Bundle().apply {
+                    putString(RemoteMouseInputProtocol.EXTRA_TYPE, RemoteMouseInputProtocol.TYPE_MOVE)
+                    putInt(RemoteMouseInputProtocol.EXTRA_DX, command.second)
+                    putInt(RemoteMouseInputProtocol.EXTRA_DY, command.third)
+                }
+            )
+        }.getOrElse { error ->
+            Log.w(REMOTE_MOUSE_LOG_TAG, "mouse move dispatch failed", error)
+            false
+        }
         if (Log.isLoggable(REMOTE_MOUSE_LOG_TAG, Log.DEBUG)) {
-            Log.d(REMOTE_MOUSE_LOG_TAG, "move dx=$dx dy=$dy accepted=$accepted")
+            Log.d(
+                REMOTE_MOUSE_LOG_TAG,
+                "move dx=${command.second} dy=${command.third} accepted=$accepted"
+            )
+        }
+    }
+
+    private fun clearPendingDesktopMouseMove() {
+        synchronized(desktopMouseMoveLock) {
+            pendingDesktopMouseDx = 0
+            pendingDesktopMouseDy = 0
+            pendingDesktopMouseConnection = null
         }
     }
 
@@ -793,7 +875,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         if (button !in RemoteMouseInputProtocol.BUTTONS) return
         if (down && button in pressedDesktopMouseButtons) return
         if (!down && button !in pressedDesktopMouseButtons) return
-        val accepted = currentInputConnection?.performPrivateCommand(
+        val targetDisplayId = desktopMouseTargetDisplayId()
+        val systemAccepted = systemMouseInjector.button(targetDisplayId, button, down)
+        val accepted = systemAccepted || currentInputConnection?.performPrivateCommand(
             RemoteMouseInputProtocol.ACTION,
             Bundle().apply {
                 putString(RemoteMouseInputProtocol.EXTRA_TYPE, RemoteMouseInputProtocol.TYPE_BUTTON)
@@ -814,6 +898,27 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
     }
 
+    fun sendDesktopSystemKeyState(keyCode: Int, down: Boolean) {
+        if (keyCode !in DESKTOP_REMOTE_NAVIGATION_KEY_CODES) return
+        if (down) {
+            if (keyCode in pressedDesktopRemoteNavigationKeys) return
+            val connection = currentInputConnection ?: return
+            val downTime = SystemClock.uptimeMillis()
+            if (sendDownKeyEvent(downTime, keyCode, connection = connection)) {
+                pressedDesktopRemoteNavigationKeys[keyCode] = connection to downTime
+            }
+        } else {
+            val state = pressedDesktopRemoteNavigationKeys.remove(keyCode) ?: return
+            sendUpKeyEvent(state.second, keyCode, connection = state.first)
+        }
+    }
+
+    private fun releaseDesktopSystemKeys() {
+        pressedDesktopRemoteNavigationKeys.keys.toList().asReversed().forEach { keyCode ->
+            sendDesktopSystemKeyState(keyCode, down = false)
+        }
+    }
+
     private fun releaseDesktopMouseButtons() {
         pressedDesktopMouseButtons.toList().asReversed().forEach { button ->
             sendDesktopMouseButtonState(button, down = false)
@@ -821,8 +926,32 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     private fun releaseDesktopInputStates() {
+        releaseDesktopSystemKeys()
         releaseDesktopMouseButtons()
         releaseDesktopModifierKeys()
+    }
+
+    /**
+     * A normal editor owns the same display as its IME. RustDesk deliberately hosts its proxy
+     * editor on the opposite display, so route the physical mouse back to the source display that
+     * requested the keyboard.
+     */
+    private fun desktopMouseTargetDisplayId(): Int {
+        @Suppress("DEPRECATION")
+        val imeDisplayId = display?.displayId ?: android.view.Display.DEFAULT_DISPLAY
+        if (currentInputEditorInfo.packageName !in CROSS_DISPLAY_EDITOR_PACKAGES) {
+            return imeDisplayId
+        }
+        val requestedDisplayId = when (imeDisplayId) {
+            android.view.Display.DEFAULT_DISPLAY -> SECONDARY_IME_DISPLAY_ID
+            SECONDARY_IME_DISPLAY_ID -> android.view.Display.DEFAULT_DISPLAY
+            else -> android.view.Display.DEFAULT_DISPLAY
+        }
+        val requestedDisplay = getSystemService(DisplayManager::class.java)
+            ?.getDisplay(requestedDisplayId)
+        return requestedDisplayId.takeIf {
+            requestedDisplay?.isValid == true && requestedDisplay.state != android.view.Display.STATE_OFF
+        } ?: imeDisplayId
     }
 
     /**
@@ -929,11 +1058,13 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             super.onConfigurationChanged(newConfig)
         }
         lastKnownConfig = newConfig
+        inputView?.requestCurrentDisplayInsets("configuration")
     }
 
     override fun onWindowShown() {
         super.onWindowShown()
         inputView?.onImeWindowShown()
+        inputView?.requestCurrentDisplayInsets("window_shown")
         try {
             highlightColor = styledColor(android.R.attr.colorAccent).alpha(0.4f)
         } catch (_: Exception) {
@@ -1233,6 +1364,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         Timber.d("onStartInputView: restarting=$restarting")
+        inputView?.requestCurrentDisplayInsets("start_input_view")
         postFcitxJob {
             focus(true)
         }
@@ -1545,6 +1677,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     override fun onFinishInput() {
         Timber.d("onFinishInput")
         cancelPendingTouchHideRequest()
+        clearPendingDesktopMouseMove()
         releaseDesktopInputStates()
         postFcitxJob {
             focus(false)
@@ -1554,6 +1687,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onUnbindInput() {
         cancelPendingTouchHideRequest()
+        clearPendingDesktopMouseMove()
         releaseDesktopInputStates()
         cachedKeyEvents.evictAll()
         cachedKeyEventIndex = 0
@@ -1613,6 +1747,11 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     companion object {
         private const val IME_LIFECYCLE_TAG = "KBoardImeLifecycle"
         private const val REMOTE_MOUSE_LOG_TAG = "KBoardRemoteMouse"
+        private val DESKTOP_REMOTE_NAVIGATION_KEY_CODES = setOf(
+            KeyEvent.KEYCODE_HOME,
+            KeyEvent.KEYCODE_BACK
+        )
+        private const val MAX_PENDING_MOUSE_DELTA = 240
         private val PROCESS_IME_INSTANCE_LOCK = Any()
         private var processImeInstance: WeakReference<FcitxInputMethodService>? = null
         const val DeleteSurroundingFlag = "org.fcitx.fcitx5.android.DELETE_SURROUNDING"
@@ -1620,6 +1759,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             "com.newlink.action.SET_DISPLAY_IME_POLICY"
         private const val DISPLAY_IME_POLICY_PACKAGE = "com.newlink.device.ime"
         private const val KEMI_REMOTE_PACKAGE = "com.newlinksz.kemi.remote"
+        private val CROSS_DISPLAY_EDITOR_PACKAGES = setOf(
+            "com.carriez.flutter_hbb",
+            KEMI_REMOTE_PACKAGE
+        )
         private const val EXTRA_DISPLAY_ID = "display_id"
         private const val EXTRA_MODE = "mode"
         private const val DISPLAY_IME_MODE_LOCAL = "local"

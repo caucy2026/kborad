@@ -11,7 +11,9 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.Outline
 import android.os.Build
+import android.util.Log
 import android.view.MotionEvent
+import android.view.Surface
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.view.WindowInsets
@@ -25,6 +27,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CapabilityFlags
 import org.fcitx.fcitx5.android.core.FcitxEvent
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
+import org.fcitx.fcitx5.android.data.InputFeedbacks
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import org.fcitx.fcitx5.android.data.theme.Theme
@@ -90,7 +93,7 @@ class InputView(
     private val desktopVoiceButton by lazy {
         ToolButton(context, R.drawable.ic_baseline_keyboard_voice_24, theme).apply {
             visibility = GONE
-            useFullSizeIcon()
+            useFullSizeIcon(DESKTOP_OPERATION_ICON_SIZE_DP)
         }
     }
 
@@ -102,14 +105,24 @@ class InputView(
     private val desktopExitButton = ToolButton(context, R.drawable.ic_dock_keyboard_24, theme).apply {
         visibility = GONE
         contentDescription = context.getString(R.string.exit_desktop_keyboard)
-        useFullSizeIcon()
+        useFullSizeIcon(DESKTOP_OPERATION_ICON_SIZE_DP)
         setIconTintColor(theme.altKeyTextColor)
         setOnClickListener { keyboardWindow.toggleDesktopKeyboard() }
     }
 
+    private val desktopEnterButton =
+        ToolButton(context, R.drawable.ic_baseline_keyboard_return_24, theme).apply {
+            visibility = GONE
+            contentDescription = context.getString(R.string.desktop_enter)
+            soundEffect = InputFeedbacks.SoundEffect.Return
+            useFullSizeIcon(DESKTOP_OPERATION_ICON_SIZE_DP)
+            setOnClickListener { keyboardWindow.sendDesktopEnter() }
+        }
+
     private val desktopOperationButtons = listOf(
         desktopExitButton,
-        desktopVoiceButton
+        desktopVoiceButton,
+        desktopEnterButton
     )
 
     private val placeholderOnClickListener = OnClickListener { }
@@ -235,6 +248,11 @@ class InputView(
     private var inputViewHierarchyReady = false
     private var desktopHeightConfigurationKey = ""
     private var lockedDesktopKeyboardHeightPx = 0
+    private var lastInsetsDisplayId = android.view.Display.INVALID_DISPLAY
+    private var lastNavigationBottomInset = -1
+    private val deferredInsetsRefresh = Runnable {
+        if (!disposed && isAttachedToWindow) requestApplyInsets()
+    }
 
     private val floatingKeyboardOutline = object : ViewOutlineProvider() {
         override fun getOutline(view: View, outline: Outline) {
@@ -296,6 +314,16 @@ class InputView(
     private val desktopKeyboardHeightPx: Int
         get() {
             val configuration = resources.configuration
+            val currentDisplay = display ?: service.display
+            val displayMode = currentDisplay?.mode
+            val physicalDisplayHeight = if (displayMode == null) {
+                resources.displayMetrics.heightPixels
+            } else {
+                when (currentDisplay.rotation) {
+                    Surface.ROTATION_90, Surface.ROTATION_270 -> displayMode.physicalWidth
+                    else -> displayMode.physicalHeight
+                }
+            }
             val configurationKey = buildString {
                 append(configuration.orientation)
                 append(':')
@@ -304,6 +332,10 @@ class InputView(
                 append(configuration.screenHeightDp)
                 append(':')
                 append(configuration.densityDpi)
+                append(':')
+                append(currentDisplay?.displayId)
+                append(':')
+                append(physicalDisplayHeight)
             }
             if (configurationKey == desktopHeightConfigurationKey &&
                 lockedDesktopKeyboardHeightPx > 0
@@ -311,15 +343,25 @@ class InputView(
                 return lockedDesktopKeyboardHeightPx
             }
             val displayWidth = resources.displayMetrics.widthPixels
-            val displayHeight = resources.displayMetrics.heightPixels
+            // IME resource metrics exclude the upper system/app band on V900. Desktop mode is
+            // intentionally full-screen up to the current Display's navigation inset, so size
+            // from the rotated physical panel. Ordinary keyboards continue using resource metrics.
+            val displayHeight = physicalDisplayHeight
+                .coerceAtLeast(resources.displayMetrics.heightPixels)
             val contentWidth = displayWidth - dp(DESKTOP_SIDE_PADDING_DP * 2)
             val rowsHeight = contentWidth * DESKTOP_ROW_COUNT / DESKTOP_LAYOUT_WIDTH_UNITS
+            // Desktop mode overlays KawaiiBar above row one instead of reserving a second strip
+            // at the top. Its former 48dp slot is now part of the mouse surface, so do not count
+            // the bar twice when deriving the outer keyboard height.
             val chromeHeight = dp(
-                KawaiiBarComponent.HEIGHT + DESKTOP_OPERATION_HEIGHT_DP +
-                        DESKTOP_VERTICAL_INSET_DP + DESKTOP_TOUCHPAD_HEIGHT_DP
+                DESKTOP_OPERATION_HEIGHT_DP + DESKTOP_VERTICAL_INSET_DP +
+                        DESKTOP_TOUCHPAD_HEIGHT_DP
             )
             val minimum = displayHeight * DESKTOP_MIN_HEIGHT_PERCENT / 100
-            val maximum = displayHeight * DESKTOP_MAX_HEIGHT_PERCENT / 100
+            // Keep a small strip of the controlled desktop visible above the global keyboard.
+            // The matching reduction in touchpad + operation chrome below keeps all six
+            // physical-key rows at exactly their current height.
+            val maximum = displayHeight - dp(DESKTOP_TOP_REVEAL_DP)
             lockedDesktopKeyboardHeightPx = (rowsHeight + chromeHeight)
                 .roundToInt()
                 .coerceIn(minimum, maximum)
@@ -337,8 +379,7 @@ class InputView(
     val keyboardView: View
 
     private fun bringDesktopButtonsToFront() {
-        desktopVoiceButton.bringToFront()
-        desktopExitButton.bringToFront()
+        desktopOperationButtons.forEach(View::bringToFront)
     }
 
     private fun updateDesktopCompositionPosition() {
@@ -362,19 +403,6 @@ class InputView(
             kawaiiBar.view.translationY = (
                     candidateTopOnScreen - barParentLocation[1] - kawaiiBar.view.top
                     ).toFloat()
-        }
-    }
-
-    private fun updateDesktopOperationButtonPositions() {
-        if (!desktopKeyboardMode) return
-        windowManager.view.post {
-            if (!desktopKeyboardMode) return@post
-            val centers = keyboardWindow.desktopOperationButtonCentersOnScreen() ?: return@post
-            val parent = desktopExitButton.parent as? View ?: return@post
-            val parentLocation = IntArray(2)
-            parent.getLocationOnScreen(parentLocation)
-            desktopExitButton.x = centers.first - parentLocation[0] - desktopExitButton.width / 2f
-            desktopVoiceButton.x = centers.second - parentLocation[0] - desktopVoiceButton.width / 2f
         }
     }
 
@@ -442,17 +470,33 @@ class InputView(
                 bottomOfParent()
                 centerHorizontally()
             })
-            add(desktopExitButton, lParams(dp(DESKTOP_OPERATION_BUTTON_SIZE_DP), dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
+            add(desktopExitButton, lParams(0, dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
                 startOfParent()
                 endToStartOf(desktopVoiceButton)
                 bottomOfParent()
-                horizontalChainStyle = LayoutParams.CHAIN_PACKED
+                horizontalChainStyle = LayoutParams.CHAIN_SPREAD
+                horizontalWeight = 1f
+                marginStart = dp(DESKTOP_OPERATION_BUTTON_GAP_DP)
+                marginEnd = dp(DESKTOP_OPERATION_BUTTON_GAP_DP)
+                bottomMargin = dp(DESKTOP_OPERATION_BUTTON_VERTICAL_MARGIN_DP)
             })
-            add(desktopVoiceButton, lParams(dp(DESKTOP_OPERATION_BUTTON_SIZE_DP), dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
+            add(desktopVoiceButton, lParams(0, dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
                 startToEndOf(desktopExitButton)
+                endToStartOf(desktopEnterButton)
+                bottomOfParent()
+                horizontalWeight = 1f
+                marginStart = dp(DESKTOP_OPERATION_BUTTON_GAP_DP)
+                marginEnd = dp(DESKTOP_OPERATION_BUTTON_GAP_DP)
+                bottomMargin = dp(DESKTOP_OPERATION_BUTTON_VERTICAL_MARGIN_DP)
+            })
+            add(desktopEnterButton, lParams(0, dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
+                startToEndOf(desktopVoiceButton)
                 endOfParent()
                 bottomOfParent()
-                marginStart = dp(16)
+                horizontalWeight = 1f
+                marginStart = dp(DESKTOP_OPERATION_BUTTON_GAP_DP)
+                marginEnd = dp(DESKTOP_OPERATION_BUTTON_GAP_DP)
+                bottomMargin = dp(DESKTOP_OPERATION_BUTTON_VERTICAL_MARGIN_DP)
             })
             add(bottomPaddingSpace, lParams {
                 startToEndOf(leftPaddingSpace)
@@ -465,9 +509,7 @@ class InputView(
         desktopOperationArea.setOnTouchListener { _, event ->
             keyboardWindow.onDesktopPondTouch(event)
         }
-        kawaiiBar.setDesktopVoiceButton(desktopVoiceButton) { event ->
-            keyboardWindow.onDesktopPondTouch(event)
-        }
+        kawaiiBar.setDesktopVoiceButton(desktopVoiceButton)
         windowManager.view.addOnLayoutChangeListener { _, left, top, right, bottom,
                                                        oldLeft, oldTop, oldRight, oldBottom ->
             if (desktopKeyboardMode &&
@@ -476,7 +518,6 @@ class InputView(
                 refreshDesktopKeyboardHeight()
             }
             updateDesktopCompositionPosition()
-            updateDesktopOperationButtonPositions()
         }
         preedit.ui.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateDesktopCompositionPosition()
@@ -550,19 +591,39 @@ class InputView(
         }
         desktopKeyboardMode = enabled
         kawaiiBar.setDesktopKeyboardMode(enabled)
+        if (enabled) {
+            keyboardWindow.setDesktopSystemBottomInset(lastNavigationBottomInset.coerceAtLeast(0))
+        }
         desktopOperationArea.visibility = if (enabled) VISIBLE else GONE
         desktopOperationButtons.filter { it !== desktopVoiceButton }.forEach {
             it.visibility = if (enabled) VISIBLE else GONE
         }
-        desktopExitButton.setPhysicalKeyStyle(
-            enabled,
-            if (enabled) DESKTOP_KEY_COLOR else theme.altKeyBackgroundColor,
-            if (enabled) DESKTOP_KEY_HIGHLIGHT_COLOR else theme.keyPressHighlightColor
-        )
-        desktopExitButton.physicalReleaseSoundEnabled = !enabled
-        desktopExitButton.setIconTintColor(
-            if (enabled) Color.WHITE else theme.altKeyTextColor
-        )
+        desktopOperationButtons.forEach { button ->
+            val isEnter = button === desktopEnterButton
+            button.setPhysicalKeyStyle(
+                enabled,
+                if (enabled && isEnter) DESKTOP_ENTER_PRESSED_COLOR
+                else if (enabled) DESKTOP_KEY_COLOR else theme.altKeyBackgroundColor,
+                if (enabled) DESKTOP_KEY_HIGHLIGHT_COLOR else theme.keyPressHighlightColor,
+                restColor = if (!enabled) null
+                else if (isEnter) DESKTOP_ENTER_KEY_COLOR else DESKTOP_KEY_COLOR
+            )
+            button.physicalReleaseSoundEnabled = !enabled
+            button.setIconTintColor(if (enabled) Color.WHITE else theme.altKeyTextColor)
+            if (button === desktopEnterButton) {
+                // The remote key path already provides the definitive Enter feedback. Playing a
+                // second local key-down sample here made one press sound like two submissions.
+                button.keyDownSoundEnabled = !enabled
+                button.physicalReleaseSoundEnabled = false
+            }
+            if (button === desktopVoiceButton && enabled) {
+                // Voice retains its hold-to-talk lifecycle but intentionally emits no key sound,
+                // release sound, haptic, keycap animation, ripple, or aquarium reaction.
+                button.keyDownSoundEnabled = false
+                button.physicalReleaseSoundEnabled = false
+                button.gestureHapticEnabled = false
+            }
+        }
         if (enabled) {
             bringDesktopButtonsToFront()
             kawaiiBar.view.bringToFront()
@@ -580,7 +641,7 @@ class InputView(
             else if (keyBorder) Color.TRANSPARENT else theme.barColor
         )
         desktopOperationArea.setBackgroundColor(
-            Color.TRANSPARENT
+            if (enabled) DESKTOP_TOOLBAR_COLOR else Color.TRANSPARENT
         )
         keyboardView.setBackgroundColor(if (enabled) DESKTOP_SURFACE_COLOR else Color.TRANSPARENT)
         customBackground.imageDrawable = if (enabled) {
@@ -589,6 +650,11 @@ class InputView(
             theme.backgroundDrawable(keyBorder)
         }
         keyboardView.updateLayoutParams<LayoutParams> {
+            // Keep the desktop surface at the full physical-panel height. The navigation inset
+            // is already applied inside this view by bottomPaddingSpace, and DesktopKeyboard
+            // yields the same amount from its flexible touch header. Subtracting it here as well
+            // shifted the whole keyboard down by one system-bar height and squeezed all six key
+            // rows (most visibly A/B/C/D) even though the upper screen band was still unused.
             height = if (enabled) desktopKeyboardHeightPx else wrapContent
             if (enabled) {
                 topToBottom = unset
@@ -610,7 +676,6 @@ class InputView(
         if (enabled) preedit.ui.root.bringToFront()
         updateKeyboardSize()
         updateDesktopCompositionPosition()
-        updateDesktopOperationButtonPositions()
     }
 
     private fun refreshDesktopKeyboardHeight() {
@@ -652,7 +717,14 @@ class InputView(
         keyboardView.elevation = if (isFloating) dp(FLOATING_KEYBOARD_ELEVATION_DP).toFloat() else 0f
         updateKeyboardSize()
         keyboardView.post {
-            if (isFloating) restoreFloatingKeyboardPosition() else updateFloatingKeyboardPosition(0f, translationY)
+            // The mode may change again before this posted layout callback runs (for example
+            // floating -> docked -> desktop in the same IME transition). Never apply floating
+            // bounds to the new full-screen geometry.
+            if (isFloating && floatingKeyboard.getValue() && !desktopKeyboardMode) {
+                restoreFloatingKeyboardPosition()
+            } else {
+                resetFloatingKeyboardPosition(translationY)
+            }
         }
     }
 
@@ -693,7 +765,12 @@ class InputView(
         floatingResizeCorners.forEach { it.visibility = visibility }
         if (enabled) {
             keyboardView.post {
-                updateFloatingKeyboardPosition(keyboardView.translationX, keyboardView.translationY)
+                if (floatingKeyboard.getValue() && !desktopKeyboardMode) {
+                    updateFloatingKeyboardPosition(
+                        keyboardView.translationX,
+                        keyboardView.translationY
+                    )
+                }
             }
         }
     }
@@ -750,14 +827,20 @@ class InputView(
     }
 
     private fun updateFloatingKeyboardPosition(x: Float, y: Float) {
+        if (!floatingKeyboard.getValue() || desktopKeyboardMode) {
+            resetFloatingKeyboardPosition()
+            return
+        }
         val panelLeft = (width - keyboardView.width) / 2f
         val resizeCornerInset = if (isFloatingResizeMode) dp(FLOATING_RESIZE_CORNER_OFFSET_DP).toFloat() else 0f
         val minX = -panelLeft + resizeCornerInset
         val maxX = width - panelLeft - keyboardView.width - resizeCornerInset
         val minY = -(height - keyboardView.height).toFloat() + resizeCornerInset
         val maxY = -resizeCornerInset
-        keyboardView.translationX = x.coerceIn(minX, maxX)
-        keyboardView.translationY = y.coerceIn(minY, maxY)
+        // During a relayout the parent and keyboard can briefly report incompatible sizes.
+        // Center that axis for the frame instead of passing an empty range to coerceIn().
+        keyboardView.translationX = clampToLayoutRange(x, minX, maxX)
+        keyboardView.translationY = clampToLayoutRange(y, minY, maxY)
         preedit.ui.root.translationX = keyboardView.translationX
         preedit.ui.root.translationY = keyboardView.translationY
         floatingResizeCorners.forEach {
@@ -766,6 +849,20 @@ class InputView(
         }
         updateFloatingHideKeyboardButtonPosition()
     }
+
+    private fun resetFloatingKeyboardPosition(y: Float = 0f) {
+        keyboardView.translationX = 0f
+        keyboardView.translationY = y
+        preedit.ui.root.translationX = 0f
+        preedit.ui.root.translationY = y
+        floatingResizeCorners.forEach {
+            it.translationX = 0f
+            it.translationY = y
+        }
+    }
+
+    private fun clampToLayoutRange(value: Float, min: Float, max: Float): Float =
+        if (min <= max) value.coerceIn(min, max) else (min + max) / 2f
 
     private fun updateFloatingHideKeyboardButtonPosition() {
         if (!floatingKeyboard.getValue()) return
@@ -777,6 +874,10 @@ class InputView(
     }
 
     private fun restoreFloatingKeyboardPosition() {
+        if (!floatingKeyboard.getValue() || desktopKeyboardMode) {
+            resetFloatingKeyboardPosition()
+            return
+        }
         val panelLeft = (width - keyboardView.width) / 2f
         val minX = -panelLeft
         val maxX = panelLeft
@@ -788,6 +889,7 @@ class InputView(
     }
 
     private fun saveFloatingKeyboardPosition() {
+        if (!floatingKeyboard.getValue() || desktopKeyboardMode) return
         val panelLeft = (width - keyboardView.width) / 2f
         val minX = -panelLeft
         val maxX = panelLeft
@@ -822,17 +924,40 @@ class InputView(
         }
         windowManager.view.updateLayoutParams<LayoutParams> {
             if (desktopKeyboardMode) {
+                // KawaiiBar is translated to the bottom of the desktop header. Starting the
+                // keyboard window below its original top slot left another 48dp dead band above
+                // the touchpad. Reclaim that band only in desktop mode.
+                topToBottom = unset
+                topOfParent()
                 bottomToTop = unset
                 // The aquarium is owned by DesktopKeyboard. Let that single surface continue
                 // behind the operation buttons so koi can swim through the complete pond. The
                 // desktop keyboard reserves this button height internally for its key rows.
-                bottomOfParent()
+                above(bottomPaddingSpace)
             } else if (floatingKeyboard.getValue()) {
+                topToTop = unset
+                below(kawaiiBar.view)
                 bottomToTop = unset
                 above(floatingWindowHandle)
             } else {
+                topToTop = unset
+                below(kawaiiBar.view)
                 bottomToTop = unset
                 above(bottomPaddingSpace)
+            }
+        }
+        // These controls are siblings of the keyboard window. Moving only windowManager.view
+        // would leave the visible HOME/BACK/mouse/voice/hide controls inside the navigation bar's
+        // touch-owned region, so all desktop bottom overlays share the same safe-area anchor.
+        (listOf(desktopOperationArea) + desktopOperationButtons).forEach { view ->
+            view.updateLayoutParams<LayoutParams> {
+                if (desktopKeyboardMode) {
+                    bottomToBottom = unset
+                    above(bottomPaddingSpace)
+                } else {
+                    bottomToTop = unset
+                    bottomOfParent()
+                }
             }
         }
         val sidePadding = if (desktopKeyboardMode) {
@@ -871,10 +996,45 @@ class InputView(
     }
 
     override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
+        val displayId = display?.displayId ?: android.view.Display.INVALID_DISPLAY
+        val bottomInset = getNavBarBottomInset(insets)
         bottomPaddingSpace.updateLayoutParams<LayoutParams> {
-            bottomMargin = getNavBarBottomInset(insets)
+            // Assign the current Display's value; never add to the previous margin. This makes
+            // repeated D0/D2 migration and rotation idempotent.
+            bottomMargin = bottomInset
+        }
+        if (displayId != lastInsetsDisplayId || bottomInset != lastNavigationBottomInset) {
+            Log.i(
+                INSETS_LOG_TAG,
+                "apply display=$displayId navigationBottom=$bottomInset desktop=$desktopKeyboardMode"
+            )
+            lastInsetsDisplayId = displayId
+            lastNavigationBottomInset = bottomInset
+            if (desktopKeyboardMode) {
+                // Preserve key/button height. Only the intentionally oversized desktop touchpad
+                // yields the pixels occupied by this Display's system navigation bar.
+                keyboardWindow.setDesktopSystemBottomInset(bottomInset)
+                refreshDesktopKeyboardHeight()
+            }
         }
         return insets
+    }
+
+    /**
+     * Refresh insets from the ViewRoot currently hosting this reusable IME hierarchy. Android 12
+     * may finish cross-display reparenting one frame after the service callback, so issue one
+     * immediate request plus one coalesced posted request. Older queued requests are removed.
+     */
+    fun requestCurrentDisplayInsets(reason: String) {
+        if (disposed) return
+        removeCallbacks(deferredInsetsRefresh)
+        val displayId = display?.displayId ?: android.view.Display.INVALID_DISPLAY
+        Log.i(
+            INSETS_LOG_TAG,
+            "request display=$displayId reason=$reason attached=$isAttachedToWindow"
+        )
+        if (isAttachedToWindow) requestApplyInsets()
+        post(deferredInsetsRefresh)
     }
 
     /**
@@ -945,6 +1105,7 @@ class InputView(
     fun dispose() {
         if (disposed) return
         disposed = true
+        removeCallbacks(deferredInsetsRefresh)
         handleEvents = false
         onImeWindowHidden()
         service.cancelPendingTouchHideRequest()
@@ -981,21 +1142,28 @@ class InputView(
         const val FLOATING_HANDLE_HEIGHT_DP = 48
         const val FLOATING_HIDE_BUTTON_SIZE_DP = 48
         const val FLOATING_HIDE_BUTTON_OFFSET_DP = 12
-        const val DESKTOP_OPERATION_HEIGHT_DP = 44
-        const val DESKTOP_OPERATION_BUTTON_SIZE_DP = 40
+        const val DESKTOP_OPERATION_HEIGHT_DP = 56
+        const val DESKTOP_OPERATION_BUTTON_SIZE_DP = 56
+        const val DESKTOP_OPERATION_ICON_SIZE_DP = 32
+        const val DESKTOP_OPERATION_BUTTON_GAP_DP = 5
+        const val DESKTOP_OPERATION_BUTTON_VERTICAL_MARGIN_DP = 0
         const val DESKTOP_PREEDIT_GAP_DP = 0
         const val DESKTOP_SIDE_PADDING_DP = 0
         const val DESKTOP_VERTICAL_INSET_DP = 20
-        // DesktopKeyboard uses the upper 160dp for its touchpad/buttons; the lower 48dp is the
-        // overlaid candidate/tool rail. This affects global mode only.
-        const val DESKTOP_TOUCHPAD_HEIGHT_DP = 208
+        // Preserve the established input/candidate buffer above F1. Only reduce the actual
+        // pointer header by 48dp so the remote desktop remains visible above the keyboard.
+        const val DESKTOP_TOUCHPAD_HEIGHT_DP = 272
+        const val DESKTOP_TOP_REVEAL_DP = 56
         const val DESKTOP_ROW_COUNT = 6f
         const val DESKTOP_LAYOUT_WIDTH_UNITS = 15f
         const val DESKTOP_MIN_HEIGHT_PERCENT = 35
-        const val DESKTOP_MAX_HEIGHT_PERCENT = 94
         const val DESKTOP_SURFACE_COLOR = 0xFF061827.toInt()
         const val DESKTOP_KEY_COLOR = 0xFF29465C.toInt()
+        const val DESKTOP_ENTER_KEY_COLOR = 0xFF176B72.toInt()
+        const val DESKTOP_ENTER_PRESSED_COLOR = 0xFF0F555D.toInt()
         const val DESKTOP_KEY_HIGHLIGHT_COLOR = 0xFF4EC7E8.toInt()
+        const val DESKTOP_TOOLBAR_COLOR = 0xFF0A2232.toInt()
+        const val INSETS_LOG_TAG = "KBoardInsets"
         const val FLOATING_KEYBOARD_RADIUS_DP = 24
         const val FLOATING_RESIZE_CORNER_SIZE_DP = 48
         const val FLOATING_RESIZE_CORNER_PADDING_DP = 8

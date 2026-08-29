@@ -189,6 +189,7 @@ class DesktopSymKey(
     percentWidth: Float,
     repeat: Boolean = false,
     border: Border = Border.On,
+    viewId: Int = -1,
     soundEffect: InputFeedbacks.SoundEffect = InputFeedbacks.SoundEffect.Standard
 ) : KeyDef(
     Appearance.Text(
@@ -198,6 +199,7 @@ class DesktopSymKey(
         percentWidth = percentWidth,
         variant = Variant.Alternative,
         border = border,
+        viewId = viewId,
         soundEffect = soundEffect
     ),
     buildSet {

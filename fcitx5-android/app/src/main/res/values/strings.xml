@@ -128,6 +128,7 @@
     <string name="dock_keyboard">Dock keyboard</string>
     <string name="desktop_keyboard">Desktop keyboard</string>
     <string name="exit_desktop_keyboard">Exit desktop keyboard</string>
+    <string name="desktop_enter">Enter</string>
     <string name="return_previous_input_method">Return to previous input method</string>
     <string name="move_floating_keyboard">Move floating keyboard</string>
     <string name="resize_floating_keyboard">Resize floating keyboard</string>
@@ -347,5 +348,7 @@
     <string name="desktop_mouse_left">Left</string>
     <string name="desktop_mouse_middle">Middle</string>
     <string name="desktop_mouse_right">Right</string>
+    <string name="desktop_system_home">HOME</string>
+    <string name="desktop_system_back">BACK</string>
     <string name="edit_text_playground">EditText Playground</string>
 </resources>
