@@ -19,7 +19,6 @@ import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
-import android.os.ResultReceiver
 import android.os.SystemClock
 import android.hardware.display.DisplayManager
 import android.text.SpannableString
@@ -39,7 +38,6 @@ import android.view.inputmethod.CursorAnchorInfo
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InlineSuggestionsRequest
 import android.view.inputmethod.InlineSuggestionsResponse
-import android.view.inputmethod.InputBinding
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodSubtype
 import android.widget.FrameLayout
@@ -286,67 +284,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         return job
     }
 
-    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
-    override fun onCreateInputMethodInterface() =
-        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.S) {
-            object : InputMethodImpl() {
-                override fun bindInput(binding: InputBinding) {
-                    try {
-                        super.bindInput(binding)
-                    } catch (error: IllegalStateException) {
-                        if (!Android12ImeFrameworkCompat.canIgnoreBindBeforeInitialize(
-                                Build.VERSION.SDK_INT,
-                                error
-                            )
-                        ) {
-                            throw error
-                        }
-                        Timber.w(
-                            error,
-                            "Ignored Android 12 bindInput-before-initialize framework race"
-                        )
-                    }
-                }
-
-                override fun showSoftInput(flags: Int, resultReceiver: ResultReceiver?) {
-                    try {
-                        super.showSoftInput(flags, resultReceiver)
-                    } catch (error: IllegalStateException) {
-                        if (!Android12ImeFrameworkCompat.canRejectShowBeforeAttachToken(
-                                Build.VERSION.SDK_INT,
-                                error
-                            )
-                        ) {
-                            throw error
-                        }
-                        Timber.w(
-                            error,
-                            "Rejected Android 12 showSoftInput-before-attachToken framework race"
-                        )
-                    }
-                }
-            }
-        } else {
-            super.onCreateInputMethodInterface()
-        }
-
-    override fun onShowInputRequested(flags: Int, configChange: Boolean): Boolean =
-        try {
-            super.onShowInputRequested(flags, configChange)
-        } catch (error: NullPointerException) {
-            if (!Android12ImeFrameworkCompat.canRejectShowAfterDestroy(
-                    Build.VERSION.SDK_INT,
-                    error
-                )
-            ) {
-                throw error
-            }
-            // The framework is tearing down this service instance. Returning false drops only
-            // the stale request; the remote keyboard proxy retries against the next instance.
-            Timber.w(error, "Rejected Android 12 showSoftInput-after-destroy framework race")
-            false
-        }
-
     override fun onCreate() {
         // Initialize InputMethodService and its window before connecting the native daemon.
         // This minimizes the interval in which a vendor IME callback can observe partial state.
@@ -406,6 +343,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     private fun releaseOwnedResources(reason: String) {
         if (ownedResourcesReleased) return
+        retireImeWindow()
         ownedResourcesReleased = true
         Log.i(
             IME_LIFECYCLE_TAG,
@@ -959,6 +897,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
      * This avoids the V900 ROM retargeting the tail of the gesture to KEMI's button underneath.
      */
     fun requestHideSelfAfterTouch(source: View) {
+        cancelPendingShow()
         if (pendingTouchHideRequest != null) return
         source.isEnabled = false
         val host = source.rootView
@@ -1331,6 +1270,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
         hardwareKeyAnomalyFilter.reset()
         // update selection as soon as possible
         // sometimes when restarting input, onUpdateSelection happens before onStartInput, and
@@ -1656,6 +1596,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        cancelPendingShow()
         Timber.d("onFinishInputView: finishingInput=$finishingInput")
         cancelPendingTouchHideRequest()
         releaseDesktopInputStates()
@@ -1675,6 +1616,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onFinishInput() {
+        super.onFinishInput()
         Timber.d("onFinishInput")
         cancelPendingTouchHideRequest()
         clearPendingDesktopMouseMove()
@@ -1686,6 +1628,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onUnbindInput() {
+        // InputMethodService clears currentInputBinding during super.onUnbindInput(). Capture
+        // the editor uid first so the native context is always deactivated for this session.
+        val uid = currentInputBinding?.uid
+        super.onUnbindInput()
         cancelPendingTouchHideRequest()
         clearPendingDesktopMouseMove()
         releaseDesktopInputStates()
@@ -1693,7 +1639,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         cachedKeyEventIndex = 0
         cursorUpdateIndex = 0
         // currentInputBinding can be null on some devices under some special Multi-screen mode
-        val uid = currentInputBinding?.uid ?: return
+        if (uid == null) return
         Timber.d("onUnbindInput: uid=$uid")
         postFcitxJob {
             deactivate(uid)

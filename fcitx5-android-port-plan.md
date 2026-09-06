@@ -594,3 +594,12 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - 当 `mCurClient.displayId=2` 时，`local` 使 `mCurTokenDisplayId=2`，`fallback` 使 `mCurTokenDisplayId=0`；`.62` 连续 12 次双向切换全部成功。
 - 当 `mCurClient.displayId=0` 时，切换为 `local` 后 token 仍由 Android 12 绑定在 D0。日志中出现切屏请求和 IME window 重建不代表最终迁移成功，验收必须同时检查 `mCurClient.displayId` 和 `mCurTokenDisplayId`。
 - 要支持 D0 输入框的键盘显示到 D2，需要目标屏代理输入客户和转发协议；仅调整中继时序、广播延迟或重选 IME 无法绕过这个系统约束。
+
+#### Android 12 IME token 竞态回归（2026-09-06）
+
+- `InputMethodImpl.showSoftInput` 使用 `InputMethod.SHOW_EXPLICIT=1`，而 `requestShowSelf` 使用 `InputMethodManager.SHOW_IMPLICIT=1`，延后重新申请显示不能直接复用原 flags。显式请求转换为 0，隐式请求为 1，强制请求为 2。
+- 原 `WithToken` 请求必须当次结束；token/输入连接就绪后通过系统重新申请，不能在 Handler 中直接调用 `super.showSoftInput`，Android 12 对 targetSdk >= 30 要求系统调用上下文。
+- 已准备本地依赖时，用 `.local-deps/ecm/install/share/ECM/cmake` 作 `ECM_DIR`，`.local-deps/gettext/bin` 放入 PATH，使用本机 JDK 17。签名仍按上述私密环境配置，执行 `./gradlew :app:testDebugUnitTest --tests 'org.fcitx.fcitx5.android.input.ImeShowGateTest' :app:assembleRelease -PkboardApplicationId=com.newlink.kemi.kboard`。本仓库没有 `testReleaseUnitTest` 任务；JVM debug 单元测试不要求安装 Debug APK。
+- 真机脚本：`python3 scripts/test-ime-window-lifecycle.py --serial 192.168.3.75:5555 --interval 3 --output /private/tmp/kboard-token-regression/final-paced`。默认使用 `com.newlink.notes/.NotesActivity` 的搜索框 `(300,180)`，其他设备通过 `--editor/--x/--y` 指定已存在的真实编辑器。三阶段各 20 轮：显示/隐藏、HOME/恢复、同包中继/主服务重建；`--interval` 默认 3 秒，控制测试动作间隔。
+- ADB 触摸前通过 UIAutomator 等待界面空闲，再逐次轮询实际状态；不在应用显示逻辑增加固定延时。Android 12 的 dump 字段 `mIsInputViewShown` 隐藏后可能仍为 true，它是布局决策缓存；必须用 `mInputShown` 和 `mWindowVisible/mDecorViewVisible` 验证实际显示/隐藏。
+- 脚本保存每次 dumpsys、PID、截图、完整 logcat 和 JSON 汇总；无需 `pm clear` 或清理系统日志。回归结束恢复主 IME。

@@ -1864,6 +1864,40 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.62 - 2026-09-06
+
+### 主题
+修复 Android 12 远程办公压力场景中 IME 在 token 尚未设置时显示窗口的主线程崩溃，建立输入生命周期门控。
+
+### 过程
+- 读取 `/private/tmp/kemi-three-platform-stress-20260906-final2/android75-logcat.txt`，正式窗口内确认 5 次 `com.newlink.kemi.kboard` 主线程崩溃：04:47:11.631、05:00:55.847、05:41:46.253、06:48:30.334、07:08:53.106；共同路径为 `showSoftInputWithToken -> showSoftInput -> showWindow -> SoftInputWindow.show`，异常为 `Window token is not set yet.`。
+- Android 12 的显示 Binder 消息与 `initializeInternal/attachToken`、输入连接启动、旧服务销毁存在顺序竞争。上游 `showWindow` 在真正调用 `SoftInputWindow.show` 之前已经设置 `mInShowWindow/mWindowVisible` 等状态，事后吞异常既不能恢复 token，也可能留下错误的可见状态。
+- 75 系统原 APK 包名已为 `com.newlink.kemi.kboard`，版本仍为 1.4.1/152；DEX 中有旧的 after-destroy 兼容字符串，但没有当前源码中的 before-attachToken 捕获字符串，不能只凭相同版本名判断修复已部署。原始堆栈没有组件实例信息，无法把五次崩溃逐一归属主服务或切屏中继；两条显示入口均处理。
+
+### 修改
+- 新增 `ImeShowGate.kt` 和 `TokenReadyInputMethodService.kt`。只有已完成 token 绑定、当前输入生命周期有效、`currentInputStarted` 为真、当前 `InputConnection` 和窗口 attributes token 非空时，才进入框架显示流程。
+- 未就绪请求合并为一个当前生命周期的显示意图；`attachToken` 与 `onStartInput` 的就绪事件触发一次主线程消息交接，再经系统 `requestShowSelf` 获取新的显示调用上下文。没有计时重试或显示异常捕获。原 ResultReceiver 当次返回未改变状态，不保留旧 WithToken 上下文；显式/隐式/强制标志按两套 Android API 的不同含义转换。
+- 隐藏意图、隐藏窗口、输入视图结束、失焦结束、解绑、重绑和服务销毁/被替换时作废旧请求代次。主服务释放资源前即退役显示入口，迟到的就绪回调不能重新显示旧窗口；解绑先保存 uid，再执行父类清理与 native deactivate。
+- `LifecycleInputMethodService.kt` 接入新基类，`FcitxInputMethodService.kt` 接入生命周期和触摸隐藏取消；删除 `Android12ImeFrameworkCompat.kt` 及其测试中原有两类显示异常匹配代码。保留与本次无关的 Android 12 bind-before-initialize 精确兼容。
+- `DisplaySwitchInputMethodService.kt` 明确拒绝显示请求与 `showWindow`：中继只交接 token，不应创建键盘 UI。
+- 新增 `ImeShowGateTest.kt`（10 项，含连续 20 次显示隐藏）及可复用真机脚本 `scripts/test-ime-window-lifecycle.py`（逐次断言系统和真实窗口可见状态、PID、日志，测试结束恢复默认 IME）。
+
+### 验证
+- `ImeShowGateTest` 10/10 与保留的 `Android12ImeFrameworkCompatTest` 3/3 通过；签名 Release 构建、R8、lintVital、`git diff --check` 通过，未安装 Debug APK。
+- 最终验证包为 `com.newlink.kemi.kboard`，1.4.1/152，arm64-v8a；v1/v2 签名验证通过，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。APK SHA-256 `811f6dec318dfae45d1776fb5bf717f86f2f143e61daceb1ac567f615ed9c227`，固定备份 `/private/tmp/kboard-token-regression/final-811f6dec.apk`，设备回读哈希一致。
+- 75（`192.168.3.75:5555`，API 31，D0）最终隔离窗口为 **08:50:47–08:58:00 +0800**：约 3 秒动作间隔，**20 次显示/隐藏 + 20 次 HOME/恢复 + 20 次中继/主服务重建，60/60 通过**。每次同时断言 `mInputShown` 与 `mWindowVisible/mDecorViewVisible`，重建后 token 实际变化；起止 PID 均为 **26438**。
+- 回归窗口完整 logcat 中 **FATAL EXCEPTION、ANR、Window token is not set yet、Input dispatching timed out 均为 0**；最终 HOME 后连续静置检查和清理后 dumpsys 均确认隐藏，未发生迟到回弹。默认 IME 保持主服务，未清除数据。
+- 证据目录 `/private/tmp/kboard-token-regression/final-paced/`：`summary.json`、`progress.json`、逐轮 dumpsys、`logcat.txt`、`device-identity.json`、`exit-info.txt`、两类 JUnit XML 和 `apk-signature.txt`；`show-hide-final.png`、`home-resume-final.png`、`relay-recreate-final.png`、`final-home-hidden.png` 已保存，实际查看显示/隐藏截图正常。
+- 早先 run4 已完成 52 轮，但在 08:45:36 被另一重复任务的覆盖安装中断，系统记录 `stop ... due to installPackageLI`，不是 FATAL/ANR；协调暂停并发操作后重新完成上述同一最终 APK 的 60 轮，不把中断轮次冒充最终通过。
+
+### 待办与风险
+- token/输入连接门控限定于 V900 Android 12/API 31；其他 Android 版本保留系统 InputMethodImpl 显示行为，仅保留销毁保护。已保留系统显式/隐式/强制显示策略，不反射修改框架私有状态。
+- 本轮以 Notes 真实输入连接和同包中继重建进行定向回归；不能替代 Windows/macOS 实际远程连接/断开的完整三小时压力复测。
+- 全量 JVM 测试初次运行 22 项中 1 项失败：既有 `ThemeSerializationTest.version2` 在第 101 行断言“旧主题不需要迁移”失败，主题代码不在本次修改范围；定向输入法测试和 Release 构建通过。
+- canonical main 工作区原有的中继自动启用、native 子模块及 cl.md 改动保留；本次构建使用该既有构建环境，本次提交只包含窗口生命周期修复、相应测试、脚本和文档。没有发布或上传 APK。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。
