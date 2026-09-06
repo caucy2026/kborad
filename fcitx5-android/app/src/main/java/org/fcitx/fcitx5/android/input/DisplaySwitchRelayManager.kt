@@ -32,27 +32,25 @@ object DisplaySwitchRelayManager {
         }
 
         return runCatching {
-            // InputMethodManagerService validates and persists this list; writing the secure
-            // setting directly is not enough because Android 12 sanitizes unregistered changes.
-            // Arguments are fixed application constants and never contain external input.
-            val process = ProcessBuilder("/system/bin/ime", "enable", relayId)
-                .redirectErrorStream(true)
-                .start()
-            val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
-            val exitCode = process.waitFor()
-            val enabled = exitCode == 0 && containsIme(readEnabledImes(context), relayId)
+            // The APK already owns WRITE_SECURE_SETTINGS on platform-signed V900 builds. Do not
+            // invoke `/system/bin/ime`: its Binder command is restricted to the shell/root UID,
+            // so a child process launched by KBoard still exits with code 255. Updating the
+            // current user's secure setting through ContentResolver both preserves every existing
+            // IME/subtype entry and notifies InputMethodManagerService's settings observer.
+            val written = Settings.Secure.putString(
+                context.contentResolver,
+                Settings.Secure.ENABLED_INPUT_METHODS,
+                appendIme(current, relayId)
+            )
+            val enabled = written && containsIme(readEnabledImes(context), relayId)
             if (enabled) {
                 Timber.i("Enabled same-package display-switch IME relay")
             } else {
-                Timber.e(
-                    "Failed to enable same-package display-switch IME relay: exit=%d output=%s",
-                    exitCode,
-                    output
-                )
+                Timber.e("Failed to enable same-package display-switch IME relay: written=%s", written)
             }
             enabled
         }.getOrElse {
-            Timber.e(it, "Failed to invoke InputMethodManager for display-switch relay")
+            Timber.e(it, "Failed to update enabled input methods for display-switch relay")
             false
         }
     }
@@ -65,4 +63,10 @@ object DisplaySwitchRelayManager {
 
     internal fun containsIme(enabledInputMethods: String, imeId: String): Boolean =
         enabledInputMethods.split(':').any { it.substringBefore(';') == imeId }
+
+    internal fun appendIme(enabledInputMethods: String, imeId: String): String = when {
+        containsIme(enabledInputMethods, imeId) -> enabledInputMethods
+        enabledInputMethods.isBlank() -> imeId
+        else -> "$enabledInputMethods:$imeId"
+    }
 }

@@ -1864,6 +1864,34 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.61 - 2026-09-04
+
+### 主题
+修复平台签名 KBoard 冷启动后无法自动启用同包跨屏中继的问题，并在 62 真机验证系统权限路径。
+
+### 过程
+- 62 当前系统默认输入法已是主 `FcitxInputMethodService`，但 `enabled_input_methods` 只有主服务，系统可发现的 `DisplaySwitchInputMethodService` 没有被启用，因此用户看不到可用的跨屏中继。
+- `dumpsys package` 确认正式包虽安装在 `/data/app`、UID 为普通应用 UID，但平台签名已经使 `WRITE_SECURE_SETTINGS` 获得 `granted=true`；系统签名能力本身没有问题。
+- 冷启动旧版 `c7bdcd1e/142` 后捕获到 `Failed to enable same-package display-switch IME relay: exit=255`。根因是旧实现从应用进程启动 `/system/bin/ime enable`，子进程仍继承 KBoard 应用 UID；该命令的 Binder shell 接口只接受 shell/root 身份，平台签名不会把子进程变成 shell。
+- 在 62 保留主 KBoard、只通过 Secure Settings 追加同包中继后，Android 12 的 InputMethodManagerService 立即识别两个服务，默认输入法仍保持主 KBoard，证明既有平台签名权限足以完成自动配置。
+
+### 修改
+- `DisplaySwitchRelayManager.kt` 移除 `/system/bin/ime` 子进程，改为使用已获授的 `WRITE_SECURE_SETTINGS` 通过 `Settings.Secure.putString()` 更新当前用户的 `ENABLED_INPUT_METHODS`。
+- 新实现严格保留已有输入法及 subtype 字段，只追加固定的同包 `DisplaySwitchInputMethodService`，不修改 `DEFAULT_INPUT_METHOD`；写入后重新读取并确认中继存在。
+- 增加列表处理单元测试源码，覆盖保留第三方 IME/subtype、空列表追加、已有中继不重复及 subtype 后缀识别。
+
+### 验证
+- 只构建正式 Release；`assembleRelease`、R8、`lintVitalRelease` 均成功，输出为 `fcitx5-android/build/kboard.apk`，未构建或安装 Debug APK。
+- 在 62 先将启用列表恢复为只有主 KBoard，再通过 `adb install -r` 无损覆盖正式 Release；未执行 `pm clear`，默认输入法和用户配置均保留。
+- 覆盖后冷启动，`enabled_input_methods` 自动变为主服务加同包跨屏中继；`default_input_method` 仍为主 `FcitxInputMethodService`。
+- 62 回读版本为 `1.4.1/152`，`WRITE_SECURE_SETTINGS` 与 `INJECT_EVENTS` 均为 `granted=true`；再次重启后列表无重复项，crash buffer、`AndroidRuntime` 和 `KBoardCrash` 均无新增异常。
+
+### 待办与风险
+- 应用安装后若既未被系统绑定为默认 IME、也未启动任何 KBoard 组件，Android 不会仅因平台签名自动创建应用进程；V900 量产系统已默认绑定主 KBoard，因此开机首次绑定会执行自动补齐，不要求用户进入设置手工启用中继。
+- 本轮只验证系统权限与中继自动启用闭环，没有自动点击跨屏按钮改变用户当前 Display；D0/D2 的既有中继切换逻辑未修改。
+
+---
+
 ## V1.62 - 2026-09-06
 
 ### 主题
