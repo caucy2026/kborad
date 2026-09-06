@@ -1,0 +1,377 @@
+{
+  "status": "completed",
+  "start": "2026-09-06T09:50:18.089640+08:00",
+  "end": "2026-09-06T12:41:14.155704+08:00",
+  "elapsed_s": 10256.095,
+  "metrics": {
+    "pad:com.newlink.kemi.kboard": {
+      "pss_kb": {
+        "first": 100568,
+        "last": 100483,
+        "min": 99155,
+        "max": 113446,
+        "median": 102795.0,
+        "delta": -85,
+        "delta_per_hour": -29.846265398258904,
+        "regression_per_hour": 1421.4158473201746,
+        "samples": 166
+      },
+      "rss_kb": {
+        "first": 241000,
+        "last": 242396,
+        "min": 239768,
+        "max": 255096,
+        "median": 244254.0,
+        "delta": 1396,
+        "delta_per_hour": 490.18101759964037,
+        "regression_per_hour": 1897.3020169738654,
+        "samples": 166
+      },
+      "native_pss_kb": {
+        "first": 37963,
+        "last": 36371,
+        "min": 36371,
+        "max": 41623,
+        "median": 38587.0,
+        "delta": -1592,
+        "delta_per_hour": -559.0029942826844,
+        "regression_per_hour": 324.5722998627725,
+        "samples": 166
+      },
+      "native_alloc_kb": {
+        "first": 41130,
+        "last": 38205,
+        "min": 38205,
+        "max": 44704,
+        "median": 40709.0,
+        "delta": -2925,
+        "delta_per_hour": -1027.0626622342036,
+        "regression_per_hour": 224.5440835718658,
+        "samples": 166
+      },
+      "java_pss_kb": {
+        "first": 12564,
+        "last": 12676,
+        "min": 12260,
+        "max": 22156,
+        "median": 13452.0,
+        "delta": 112,
+        "delta_per_hour": 39.326843818882324,
+        "regression_per_hour": 667.8456928562944,
+        "samples": 166
+      },
+      "cpu_pct_one_core": {
+        "first": 8.241,
+        "last": 3.798,
+        "min": 3.798,
+        "max": 9.084,
+        "median": 8.111,
+        "delta": -4.443,
+        "delta_per_hour": -1.569502194190522,
+        "regression_per_hour": -0.058168947871942926,
+        "samples": 165
+      },
+      "fd_count": {
+        "first": 145,
+        "last": 105,
+        "min": 104,
+        "max": 190,
+        "median": 147.0,
+        "delta": -40,
+        "delta_per_hour": -14.045301363886544,
+        "regression_per_hour": -1.1000832969924148,
+        "samples": 166
+      },
+      "threads": {
+        "first": 47,
+        "last": 52,
+        "min": 47,
+        "max": 52,
+        "median": 51.0,
+        "delta": 5,
+        "delta_per_hour": 1.755662670485818,
+        "regression_per_hour": 1.3056707644097825,
+        "samples": 166
+      },
+      "ashmem_pss_kb": {
+        "first": 131,
+        "last": 131,
+        "min": 131,
+        "max": 131,
+        "median": 131.0,
+        "delta": 0,
+        "delta_per_hour": 0.0,
+        "regression_per_hour": 0.0,
+        "samples": 166
+      },
+      "ashmem_rss_kb": {
+        "first": 656,
+        "last": 656,
+        "min": 656,
+        "max": 656,
+        "median": 656.0,
+        "delta": 0,
+        "delta_per_hour": 0.0,
+        "regression_per_hour": 0.0,
+        "samples": 166
+      }
+    },
+    "pad:com.newlinksz.kemi.remote": {
+      "pss_kb": {
+        "first": 384292,
+        "last": 402472,
+        "min": 384292,
+        "max": 407517,
+        "median": 401420.0,
+        "delta": 18180,
+        "delta_per_hour": 6383.58884725151,
+        "regression_per_hour": 6782.493019190675,
+        "samples": 166
+      },
+      "rss_kb": {
+        "first": 610452,
+        "last": 641388,
+        "min": 610452,
+        "max": 646524,
+        "median": 639894.0,
+        "delta": 30936,
+        "delta_per_hour": 10862.63501532303,
+        "regression_per_hour": 11397.023153861968,
+        "samples": 166
+      },
+      "native_pss_kb": {
+        "first": 208891,
+        "last": 214079,
+        "min": 208343,
+        "max": 219011,
+        "median": 213205.0,
+        "delta": 5188,
+        "delta_per_hour": 1821.6754092156673,
+        "regression_per_hour": 2171.855631021347,
+        "samples": 166
+      },
+      "native_alloc_kb": {
+        "first": 220933,
+        "last": 226839,
+        "min": 220933,
+        "max": 230923,
+        "median": 226361.5,
+        "delta": 5906,
+        "delta_per_hour": 2073.7885441071185,
+        "regression_per_hour": 2153.76755509705,
+        "samples": 166
+      },
+      "java_pss_kb": {
+        "first": 3732,
+        "last": 3704,
+        "min": 3704,
+        "max": 4060,
+        "median": 3920.0,
+        "delta": -28,
+        "delta_per_hour": -9.831709995766902,
+        "regression_per_hour": 7.78805173659356,
+        "samples": 166
+      },
+      "cpu_pct_one_core": {
+        "first": 158.752,
+        "last": 203.778,
+        "min": 63.26,
+        "max": 203.778,
+        "median": 161.279,
+        "delta": 45.02599999999998,
+        "delta_per_hour": 15.905559050468332,
+        "regression_per_hour": 5.129109248348726,
+        "samples": 165
+      },
+      "fd_count": {
+        "first": 264,
+        "last": 264,
+        "min": 264,
+        "max": 264,
+        "median": 264.0,
+        "delta": 0,
+        "delta_per_hour": 0.0,
+        "regression_per_hour": 0.0,
+        "samples": 166
+      },
+      "threads": {
+        "first": 122,
+        "last": 131,
+        "min": 122,
+        "max": 147,
+        "median": 135.0,
+        "delta": 9,
+        "delta_per_hour": 3.1601924986393612,
+        "regression_per_hour": 1.5836001382482507,
+        "samples": 166
+      },
+      "ashmem_pss_kb": {
+        "first": 86403,
+        "last": 99107,
+        "min": 86403,
+        "max": 99107,
+        "median": 99016.0,
+        "delta": 12704,
+        "delta_per_hour": 4460.787278079383,
+        "regression_per_hour": 4547.0982319763225,
+        "samples": 166
+      },
+      "ashmem_rss_kb": {
+        "first": 173316,
+        "last": 198724,
+        "min": 173316,
+        "max": 198724,
+        "median": 198542.0,
+        "delta": 25408,
+        "delta_per_hour": 8921.574556158766,
+        "regression_per_hour": 9094.196463952645,
+        "samples": 166
+      }
+    },
+    "mac:main": {
+      "rss_kb": {
+        "first": 151664,
+        "last": 254720,
+        "min": 147248,
+        "max": 282608,
+        "median": 245088.0,
+        "delta": 103056,
+        "delta_per_hour": 36186.31090441978,
+        "regression_per_hour": 19272.105875895595,
+        "samples": 166
+      },
+      "physical_footprint_kb": {
+        "first": 639897.6,
+        "last": 898048.0,
+        "min": 639897.6,
+        "max": 946483.2,
+        "median": 839270.3999999999,
+        "delta": 258150.40000000002,
+        "delta_per_hour": 90644.99528897229,
+        "regression_per_hour": 75497.80227189425,
+        "samples": 34
+      },
+      "cpu_pct_one_core": {
+        "first": 10.912,
+        "last": 13.519,
+        "min": 8.897,
+        "max": 23.139,
+        "median": 15.371,
+        "delta": 2.6069999999999993,
+        "delta_per_hour": 0.9209299614571791,
+        "regression_per_hour": -0.7578709933856459,
+        "samples": 165
+      },
+      "cpu_pct_ps": {
+        "first": 12.1,
+        "last": 8.6,
+        "min": 1.3,
+        "max": 48.8,
+        "median": 10.65,
+        "delta": -3.5,
+        "delta_per_hour": -1.2289637494708627,
+        "regression_per_hour": -0.19831142859274994,
+        "samples": 166
+      },
+      "fd_count": {
+        "first": 98,
+        "last": 98,
+        "min": 95,
+        "max": 102,
+        "median": 98.0,
+        "delta": 0,
+        "delta_per_hour": 0.0,
+        "regression_per_hour": 1.506949635610841,
+        "samples": 166
+      },
+      "threads": {
+        "first": 75,
+        "last": 78,
+        "min": 73,
+        "max": 91,
+        "median": 79.0,
+        "delta": 3,
+        "delta_per_hour": 1.0533974995464537,
+        "regression_per_hour": 1.1989236806397046,
+        "samples": 166
+      }
+    },
+    "mac:--cm": {
+      "rss_kb": {
+        "first": 100240,
+        "last": 107616,
+        "min": 53648,
+        "max": 115312,
+        "median": 93656.0,
+        "delta": 7376,
+        "delta_per_hour": 2589.953318884881,
+        "regression_per_hour": 4568.05532333294,
+        "samples": 166
+      },
+      "physical_footprint_kb": {
+        "first": 79052.8,
+        "last": 89395.2,
+        "min": 79052.8,
+        "max": 91648.0,
+        "median": 89139.2,
+        "delta": 10342.399999999994,
+        "delta_per_hour": 3631.552766436412,
+        "regression_per_hour": 716.4123190355185,
+        "samples": 34
+      },
+      "cpu_pct_one_core": {
+        "first": 1.367,
+        "last": 1.803,
+        "min": 1.125,
+        "max": 2.537,
+        "median": 1.635,
+        "delta": 0.43599999999999994,
+        "delta_per_hour": 0.15401820605881478,
+        "regression_per_hour": -0.11864470539023046,
+        "samples": 165
+      },
+      "cpu_pct_ps": {
+        "first": 1.6,
+        "last": 1.4,
+        "min": 0.0,
+        "max": 3.3,
+        "median": 0.2,
+        "delta": -0.20000000000000018,
+        "delta_per_hour": -0.07022649996976364,
+        "regression_per_hour": -0.08005840561819212,
+        "samples": 166
+      },
+      "fd_count": {
+        "first": 46,
+        "last": 46,
+        "min": 45,
+        "max": 47,
+        "median": 46.0,
+        "delta": 0,
+        "delta_per_hour": 0.0,
+        "regression_per_hour": 0.5155256162594051,
+        "samples": 166
+      },
+      "threads": {
+        "first": 32,
+        "last": 30,
+        "min": 29,
+        "max": 33,
+        "median": 30.0,
+        "delta": -2,
+        "delta_per_hour": -0.7022649996976358,
+        "regression_per_hour": -0.37863258690283663,
+        "samples": 166
+      }
+    }
+  },
+  "events": [
+    {
+      "at": "2026-09-06T11:27:33.802865+08:00",
+      "kind": "sample_error",
+      "role": "mac:85134",
+      "error": "Command '['ps', '-p', '85134', '-o', 'rss=,%cpu=,time=,lstart=']' returned non-zero exit status 1."
+    }
+  ],
+  "note": "Sidecar began after IME stress start; report exact coverage. macOS installed v1.4.120(227) predates autoreleasepool source fix."
+}
