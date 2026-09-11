@@ -1976,9 +1976,13 @@ KEMI 设置页品牌化与动态名称中文化。
 - 最终正式产物包名 `com.newlink.kemi.kboard`、版本 `1.4.1/152`，v1/v2 签名有效，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
 - 最终 APK 位于 `fcitx5-android/build/kboard.apk`，SHA-256 为 `1089f12cc9c64e868e21736402e9dedab8bfdc7bd450334588c2fb212446fed7`。
 - 构建复核期间曾误传 legacy applicationId override，生成过 `org.fcitx.fcitx5.android` 临时包；该包未安装、未复制到 bin、未发布且已被上述正式包覆盖，不作为有效交付物。
+- 正式 APK 已通过 `adb install -r` 覆盖安装到 Android 12 设备 `192.168.3.63:5555`，未执行 `pm clear`；设备回读为 `com.newlink.kemi.kboard`、`1.4.1/152`，`WRITE_SECURE_SETTINGS` 与 `INJECT_EVENTS` 均为 `granted=true`。
+- 测试前设备默认输入法为历史兼容包 `org.fcitx.fcitx5.android/.input.FcitxInputMethodService`。验收时切换到正式包主服务及同包跨屏中继，确认 `mCurMethodId=com.newlink.kemi.kboard/...FcitxInputMethodService`、PID `13029`、D0 输入窗口可见。为避免设备继续启动未包含本修复的旧包，最终默认输入法保持为正式 `com.newlink.kemi.kboard` 主服务；enabled 列表保留正式主服务、正式中继及原两个 `org.fcitx` 服务，旧包未删除，可随时回滚且没有清除任一包数据。
+- 在 Notes 空白搜索框进入摸鱼全局键盘后，以真实触摸坐标执行 `Caps -> A -> Caps -> A`，字段结果为 `Aa`：首次 Caps 后大写、再次 Caps 后恢复小写，功能链路通过。进程 PID 始终为 `13029`；测试后 `ApplicationExitInfo` 没有新增崩溃、ANR 或异常退出记录。
 
 ### 待办与风险
-- `192.168.3.63:5555` 当前返回 `No route to host`，本轮不能完成 Windows/macOS 远端的 Caps 与组合键真机验收；设备恢复在线后必须覆盖安装正式包，再检查 Caps 两次切换、Cmd/Ctrl/Alt/Shift 组合、中文预编辑控制键和隐藏时补 UP。
+- 63 的 KEMI 远程办公当前只有 `MainActivity`，没有活动的 `KeyboardProxyActivity` 或已连接远程桌面；因此 Notes 结果只证明正式 KBoard 的本机 Caps/字母路径，不能替代 Windows/macOS 对 Cmd/Ctrl/Alt/Shift 组合键的远端验收。目标主机建立真实会话后仍需逐项检查 Cmd+C/V/A、Cmd+Shift+3/4/5、Ctrl+C/V、Alt+F4、Shift+Tab 与隐藏时补 UP。
+- 自动化尝试用分离的 `input motionevent` 构造组合键不能形成 Android 多触点，同轮结果已判为无效且没有写成通过；随后通过同包中继重建输入连接清理事件状态，没有遗留修饰键状态。
 - Caps 的本地视觉/英文状态从本次点击开始与远端同步；如果连接远端时远端本来就处于 Caps 开启状态，标准输入协议没有反向状态查询，首次显示可能与远端初始锁定态不同，按一次 Caps 后恢复同步。
 
 ---
