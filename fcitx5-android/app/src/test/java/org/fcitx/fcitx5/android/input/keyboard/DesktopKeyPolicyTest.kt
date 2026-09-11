@@ -127,6 +127,12 @@ class DesktopKeyPolicyTest {
     }
 
     @Test
+    fun desktopEnglishPrintableKeysBypassFcitxButChineseKeepsPreedit() {
+        assertTrue(DesktopKeyPolicy.shouldSendPrintableDirectly(chineseInputMethod = false))
+        assertFalse(DesktopKeyPolicy.shouldSendPrintableDirectly(chineseInputMethod = true))
+    }
+
+    @Test
     fun shortcutControlKeysBypassActiveComposition() {
         listOf(
             FcitxKeyMapping.FcitxKey_Return,

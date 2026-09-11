@@ -744,11 +744,14 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     /** Send one complete physical-style desktop key press to the current editor. */
-    fun sendDesktopKeyPress(keyCode: Int) {
+    fun sendDesktopKeyPress(keyCode: Int, requestedMetaState: Int = 0) {
         if (keyCode == KeyEvent.KEYCODE_UNKNOWN || ownedResourcesReleased) return
         val connection = currentInputConnection ?: return
         val downTime = SystemClock.uptimeMillis()
-        val metaState = KeyStates(*pressedDesktopModifiers.keys.toTypedArray()).metaState
+        // The service-owned set is authoritative for held modifier lifetimes. The action also
+        // carries lock state (notably CapsLock), which has no separate held-key entry.
+        val metaState = KeyStates(*pressedDesktopModifiers.keys.toTypedArray()).metaState or
+            requestedMetaState
         sendDownKeyEvent(downTime, keyCode, metaState, connection)
         sendUpKeyEvent(downTime, keyCode, metaState, connection)
     }

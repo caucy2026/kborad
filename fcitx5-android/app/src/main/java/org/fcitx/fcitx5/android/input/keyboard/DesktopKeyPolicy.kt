@@ -46,6 +46,14 @@ internal object DesktopKeyPolicy {
     fun hasShortcutModifier(states: Set<KeyState>): Boolean =
         states.any { it == KeyState.Ctrl || it == KeyState.Alt || it == KeyState.Meta }
 
+    /**
+     * The desktop English layout represents a physical keyboard. Sending its printable keys
+     * through Fcitx can leave text in the local engine without producing commitText for proxy
+     * editors, so bypass Fcitx. Chinese layouts still require the complete preedit pipeline.
+     */
+    fun shouldSendPrintableDirectly(chineseInputMethod: Boolean): Boolean =
+        !chineseInputMethod
+
     /** Resolve the physical key represented by a one-character desktop key definition. */
     fun shortcutKeySym(text: String): KeySym? {
         val character = text.singleOrNull() ?: return null

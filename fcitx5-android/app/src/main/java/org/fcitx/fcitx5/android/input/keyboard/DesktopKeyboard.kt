@@ -430,6 +430,35 @@ class DesktopKeyboard private constructor(
             }
         }
 
+        // In desktop English mode printable keys must behave like a physical keyboard. The
+        // proxy editor does not always receive a final commitText when these keys first enter
+        // Fcitx, which made visible A-Z/number/symbol keys appear dead in a remote session.
+        // Chinese keeps the Fcitx path because its lowercase pinyin preedit and candidates are
+        // intentional. Ctrl+Space was handled above and remains the language switch gesture.
+        if (DesktopKeyPolicy.shouldSendPrintableDirectly(isChineseInputMethodActive())) {
+            val physicalSym = when (action) {
+                is KeyAction.FcitxKeyAction -> DesktopKeyPolicy.shortcutKeySym(action.act)
+                is KeyAction.SymAction -> action.sym.takeIf {
+                    it.sym == FcitxKeyMapping.FcitxKey_space
+                }
+                else -> null
+            }
+            if (physicalSym != null) {
+                val physicalStates = modifierStates.toMutableSet().apply {
+                    if (capsLockEnabled) add(KeyState.CapsLock)
+                }
+                super.onAction(
+                    KeyAction.DesktopKeyAction(
+                        physicalSym,
+                        KeyStates(*physicalStates.toTypedArray()),
+                        shortcutChord = true
+                    ),
+                    source
+                )
+                return
+            }
+        }
+
         val states = if (modifierStates.any { it in ShortcutModifiers }) {
             KeyStates(*modifierStates.toTypedArray())
         } else {

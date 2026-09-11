@@ -112,7 +112,7 @@ class CommonKeyActionListener :
                             action.shortcutChord
                         )
                     ) {
-                        service.sendDesktopKeyPress(action.sym.keyCode)
+                        service.sendDesktopKeyPress(action.sym.keyCode, action.states.metaState)
                     } else {
                         service.postFcitxJob {
                             sendKey(action.sym, action.states)

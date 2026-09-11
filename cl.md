@@ -1989,6 +1989,38 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.65 - 2026-09-11
+
+### 主题
+修复摸鱼全局键盘英文字符与空格在真实远程代理输入框中无响应，并在 Android 12 设备 75 与 macOS 远端完成中英文联合验证。
+
+### 过程
+- 63 的真实 Windows 会话中，Ctrl、Alt、Command 的独立 DOWN/UP 能完整进入 KEMI 远程通道，但全局英文键盘点击 A 和空格没有改变远端输入框；普通键盘 Backspace 能清除通过系统键事件写入的测试字符，证明远端焦点与代理连接有效。
+- 源码定位到全局英文字符仍以 `FcitxKeyAction` 进入本地 Fcitx。代理编辑器虽然实现了 `commitText` 转发，但英文物理键进入 Fcitx 后不保证形成最终提交，因此键帽有触摸反馈而远端没有字符。
+- 直接把所有字符改为物理键会破坏中文拼音预编辑、候选和删除语义，因此修复按当前输入法语言分流：英文使用标准 Android `KeyEvent`，中文继续使用 Fcitx。
+
+### 修改
+- `DesktopKeyPolicy.kt` 增加桌面英文可打印键直发策略；中文输入法明确保留预编辑路径。
+- `DesktopKeyboard.kt` 在全局英文模式将单字符字母、数字、符号及空格转换成 `DesktopKeyAction`；Ctrl+Space 仍优先切换中英文，中文小写拼音、候选栏和预编辑逻辑不变。
+- `CommonKeyActionListener.kt` 将动作携带的 `metaState` 传给物理键发送接口。
+- `FcitxInputMethodService.kt` 合并服务端真实按住的 Ctrl/Alt/Shift/Meta 状态与动作携带的 CapsLock 等锁定状态，使英文物理字符、Caps、Shift 和组合键共享一致的元状态。
+- `DesktopKeyPolicyTest.kt` 增加英文可打印键直发、中文保留 Fcitx 的针对性测试。
+
+### 验证
+- Release Kotlin 与测试源码编译通过；正式 `assembleRelease`、R8、`lintVitalRelease` 共 287 个任务成功。Gradle 9.4.1 的测试执行器仍因无法加载 `worker.org.gradle.process.internal.worker.GradleWorkerMain` 退出，因此未将测试源码编译成功表述为 JUnit 已运行通过。
+- 正式 APK 为 `fcitx5-android/build/kboard.apk`，包名 `com.newlink.kemi.kboard`、`versionName=1.4.1`、`versionCode=152`，SHA-256 `805cf30e1a0fc4b4d0c9d5efa0f29676aa3ba389235dd4bbf3c2edcc31479a53`；v1/v2 签名有效，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- APK 已通过 `adb install -r` 无损覆盖到 `192.168.3.75:5555`，未执行 `pm clear`；默认输入法仍是正式主服务，同包跨屏中继继续启用，设备安装 APK 哈希与本地制品一致。
+- 75 连接真实 macOS 远端 `260262802` 后，全局英文键盘输入 `A -> Space -> A`，远端显示 `a a`；Backspace 能清空；`Caps -> A` 显示 `A`。切换中文后输入 `ni` 会进入本地预编辑并出现候选，未在选词前泄漏到远端。
+- 联合验证后 KBoard PID 为 `11176`，输入窗口仍在 Display 2 可见；`ApplicationExitInfo` 没有新增异常退出，最近一条是覆盖安装产生的 `installPackageLI` 正常停止。
+
+### 待办与风险
+- 仓库现有单元测试能验证路由策略、KeySym 映射和元状态计算，但没有能够真实构造两个独立触点、穿过 `CustomGestureView` 命中不同键帽并检查远端结果的可靠 instrumentation 测试。
+- `adb input keycombination` 绕过 KBoard；两个并发 `adb input` 进程在设备上也没有形成稳定的同一多触点手势，实测只得到小写 `a`。这些方法不能作为 Shift/Ctrl/Alt/Meta 按住再点 A 的通过证据。
+- 多指组合键的可靠验收方式仍是真人同时按住修饰键和字符键，结合 KBoard/KEMI 的 DOWN、主键、UP 日志及远端可见结果；若要自动化，需要新增能向同一个 IME View 注入单个多指 `MotionEvent` 序列的专用 Android instrumentation 测试入口。
+- 本机构建时系统数据卷仅剩约 116MiB。已清理未被使用、可再生成的 Gradle 8.13 缓存约 4.8GiB，并将构建临时目录转移到 ORICO；APFS 系统更新快照使 `df` 未立即回收对应物理空间。没有删除源码、正式制品、签名材料、测试报告或用户文件。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。
