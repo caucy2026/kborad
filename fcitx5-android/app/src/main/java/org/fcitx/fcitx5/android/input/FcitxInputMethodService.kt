@@ -743,6 +743,16 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
     }
 
+    /** Send one complete physical-style desktop key press to the current editor. */
+    fun sendDesktopKeyPress(keyCode: Int) {
+        if (keyCode == KeyEvent.KEYCODE_UNKNOWN || ownedResourcesReleased) return
+        val connection = currentInputConnection ?: return
+        val downTime = SystemClock.uptimeMillis()
+        val metaState = KeyStates(*pressedDesktopModifiers.keys.toTypedArray()).metaState
+        sendDownKeyEvent(downTime, keyCode, metaState, connection)
+        sendUpKeyEvent(downTime, keyCode, metaState, connection)
+    }
+
     fun sendDesktopMouseMove(dx: Int, dy: Int) {
         if (dx == 0 && dy == 0 || ownedResourcesReleased) return
         val connection = currentInputConnection ?: return

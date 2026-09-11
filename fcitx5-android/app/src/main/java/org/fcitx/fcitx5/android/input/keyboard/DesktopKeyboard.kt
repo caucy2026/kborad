@@ -187,24 +187,6 @@ class DesktopKeyboard private constructor(
         private const val DESKTOP_BACKSPACE_BOTTOM_COLOR = 0x98431E2A.toInt()
         private const val DESKTOP_BACKSPACE_STROKE_COLOR = 0xFFE17882.toInt()
 
-        // These keys model a physical desktop keyboard and must leave the IME as standard
-        // Android KeyEvents. Marking them Virtual makes the service's text-oriented branch
-        // consume keys without Unicode (Esc/F-keys/Caps/Tab/Up/Down) before a remote host can
-        // receive them. Keep this list local to DesktopKeyboard so ordinary layouts retain their
-        // composition-aware virtual-key behaviour.
-        private val RawDesktopControlKeySyms = buildSet {
-            add(FcitxKeyMapping.FcitxKey_Escape)
-            addAll(FcitxKeyMapping.FcitxKey_F1..FcitxKeyMapping.FcitxKey_F12)
-            add(FcitxKeyMapping.FcitxKey_BackSpace)
-            add(FcitxKeyMapping.FcitxKey_Tab)
-            add(FcitxKeyMapping.FcitxKey_Caps_Lock)
-            add(FcitxKeyMapping.FcitxKey_Return)
-            add(FcitxKeyMapping.FcitxKey_Left)
-            add(FcitxKeyMapping.FcitxKey_Right)
-            add(FcitxKeyMapping.FcitxKey_Up)
-            add(FcitxKeyMapping.FcitxKey_Down)
-        }
-
         private val ShortcutModifiers = setOf(KeyState.Ctrl, KeyState.Alt, KeyState.Meta)
 
         private fun Context.dp(value: Int) =
@@ -394,6 +376,7 @@ class DesktopKeyboard private constructor(
     private val modifierStates = linkedSetOf<KeyState>()
     private val heldModifierKeys = linkedMapOf<TextKeyView, KeyState>()
     private val textKeys by lazy { allViews.filterIsInstance<TextKeyView>() }
+    private var capsLockEnabled = false
     private var currentImeName: String = ""
     private var currentImeLanguageCode: String = ""
 
@@ -411,11 +394,43 @@ class DesktopKeyboard private constructor(
             return
         }
 
-        val isRawDesktopControlKey = action is KeyAction.SymAction &&
-                action.sym.sym in RawDesktopControlKeySyms
-        val states = if (
-            modifierStates.any { it in ShortcutModifiers } || isRawDesktopControlKey
+        if (action is KeyAction.SymAction && DesktopKeyPolicy.isRawControl(action.sym.sym)) {
+            if (action.sym.sym == FcitxKeyMapping.FcitxKey_Caps_Lock) {
+                capsLockEnabled = !capsLockEnabled
+                updateModifierKeys()
+            }
+            val states = KeyStates(*modifierStates.toTypedArray())
+            super.onAction(
+                KeyAction.DesktopKeyAction(
+                    action.sym,
+                    states,
+                    shortcutChord = DesktopKeyPolicy.hasShortcutModifier(modifierStates)
+                ),
+                source
+            )
+            return
+        }
+
+        // A desktop chord is not text composition. Send its physical main key through the same
+        // InputConnection KeyEvent path as Caps/F-keys so KEMI receives Ctrl/Alt/Command plus the
+        // main key. Keep unmodified characters (and Shift-only typing) in Fcitx for Chinese input.
+        if (action is KeyAction.FcitxKeyAction &&
+            DesktopKeyPolicy.hasShortcutModifier(modifierStates)
         ) {
+            DesktopKeyPolicy.shortcutKeySym(action.act)?.let { sym ->
+                super.onAction(
+                    KeyAction.DesktopKeyAction(
+                        sym,
+                        KeyStates(*modifierStates.toTypedArray()),
+                        shortcutChord = true
+                    ),
+                    source
+                )
+                return
+            }
+        }
+
+        val states = if (modifierStates.any { it in ShortcutModifiers }) {
             KeyStates(*modifierStates.toTypedArray())
         } else {
             KeyStates(*(modifierStates + KeyState.Virtual).toTypedArray())
@@ -424,7 +439,12 @@ class DesktopKeyboard private constructor(
             is KeyAction.FcitxKeyAction -> {
                 val shifted = KeyState.Shift in modifierStates
                 val label = ShiftedSymbols[action.act]?.takeIf { shifted }
-                    ?: if (shifted) action.act.uppercase() else action.act.lowercase()
+                    ?: DesktopKeyPolicy.applyLetterCase(
+                        action.act,
+                        shifted,
+                        capsLockEnabled,
+                        isChineseInputMethodActive()
+                    )
                 action.copy(act = label, states = states)
             }
             is KeyAction.SymAction -> action.copy(states = states)
@@ -479,13 +499,7 @@ class DesktopKeyboard private constructor(
     }
 
     private fun updateSpaceLanguageLabel() {
-        val chineseActive = currentImeLanguageCode.startsWith("zh", ignoreCase = true) ||
-            currentImeName.contains("pinyin", ignoreCase = true) ||
-            currentImeName.contains("chinese", ignoreCase = true) ||
-            currentImeName.contains("shuangpin", ignoreCase = true) ||
-            currentImeName.contains("wubi", ignoreCase = true) ||
-            currentImeName.contains("cangjie", ignoreCase = true) ||
-            currentImeName.contains("zh", ignoreCase = true)
+        val chineseActive = isChineseInputMethodActive()
         val langLabel = if (chineseActive) "拼 音" else "English"
         findViewById<View>(R.id.button_space)?.let { space ->
             (space as? TextKeyView)?.mainText?.setLayoutStableText(langLabel)
@@ -505,9 +519,22 @@ class DesktopKeyboard private constructor(
         }
     }
 
+    private fun isChineseInputMethodActive(): Boolean =
+        currentImeLanguageCode.startsWith("zh", ignoreCase = true) ||
+            currentImeName.contains("pinyin", ignoreCase = true) ||
+            currentImeName.contains("chinese", ignoreCase = true) ||
+            currentImeName.contains("shuangpin", ignoreCase = true) ||
+            currentImeName.contains("wubi", ignoreCase = true) ||
+            currentImeName.contains("cangjie", ignoreCase = true) ||
+            currentImeName.contains("zh", ignoreCase = true)
+
     private fun updateModifierKeys() {
         textKeys.forEach { key ->
             val label = (key.def as? KeyDef.Appearance.Text)?.displayText ?: return@forEach
+            if (label == "Caps") {
+                key.isSelected = capsLockEnabled
+                return@forEach
+            }
             val state = when (label) {
                 "Ctrl" -> KeyState.Ctrl
                 "Alt" -> KeyState.Alt

@@ -1952,6 +1952,36 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.64 - 2026-09-11
+
+### 主题
+修复摸鱼全局键盘 Caps 无效，并统一修复桌面控制键与 Ctrl/Alt/Command 组合键可能被 Fcitx 吞掉的问题。
+
+### 过程
+- 逐项检查全局键盘的字符键、Caps、Esc、Tab、F1-F12、Enter、Backspace、方向键、Shift/Ctrl/Alt/Command、HOME/BACK、鼠标键、语音和中英切换事件路径。
+- 原 Caps 与功能键被标记为 Fcitx 虚拟按键；无 Unicode 的控制键可能在本地输入法阶段被消费，远端收不到标准 Android `KeyEvent`。同时 Caps 没有本地锁定状态，所以之后由 KBoard 提交的英文字母仍是小写。
+- 进一步发现 Ctrl/Alt/Command 虽有正确的独立 DOWN/UP 生命周期，但字符主键仍走 Fcitx；界面能显示“复制/粘贴”等提示，不代表远端收到完整组合键。
+
+### 修改
+- 新增 `DesktopKeyPolicy.kt`，集中定义桌面控制键路由、组合键直发判定、字符到物理主键映射，以及英文 Caps/Shift 异或大小写规则。
+- `DesktopKeyboard.kt` 为 Caps 增加持续选中态与本地英文大小写状态；中文输入时继续提交小写拼音，不让 Caps 破坏候选输入。
+- Caps、Tab、F1-F12 始终向当前远程 `InputConnection` 发送标准成对 DOWN/UP；Esc、Enter、Backspace、方向键在没有预编辑时直发，在中文预编辑期间仍交给 Fcitx 完成取消、上屏、删除和候选选择。
+- Ctrl/Alt/Command 与字母、数字、符号或控制键组成 chord 时，主键强制绕过 Fcitx；Shift 元状态一并保留，覆盖 Cmd+C/V/A、Cmd+Shift+3/4/5、Ctrl+C/V、Alt+F4、Shift+Tab 等桌面组合。
+- 独立 Ctrl/Alt/Shift/Command 仍保持原有真实 DOWN/UP 生命周期；隐藏、切布局和输入结束时的补 UP 逻辑不变，避免远端卡住修饰键。HOME/BACK、鼠标、语音、中英切换、普通键盘布局和水族背景未改。
+- 新增 `DesktopKeyPolicyTest.kt`，覆盖所有可见控制键、中文预编辑分流、Caps/Shift 英文大小写、中文拼音保护、组合修饰键识别、字符物理键映射，以及组合键在预编辑期间强制直发。
+
+### 验证
+- Debug 测试源码和应用 Kotlin 均编译通过；但本机 Gradle 9.4.1 在启动测试 JVM 时连续两次无法加载 `worker.org.gradle.process.internal.worker.GradleWorkerMain`，因此不能把测试源码编译通过记录为 JUnit 已执行通过。
+- 使用既有正式平台证书完成最终增量 Release 构建；`assembleRelease`、R8、`lintVitalRelease` 共 287 个任务成功，未安装 Debug APK。
+- 首次正式产物包名 `org.fcitx.fcitx5.android`、版本 `1.4.1/152`，v1/v2 签名有效，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 最终 APK 位于 `fcitx5-android/build/kboard.apk`，SHA-256 为 `992dae8d14ff877e3567dd7e6bcc6d6bd0460c271a2010d9b6b1323c628c4bb3`。
+
+### 待办与风险
+- `192.168.3.63:5555` 当前返回 `No route to host`，本轮不能完成 Windows/macOS 远端的 Caps 与组合键真机验收；设备恢复在线后必须覆盖安装正式包，再检查 Caps 两次切换、Cmd/Ctrl/Alt/Shift 组合、中文预编辑控制键和隐藏时补 UP。
+- Caps 的本地视觉/英文状态从本次点击开始与远端同步；如果连接远端时远端本来就处于 Caps 开启状态，标准输入协议没有反向状态查询，首次显示可能与远端初始锁定态不同，按一次 Caps 后恢复同步。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

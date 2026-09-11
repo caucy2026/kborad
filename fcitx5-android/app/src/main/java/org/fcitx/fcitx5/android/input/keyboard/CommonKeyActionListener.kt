@@ -22,6 +22,7 @@ import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener.Backspace
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener.BackspaceSwipeState.Stopped
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.CommitAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.DeleteSelectionAction
+import org.fcitx.fcitx5.android.input.keyboard.KeyAction.DesktopKeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.FcitxKeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.LangSwitchAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.MoveSelectionAction
@@ -103,6 +104,21 @@ class CommonKeyActionListener :
                 }
                 is ModifierStateAction ->
                     service.sendDesktopModifierKeyState(action.state, action.down)
+                is DesktopKeyAction -> {
+                    if (
+                        DesktopKeyPolicy.shouldSendDirectly(
+                            action.sym.sym,
+                            preeditState.isEmpty,
+                            action.shortcutChord
+                        )
+                    ) {
+                        service.sendDesktopKeyPress(action.sym.keyCode)
+                    } else {
+                        service.postFcitxJob {
+                            sendKey(action.sym, action.states)
+                        }
+                    }
+                }
                 is RemoteMouseMoveAction ->
                     service.sendDesktopMouseMove(action.dx, action.dy)
                 is RemoteMouseButtonAction ->

@@ -32,6 +32,14 @@ sealed class KeyAction {
      */
     data class ModifierStateAction(val state: KeyState, val down: Boolean) : KeyAction()
 
+    /** A desktop control key that may bypass Fcitx and become one standard Android key press. */
+    data class DesktopKeyAction(
+        val sym: KeySym,
+        val states: KeyStates,
+        /** True for Ctrl/Alt/Meta chords whose main key must never re-enter Fcitx. */
+        val shortcutChord: Boolean = false
+    ) : KeyAction()
+
     data class RemoteMouseMoveAction(val dx: Int, val dy: Int) : KeyAction()
 
     data class RemoteMouseButtonAction(val button: String, val down: Boolean) : KeyAction()
