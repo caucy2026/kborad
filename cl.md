@@ -1979,10 +1979,12 @@ KEMI 设置页品牌化与动态名称中文化。
 - 正式 APK 已通过 `adb install -r` 覆盖安装到 Android 12 设备 `192.168.3.63:5555`，未执行 `pm clear`；设备回读为 `com.newlink.kemi.kboard`、`1.4.1/152`，`WRITE_SECURE_SETTINGS` 与 `INJECT_EVENTS` 均为 `granted=true`。
 - 测试前设备默认输入法为历史兼容包 `org.fcitx.fcitx5.android/.input.FcitxInputMethodService`。验收时切换到正式包主服务及同包跨屏中继，确认 `mCurMethodId=com.newlink.kemi.kboard/...FcitxInputMethodService`、PID `13029`、D0 输入窗口可见。为避免设备继续启动未包含本修复的旧包，最终默认输入法保持为正式 `com.newlink.kemi.kboard` 主服务；enabled 列表保留正式主服务、正式中继及原两个 `org.fcitx` 服务，旧包未删除，可随时回滚且没有清除任一包数据。
 - 在 Notes 空白搜索框进入摸鱼全局键盘后，以真实触摸坐标执行 `Caps -> A -> Caps -> A`，字段结果为 `Aa`：首次 Caps 后大写、再次 Caps 后恢复小写，功能链路通过。进程 PID 始终为 `13029`；测试后 `ApplicationExitInfo` 没有新增崩溃、ANR 或异常退出记录。
+- 63 已建立真实 Windows 远端会话（远端 ID `238638760`），通过全局键盘真实触摸分别按住并释放 Ctrl、Alt、Command。三类修饰键的 DOWN/UP 均依次出现在 `KeyboardProxyActivity input_connection`、`KeyboardProxyManager forwarded`、Flutter `dart_received accepted=true` 和 `dart_dispatch`，证明 KBoard 到 KEMI 远程输入通道的修饰键生命周期完整；此前真实 macOS 会话中的 Command 也取得同样完整链路。测试期间 KBoard 进程持续存活，没有新增 FATAL 或 ANR。
+- 源码复核确认：Ctrl/Alt/Command 任一处于按下状态时，单字符 `FcitxKeyAction` 会由 `DesktopKeyPolicy.shortcutKeySym()` 转为物理主键，并以 `DesktopKeyAction(shortcutChord=true)` 进入 `sendDesktopKeyPress()`；`shouldSendDirectly()` 对该标志无条件直发，因此字符主键不会再次进入 Fcitx 预编辑。主键 DOWN/UP 的 `metaState` 由服务端仍处于按下状态的修饰键集合生成。
 
 ### 待办与风险
-- 63 的 KEMI 远程办公当前只有 `MainActivity`，没有活动的 `KeyboardProxyActivity` 或已连接远程桌面；因此 Notes 结果只证明正式 KBoard 的本机 Caps/字母路径，不能替代 Windows/macOS 对 Cmd/Ctrl/Alt/Shift 组合键的远端验收。目标主机建立真实会话后仍需逐项检查 Cmd+C/V/A、Cmd+Shift+3/4/5、Ctrl+C/V、Alt+F4、Shift+Tab 与隐藏时补 UP。
-- 自动化尝试用分离的 `input motionevent` 构造组合键不能形成 Android 多触点，同轮结果已判为无效且没有写成通过；随后通过同包中继重建输入连接清理事件状态，没有遗留修饰键状态。
+- Windows/macOS 真实会话已经证明 Ctrl/Alt/Command 的修饰键 DOWN/UP 能完整到达远程通道，源码也证明 `shortcutChord=true` 的字符主键必然直发；但本轮日志证据没有逐项覆盖 Cmd+C/V/A、Cmd+Shift+3/4/5、Ctrl+C/V、Alt+F4、Shift+Tab 的远端应用语义，因此不将每一个具体快捷操作标记为人工验收通过。
+- 自动化尝试用分离的 `input motionevent` 构造组合键不能形成 Android 多触点；`adb input keycombination` 会绕过或破坏 KBoard 自身的触摸修饰键状态，Windows 上的 Meta+D 实际只输入了 `d`；底层 `sendevent` 尝试也没有被 InputReader 转换成有效按键事件。这些系统注入结果均明确判为无效，不作为 KBoard 组合键通过或失败的依据。真实验证必须使用全局键盘控件产生的触摸事件，或增加不会绕过 KBoard 的专用测试入口。
 - Caps 的本地视觉/英文状态从本次点击开始与远端同步；如果连接远端时远端本来就处于 Caps 开启状态，标准输入协议没有反向状态查询，首次显示可能与远端初始锁定态不同，按一次 Caps 后恢复同步。
 
 ---
