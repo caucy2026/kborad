@@ -1973,8 +1973,9 @@ KEMI 设置页品牌化与动态名称中文化。
 ### 验证
 - Debug 测试源码和应用 Kotlin 均编译通过；但本机 Gradle 9.4.1 在启动测试 JVM 时连续两次无法加载 `worker.org.gradle.process.internal.worker.GradleWorkerMain`，因此不能把测试源码编译通过记录为 JUnit 已执行通过。
 - 使用既有正式平台证书完成最终增量 Release 构建；`assembleRelease`、R8、`lintVitalRelease` 共 287 个任务成功，未安装 Debug APK。
-- 首次正式产物包名 `org.fcitx.fcitx5.android`、版本 `1.4.1/152`，v1/v2 签名有效，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
-- 最终 APK 位于 `fcitx5-android/build/kboard.apk`，SHA-256 为 `992dae8d14ff877e3567dd7e6bcc6d6bd0460c271a2010d9b6b1323c628c4bb3`。
+- 最终正式产物包名 `com.newlink.kemi.kboard`、版本 `1.4.1/152`，v1/v2 签名有效，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 最终 APK 位于 `fcitx5-android/build/kboard.apk`，SHA-256 为 `1089f12cc9c64e868e21736402e9dedab8bfdc7bd450334588c2fb212446fed7`。
+- 构建复核期间曾误传 legacy applicationId override，生成过 `org.fcitx.fcitx5.android` 临时包；该包未安装、未复制到 bin、未发布且已被上述正式包覆盖，不作为有效交付物。
 
 ### 待办与风险
 - `192.168.3.63:5555` 当前返回 `No route to host`，本轮不能完成 Windows/macOS 远端的 Caps 与组合键真机验收；设备恢复在线后必须覆盖安装正式包，再检查 Caps 两次切换、Cmd/Ctrl/Alt/Shift 组合、中文预编辑控制键和隐藏时补 UP。
