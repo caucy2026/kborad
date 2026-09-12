@@ -1,5 +1,13 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-09-12 - 测试与正式版本统一使用 system UID
+
+- 主题：用户确认将 android.uid.system 从实验配置转为后续测试版和正式版的统一身份。
+- 修改：在 app/src/main/AndroidManifest.xml 的共享主清单中固定 android:sharedUserId="android.uid.system"，所有构建变体继承；不调整包名或源码目录。
+- 签名：交付到 H730 的测试包与正式包均须使用对应平台证书；普通 Android Debug 证书不能替代平台签名。
+- 验证：主清单 XML 与变体覆盖检查；本次不重新编译或部署，不声称已完成设备升级验证。
+- 风险：历史普通 UID 包不能假定可无损覆盖为 system UID；迁移需单独验证，不自动卸载或清数据。麦克风默认授权仍须独立验收。
+
 > 记录范围：只包含 /Users/newlink/kemi/kboard 与 fcitx5-android 输入法项目。
 > 记录起点：从“移植输入法”开始。
 
