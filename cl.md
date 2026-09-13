@@ -1,5 +1,16 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-09-13 - 修复退出全局键盘后后台 CPU 持续占用
+
+- 现场：75 号 V900（Android 12、Display 2、1920×1280）上进入全局键盘后再隐藏，水族渲染线程虽然已经退出，KBoard 仍持续占用约 16%–22% 的单核 CPU；从普通键盘直接隐藏仅约 0.04%。
+- 定位过程：先做 A/B 对照，确认只有“进入全局键盘再隐藏”能够稳定复现；第一轮根据透明区域遍历栈尝试仅隐藏 `TextureView`，30 秒平均 CPU 仍为 `19.542%`，门禁明确判定失败并撤回该方案。随后用 `simpleperf` 采集 10 秒、9400 个样本，确认主热点依次为 `View.transformFromViewToWindowSpace`、`View.gatherTransparentRegion`、`ConstraintLayout.onMeasure`，并定位到 `InputView` 的布局回调，而不是已经停止的 `kboard-aquarium` 线程。
+- 根因：`InputView.updateDesktopCompositionPosition()` 由布局监听器触发，却无条件重新写入候选栏 `topMargin`。这会形成“布局完成 → 回调 → 再次请求布局”的循环；IME 隐藏后桌面模式状态仍保留，循环因此继续在不可见窗口中运行。真机 `simpleperf` 热点集中在 `InputView` 回调、`ConstraintLayout.onMeasure`、`View.transformFromViewToWindowSpace` 和 `gatherTransparentRegion`。
+- 修复：新增 IME 窗口可见状态门控，窗口隐藏后不再提交桌面候选栏定位任务；定位时只在 `topMargin` 或工具栏位移确实变化时才更新，切断自触发的重复布局。水族渲染、按键布局、鼠标协议、语音和普通键盘均未改变。
+- 回归：新增 `fcitx5-android/scripts/test-global-idle-cpu.py`，要求全局键盘可见且水族线程已启动，发送 HOME 隐藏后验证窗口不可见、水族线程退出、进程不重启，并按 3 秒间隔读取 `/proc` 计算 CPU；门禁为 30/60 秒平均单核 CPU `<5%`。
+- Release 验证：正式签名 Release 构建通过（287 tasks），包名 `com.newlink.kemi.kboard`、版本 `1.4.1`（versionCode 152）、APK SHA-256 `6164490bd7e5373f222427d9420ad09712e597ea9f42d66dc3d30ae533c480be`；v1/v2 验签通过，证书 SHA-256 保持 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 真机结果：75 号机覆盖安装成功且仍为默认输入法；Display 2 普通/全局模式往返后，30 秒平均 CPU `0.649%`，追加 10 轮模式往返后 60 秒平均 `0.308%`，除隐藏收尾的首个采样外其余采样均为 `0%`；PID 保持 `16518`，无新 FATAL、ANR 或异常退出。
+- 风险：首个隐藏后 3 秒窗口仍可能包含一次约 6% 的正常收尾采样；后续采样归零。本回归脚本依赖测试设备 root 读取 `/proc`，不属于应用运行时依赖。
+
 ## 2026-09-12 - 测试与正式版本统一使用 system UID
 
 - 主题：用户确认将 android.uid.system 从实验配置转为后续测试版和正式版的统一身份。

@@ -244,6 +244,7 @@ class InputView(
         keyboardBottomPaddingLandscape,
     )
     private var desktopKeyboardMode = false
+    private var imeWindowVisible = false
     private var pendingDesktopKeyboardMode: Boolean? = null
     private var inputViewHierarchyReady = false
     private var desktopHeightConfigurationKey = ""
@@ -383,9 +384,9 @@ class InputView(
     }
 
     private fun updateDesktopCompositionPosition() {
-        if (!desktopKeyboardMode) return
+        if (!desktopKeyboardMode || !imeWindowVisible) return
         windowManager.view.post {
-            if (!desktopKeyboardMode) return@post
+            if (!desktopKeyboardMode || !imeWindowVisible) return@post
             val firstRowTop = keyboardWindow.desktopFirstRowTopOnScreen() ?: return@post
             val parent = preedit.ui.root.parent as? View ?: return@post
             val parentLocation = IntArray(2)
@@ -394,15 +395,21 @@ class InputView(
             val preeditTop = (candidateTopOnScreen - parentLocation[1] -
                     preedit.ui.root.measuredHeight - dp(DESKTOP_PREEDIT_GAP_DP))
                 .coerceAtLeast(0)
-            preedit.ui.root.updateLayoutParams<LayoutParams> {
-                topMargin = preeditTop
+            val preeditLayoutParams = preedit.ui.root.layoutParams as? LayoutParams
+            if (preeditLayoutParams?.topMargin != preeditTop) {
+                preedit.ui.root.updateLayoutParams<LayoutParams> {
+                    topMargin = preeditTop
+                }
             }
             val barParent = kawaiiBar.view.parent as? View ?: return@post
             val barParentLocation = IntArray(2)
             barParent.getLocationOnScreen(barParentLocation)
-            kawaiiBar.view.translationY = (
+            val targetBarTranslation = (
                     candidateTopOnScreen - barParentLocation[1] - kawaiiBar.view.top
                     ).toFloat()
+            if (kawaiiBar.view.translationY != targetBarTranslation) {
+                kawaiiBar.view.translationY = targetBarTranslation
+            }
         }
     }
 
@@ -1090,10 +1097,13 @@ class InputView(
     }
 
     fun onImeWindowShown() {
+        imeWindowVisible = true
         keyboardWindow.onImeWindowShown()
+        updateDesktopCompositionPosition()
     }
 
     fun onImeWindowHidden() {
+        imeWindowVisible = false
         keyboardWindow.onImeWindowHidden()
     }
 
