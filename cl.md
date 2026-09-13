@@ -2029,6 +2029,39 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.66 - 2026-09-13
+
+### 主题
+用真实多指自动化复现并修复中文拼音桌面键盘 Command+Space 丢失主键的问题。
+
+### 过程
+- 设备 75 恢复 ADB 后，安装独立多点触控注入器与独立 InputConnection 接收器；注入器用单条 MotionEvent 流发送多指 DOWN/POINTER_DOWN/POINTER_UP/UP，接收器只记录键边沿和 metaState。
+- 回装旧正式包 `805cf30e...` 作为已知失败对照。中文模式 Command+Space 得到完整 Command DOWN/UP，但没有 Space，门禁准确判 FAIL。
+- 第一版仅让 SymAction(space) 进入组合键映射，英文通过，中文仍因空格点击发生在触摸抬起阶段而存在修饰键时序窗口。最终将带快捷修饰键的桌面空格在触摸按下时直发，并消费后续点击；组合键长按不再触发空格自己的长按动作。
+- 同步云端 main 后发现新加入的 `android:sharedUserId="android.uid.system"` 会让现有普通 UID 正式包无法覆盖升级；75 真机返回 `INSTALL_FAILED_SHARED_USER_INCOMPATIBLE`。没有卸载、清数据或重新授权，而是撤销该身份迁移，保持历史升级链兼容。
+- 普通中文空格仍走 Fcitx，Ctrl+Space 仍切换中英文；未修改普通键盘、候选、语音、鼠标、远控或水族背景逻辑。
+
+### 修改
+- `DesktopKeyboard.kt`：增加桌面空格组合键的 touch-down 直发和组合状态下长按抑制；组合键动作继续使用标准成对 Android KeyEvent。
+- `DesktopKeyPolicy.kt`：组合动作解析覆盖桌面 Space 的 SymAction。
+- `DesktopKeyPolicyTest.kt`：增加 Space 动作映射及组合直发策略回归。
+- `AndroidManifest.xml`：移除未经迁移验证的 system UID，恢复与已安装正式版相同的应用身份，保证覆盖安装。
+- 全局 `app-release-stability-gate` Android 真机规范增加：设备采样窗口与长按阈值校准、完整产品失败和残缺注入证据分流、组合空格 touch-down 时序和长按覆盖。
+
+### 验证
+- 最终签名 Release 完整构建成功，287 个任务通过，包含 Kotlin、R8、Lint Vital、arm64 原生组件、签名与打包；未构建或安装 Debug APK。
+- 正式 APK 为 `fcitx5-android/build/kboard.apk`，包名 `com.newlink.kemi.kboard`、版本 `1.4.1+152`、SHA-256 `b957eba045b98beeb4b06b7e7a5198c5f71ee5aefa41008e1580a59f6d93ad95`；v1/v2 签名有效，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 覆盖安装到 Android 12 设备 75 后，设备回拉 APK 与本地产物哈希完全一致；`WRITE_SECURE_SETTINGS` 和 `INJECT_EVENTS` 继续为 granted，没有清除数据或重新授权。
+- 中文 Command+Space 80ms 与 500ms 均得到精确 `META_DOWN, SPACE_DOWN(meta), SPACE_UP(meta), META_UP`；80ms 连续 20/20 通过。
+- 英文单 K、Command+C、Command+Space、Command+Shift+3、Command+Ctrl+Alt+K 全通过；Command+Space 连续 20/20 通过。
+- KBoard PSS 116473 KB 到 121041 KB，进程持续运行；11:00 后 FATAL、ANR、OOM、输入超时和 Window token 异常匹配均为 0。
+- Gradle 测试源码和应用代码编译成功；本机 Gradle 9.4.1 测试执行器仍因缺失 GradleWorkerMain 未启动 JUnit，因此没有把该项写成单测 PASS。真实签名包的已知失败对照和真机多指回归为本次行为验收依据。
+
+### 待办
+- 本次 PASS 限定于 KBoard 组合键修复范围；KEMI 四端冻结候选、文件传输、Linux 真机和 60 分钟统一耐久仍按各自发布门禁单独验收。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。

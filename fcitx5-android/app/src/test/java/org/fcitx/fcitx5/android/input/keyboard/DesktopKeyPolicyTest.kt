@@ -6,6 +6,7 @@ package org.fcitx.fcitx5.android.input.keyboard
 
 import org.fcitx.fcitx5.android.core.FcitxKeyMapping
 import org.fcitx.fcitx5.android.core.KeyState
+import org.fcitx.fcitx5.android.core.KeySym
 import android.view.KeyEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -105,9 +106,25 @@ class DesktopKeyPolicyTest {
     }
 
     @Test
+    fun shortcutActionsIncludeTheDesktopSpaceKey() {
+        val space = KeySym(FcitxKeyMapping.FcitxKey_space)
+        assertEquals(
+            KeyEvent.KEYCODE_C,
+            DesktopKeyPolicy.shortcutKeySym(KeyAction.FcitxKeyAction("c"))?.keyCode
+        )
+        assertEquals(
+            KeyEvent.KEYCODE_SPACE,
+            DesktopKeyPolicy.shortcutKeySym(KeyAction.SymAction(space))?.keyCode
+        )
+        assertEquals(null, DesktopKeyPolicy.shortcutKeySym(KeyAction.LangSwitchAction))
+    }
+
+    @Test
     fun shortcutMainKeysAreAlwaysDirectEvenThoughTheyAreNotRawControls() {
-        listOf("a", "c", "v", "3").forEach { text ->
-            val sym = requireNotNull(DesktopKeyPolicy.shortcutKeySym(text))
+        val syms = listOf("a", "c", "v", "3").map {
+            requireNotNull(DesktopKeyPolicy.shortcutKeySym(it))
+        } + KeySym(FcitxKeyMapping.FcitxKey_space)
+        syms.forEach { sym ->
             assertFalse(DesktopKeyPolicy.isRawControl(sym.sym))
             assertTrue(
                 DesktopKeyPolicy.shouldSendDirectly(

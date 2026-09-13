@@ -104,6 +104,7 @@ class DesktopKeyboard private constructor(
             it.physicalReleaseSoundEnabled = false
         }
         configureHeldModifierKeys()
+        configureShortcutSpaceKey()
         touchpadView.onMouseMove = { dx, dy ->
             onAction(KeyAction.RemoteMouseMoveAction(dx, dy))
         }
@@ -385,6 +386,12 @@ class DesktopKeyboard private constructor(
     }
 
     override fun onAction(action: KeyAction, source: KeyActionListener.Source) {
+        if (action is KeyAction.SpaceLongPressAction &&
+            DesktopKeyPolicy.hasShortcutModifier(modifierStates)
+        ) {
+            return
+        }
+
         // Ctrl+Space → language switch
         if (action is KeyAction.SymAction &&
             action.sym == KeySym(FcitxKeyMapping.FcitxKey_space) &&
@@ -414,10 +421,9 @@ class DesktopKeyboard private constructor(
         // A desktop chord is not text composition. Send its physical main key through the same
         // InputConnection KeyEvent path as Caps/F-keys so KEMI receives Ctrl/Alt/Command plus the
         // main key. Keep unmodified characters (and Shift-only typing) in Fcitx for Chinese input.
-        if (action is KeyAction.FcitxKeyAction &&
-            DesktopKeyPolicy.hasShortcutModifier(modifierStates)
-        ) {
-            DesktopKeyPolicy.shortcutKeySym(action.act)?.let { sym ->
+        if (DesktopKeyPolicy.hasShortcutModifier(modifierStates)) {
+            val shortcutSym = DesktopKeyPolicy.shortcutKeySym(action)
+            shortcutSym?.let { sym ->
                 super.onAction(
                     KeyAction.DesktopKeyAction(
                         sym,
@@ -611,6 +617,30 @@ class DesktopKeyboard private constructor(
                 // pressed visuals, sound and multi-pointer dispatch.
                 false
             }
+        }
+    }
+
+    /**
+     * Dispatch shortcut-space on touch-down while its modifier is still physically held.
+     * Space normally clicks on touch-up, which can race the final modifier release in a
+     * multi-pointer stream and leave Command+Space inside the local Chinese IME.
+     */
+    private fun configureShortcutSpaceKey() {
+        val key = findViewById<KeyView>(R.id.button_space) ?: return
+        val previous = key.onGestureListener ?: OnGestureListener.Empty
+        key.onGestureListener = OnGestureListener { view, event ->
+            val shortcutDown = event.type == GestureType.Down &&
+                DesktopKeyPolicy.hasShortcutModifier(modifierStates)
+            if (shortcutDown) {
+                onAction(
+                    KeyAction.DesktopKeyAction(
+                        KeySym(FcitxKeyMapping.FcitxKey_space),
+                        KeyStates(*modifierStates.toTypedArray()),
+                        shortcutChord = true
+                    )
+                )
+            }
+            shortcutDown || previous.onGesture(view, event)
         }
     }
 

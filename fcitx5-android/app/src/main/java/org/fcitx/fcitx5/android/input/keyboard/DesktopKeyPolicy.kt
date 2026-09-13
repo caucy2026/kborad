@@ -61,6 +61,15 @@ internal object DesktopKeyPolicy {
         return sym.takeIf { it.keyCode != android.view.KeyEvent.KEYCODE_UNKNOWN }
     }
 
+    /** Resolve the physical main key carried by a desktop shortcut action. */
+    fun shortcutKeySym(action: KeyAction): KeySym? = when (action) {
+        is KeyAction.FcitxKeyAction -> shortcutKeySym(action.act)
+        is KeyAction.SymAction -> action.sym.takeIf {
+            it.sym == FcitxKeyMapping.FcitxKey_space
+        }
+        else -> null
+    }
+
     fun applyLetterCase(
         text: String,
         shift: Boolean,
