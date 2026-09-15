@@ -34,10 +34,12 @@ import splitties.views.dsl.core.add
 import splitties.views.dsl.core.frameLayout
 import splitties.views.dsl.core.lParams
 import splitties.views.dsl.core.matchParent
+import timber.log.Timber
 
 class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), EssentialWindow,
     InputBroadcastReceiver {
 
+    private val taskGate = KeyboardWindowTaskGate()
     private val service by manager.inputMethodService()
     private val inputView by manager.inputView()
     private val fcitx by manager.fcitx()
@@ -147,7 +149,12 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
             TextKeyboard.Name if (floatingMode) -> TextKeyboard.FloatingName
             else -> requested
         }
+        val generation = taskGate.captureGeneration()
         ContextCompat.getMainExecutor(service).execute {
+            if (!taskGate.canRun(generation)) {
+                Timber.d("Drop layout switch for retired KeyboardWindow: target=$target")
+                return@execute
+            }
             if (keyboards.containsKey(target)) {
                 if (remember && target != TextKeyboard.Name) {
                     lastSymbolType = target
@@ -231,6 +238,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
 
     /** Permanently release every keyboard created for this InputView generation. */
     fun dispose() {
+        taskGate.retire()
         currentKeyboard?.onDetach()
         keyboards.values.forEach { it.dispose() }
         if (::keyboardView.isInitialized) keyboardView.removeAllViews()
