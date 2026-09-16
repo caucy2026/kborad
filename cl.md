@@ -1,5 +1,21 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-09-16 - 旧 Session 修复包 20 轮定向压力回归
+
+- 在 16.24 执行便签输入/退格、隐藏、设置/浏览器切换、同包中继/主 IME 往返重建，共20轮；40次键盘显示检查通过，36次服务释放，PID始终10501，两类目标异常、KBoard FATAL/ANR均0，默认输入法恢复不变。
+- 新增脚本 `fcitx5-android/scripts/test-late-session-20.py`；报告及日志、逐轮dumpsys和截图见 `test-reports/late-session-20-20260916/REPORT.md`。
+- 本轮定向回归通过。远程应用停留启动页，未覆盖远程设备号输入路径；未强制内存回收，未做五小时Monkey，未宣称穷尽所有迟到回调竞态。
+
+## 2026-09-16 - 防护旧 IME Session 的迟到光标回调
+
+- 根因：客户 E4_kboard.log 的 20:14:42 FATAL 经 `onUpdateCursorAnchorInfo → updateDecorLocation → getContentView` 触发；销毁后的窗口引用为空，`checkNotNull` 抛出 `Required value was null`。此路径独立于已修复的 KeyboardWindow 排队任务。
+- 修改：`FcitxInputMethodService.kt` 在光标回调入口拒绝已释放或缺失窗口引用的状态；位置计算直接捕获可空窗口引用，不可用时返回 false。正常存活窗口的候选定位计算保持原有逻辑。
+- 测试：新增 `LateCursorCallbackTest.kt`，通过 JVM 无构造实例调用真实方法验证迟到回调；修复前三项失败，其中位置计算抛出对应 IllegalStateException，修复后三项通过；原 KeyboardWindowTaskGate 两项亦通过。此 JVM 测试不模拟 Android framework 完整生命周期或正常 View 测量。
+- 构建：复用 WSL 构建副本，核对应用 Kotlin 源码和 Manifest 与本地一致（忽略 CRLF）；定向单测与 assembleDebug 联合通过，203 tasks。平台签名证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`，v1/v2/v3 验签通过。
+- 产物：`bin/KBoard-1.4.2-162-late-ime-session-20260916-platform-signed-test.apk`，包名 `com.newlink.kemi.kboard`，arm64-v8a；SHA-256 `B36B9330950B6A9B580E7A99ED3AA1E127614787AB115187A2D457496CA6D5C9`。
+- 部署：`172.21.16.24:5555` 初次拒绝连接，重试恢复后 install -r 返回 Success；安装版本 1.4.2/162、UID 1000、lastUpdateTime=2026-09-16 10:09:24，默认主 IME 不变，进程 PID 10501。
+- 真机限制：尝试便签搜索框唤起时，设备存在外部 Monkey 单事件启动 KEMI 远程的操作，界面持续变化且 UIAutomator 无法取得 idle；未中断外部操作，未判定键盘交互通过。近期日志未检出 FATAL、DisconnectedException、Required value was null 或 KBoard ANR；完整五小时长测尚未执行。
+
 ## 2026-09-13 - 修复退出全局键盘后后台 CPU 持续占用
 
 - 现场：75 号 V900（Android 12、Display 2、1920×1280）上进入全局键盘后再隐藏，水族渲染线程虽然已经退出，KBoard 仍持续占用约 16%–22% 的单核 CPU；从普通键盘直接隐藏仅约 0.04%。

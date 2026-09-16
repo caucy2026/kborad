@@ -1,0 +1,137 @@
+{
+  "rounds": [
+    {
+      "round": 1,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 2,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 3,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 4,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 5,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 6,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 7,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 8,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 9,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 10,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 11,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 12,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 13,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 14,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 15,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 16,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 17,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 18,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 19,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    },
+    {
+      "round": 20,
+      "shown_before": true,
+      "shown_after": true,
+      "pid": "10501"
+    }
+  ],
+  "error": null,
+  "initial_pid": "10501",
+  "final_pid": "10501",
+  "signatures": {
+    "FcitxDaemon$DisconnectedException": 0,
+    "Required value was null": 0,
+    "ANR in com.newlink.kemi.kboard": 0,
+    "kboard_fatal": 0
+  },
+  "lifecycle_releases": 36,
+  "original_ime": "com.newlink.kemi.kboard/org.fcitx.fcitx5.android.input.FcitxInputMethodService",
+  "final_ime": "com.newlink.kemi.kboard/org.fcitx.fcitx5.android.input.FcitxInputMethodService",
+  "passed": true
+}

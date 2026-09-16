@@ -1364,7 +1364,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private val decorLocationInt = intArrayOf(0, 0)
     private var decorLocationUpdated = false
 
-    private fun updateDecorLocation() {
+    private fun updateDecorLocation(): Boolean {
+        if (ownedResourcesReleased) return false
+        val contentView = contentViewRef ?: return false
+        val decorView = decorViewRef ?: return false
         contentSize[0] = contentView.width.toFloat()
         contentSize[1] = contentView.height.toFloat()
         decorView.getLocationOnScreen(decorLocationInt)
@@ -1375,11 +1378,15 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         if (contentSize[0] > 0 && contentSize[1] > 0) {
             decorLocationUpdated = true
         }
+        return true
     }
 
     private val anchorPosition = floatArrayOf(0f, 0f, 0f, 0f)
 
     override fun onUpdateCursorAnchorInfo(info: CursorAnchorInfo) {
+        // Android 12 may deliver queued session callbacks after replacement or onDestroy().
+        // Retired services no longer own a candidate window; do not read anchor/window state.
+        if (ownedResourcesReleased || contentViewRef == null || decorViewRef == null) return
         val bounds = info.getCharacterBounds(0)
         if (bounds != null) {
             // anchor to start of composing span instead of insertion mark if available
@@ -1396,9 +1403,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             anchorPosition[3] = info.insertionMarkerTop
         }
         // avoid calling `decorView.getLocationOnScreen` repeatedly
-        if (!decorLocationUpdated) {
-            updateDecorLocation()
-        }
+        if (!decorLocationUpdated && !updateDecorLocation()) return
         if (anchorPosition.any(Float::isNaN)) {
             // anchor candidates view to bottom-left corner in case CursorAnchorInfo is invalid
             candidatesView?.updateCursorAnchor(contentSize)
