@@ -42,58 +42,31 @@ class MainFragment : PaddingPreferenceFragment() {
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         preferenceScreen = preferenceManager.createPreferenceScreen(requireContext()).apply {
-            addCategory("KEMI") {
+            addCategory(R.string.kboard_settings) {
                 addDestinationPreference(
-                    R.string.global_options,
-                    R.drawable.ic_baseline_tune_24,
-                    SettingsRoute.GlobalConfig
-                )
-                addDestinationPreference(
-                    R.string.input_methods,
+                    R.string.input_languages,
                     R.drawable.ic_baseline_language_24,
                     SettingsRoute.InputMethodList
                 )
                 addDestinationPreference(
-                    R.string.addons,
-                    R.drawable.ic_baseline_extension_24,
-                    SettingsRoute.AddonList
-                )
-            }
-            addCategory("Android") {
-                addDestinationPreference(
-                    R.string.theme,
-                    R.drawable.ic_baseline_palette_24,
-                    SettingsRoute.Theme
-                )
-                addDestinationPreference(
-                    R.string.virtual_keyboard,
+                    R.string.keyboard_settings,
                     R.drawable.ic_baseline_keyboard_24,
-                    SettingsRoute.VirtualKeyboard
+                    SettingsRoute.CommercialKeyboard
                 )
                 addDestinationPreference(
-                    R.string.candidates_window,
-                    R.drawable.ic_baseline_list_alt_24,
-                    SettingsRoute.CandidatesWindow
+                    R.string.appearance_theme,
+                    R.drawable.ic_baseline_palette_24,
+                    SettingsRoute.CommercialTheme
                 )
                 addDestinationPreference(
-                    R.string.clipboard,
+                    R.string.privacy,
                     R.drawable.ic_clipboard,
-                    SettingsRoute.Clipboard
+                    SettingsRoute.CommercialPrivacy
                 )
                 addDestinationPreference(
-                    R.string.emoji_and_symbols,
-                    R.drawable.ic_baseline_emoji_symbols_24,
-                    SettingsRoute.Symbol
-                )
-                addDestinationPreference(
-                    R.string.plugins,
-                    R.drawable.ic_baseline_android_24,
-                    SettingsRoute.Plugin
-                )
-                addDestinationPreference(
-                    R.string.advanced,
+                    R.string.about_kboard,
                     R.drawable.ic_baseline_more_horiz_24,
-                    SettingsRoute.Advanced
+                    SettingsRoute.About
                 )
             }
         }

@@ -135,13 +135,7 @@ class MainActivity : AppCompatActivity() {
                 .observe(this@MainActivity) { listener -> isVisible = listener != null }
         }
         val aboutMenuItems = listOf(
-            menu.item(R.string.faq) {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Const.faqUrl)))
-            },
-            menu.item(R.string.developer) {
-                navController.navigateWithAnim(SettingsRoute.Developer)
-            },
-            menu.item(R.string.about) {
+            menu.item(R.string.about_kboard) {
                 navController.navigateWithAnim(SettingsRoute.About)
             }
         )

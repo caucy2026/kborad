@@ -19,7 +19,11 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.RawConfig
 import org.fcitx.fcitx5.android.data.quickphrase.QuickPhrase
 import org.fcitx.fcitx5.android.ui.main.AboutFragment
+import org.fcitx.fcitx5.android.ui.main.CommercialKeyboardSettingsFragment
+import org.fcitx.fcitx5.android.ui.main.CommercialPrivacySettingsFragment
+import org.fcitx.fcitx5.android.ui.main.CommercialThemeFragment
 import org.fcitx.fcitx5.android.ui.main.DeveloperFragment
+import org.fcitx.fcitx5.android.ui.main.EngineeringSettingsFragment
 import org.fcitx.fcitx5.android.ui.main.LicensesFragment
 import org.fcitx.fcitx5.android.ui.main.MainFragment
 import org.fcitx.fcitx5.android.ui.main.PluginFragment
@@ -45,6 +49,18 @@ sealed class SettingsRoute : Parcelable {
 
     @Serializable
     data object Index : SettingsRoute()
+
+    @Serializable
+    data object CommercialKeyboard : SettingsRoute()
+
+    @Serializable
+    data object CommercialTheme : SettingsRoute()
+
+    @Serializable
+    data object CommercialPrivacy : SettingsRoute()
+
+    @Serializable
+    data object Engineering : SettingsRoute()
 
     /* ========== Fcitx ========== */
 
@@ -188,6 +204,18 @@ sealed class SettingsRoute : Parcelable {
 
             fragment<MainFragment, Index> {
                 label = ctx.getString(R.string.app_name)
+            }
+            fragment<CommercialKeyboardSettingsFragment, CommercialKeyboard> {
+                label = ctx.getString(R.string.keyboard_settings)
+            }
+            fragment<CommercialThemeFragment, CommercialTheme> {
+                label = ctx.getString(R.string.appearance_theme)
+            }
+            fragment<CommercialPrivacySettingsFragment, CommercialPrivacy> {
+                label = ctx.getString(R.string.privacy)
+            }
+            fragment<EngineeringSettingsFragment, Engineering> {
+                label = ctx.getString(R.string.engineering_settings)
             }
 
             /* ========== Fcitx ========== */

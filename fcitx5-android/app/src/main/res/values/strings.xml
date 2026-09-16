@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="kboard_settings">KBoard</string>
+    <string name="input_languages">Input languages</string>
+    <string name="keyboard_settings">Keyboard settings</string>
+    <string name="appearance_theme">Appearance and theme</string>
+    <string name="privacy">Privacy</string>
+    <string name="about_kboard">About KBoard</string>
+    <string name="engineering_settings">Engineering settings</string>
+    <string name="engineering_password">Engineering password</string>
+    <string name="engineering_password_incorrect">Incorrect engineering password</string>
     <string name="app_name_release">KEMI语音输入法</string>
     <string name="app_name_debug">KEMI语音输入法</string>
     <string name="save">Save</string>
