@@ -16,6 +16,25 @@
 - 部署：`172.21.16.24:5555` 初次拒绝连接，重试恢复后 install -r 返回 Success；安装版本 1.4.2/162、UID 1000、lastUpdateTime=2026-09-16 10:09:24，默认主 IME 不变，进程 PID 10501。
 - 真机限制：尝试便签搜索框唤起时，设备存在外部 Monkey 单事件启动 KEMI 远程的操作，界面持续变化且 UIAutomator 无法取得 idle；未中断外部操作，未判定键盘交互通过。近期日志未检出 FATAL、DisconnectedException、Required value was null 或 KBoard ANR；完整五小时长测尚未执行。
 
+## 2026-09-16 - 全局键盘增加上下屏切换并恢复主屏系统隐藏键
+
+- 全局键盘操作栏：在原有“退出全局模式、语音、回车”之间加入上下屏切换按钮，底部保持单行四个等宽大按钮，按钮高度、主键区高度、水族背景和鼠标区均未改变。新按钮复用普通键盘已有的 `ScreenSwitchAction`，继续走同一套 D0/D2 路由、中继判断、Insets 刷新和失败处理，不另建第二套跨屏逻辑。
+- 主屏隐藏根因：V900 Android 12 主屏导航栏左下角隐藏箭头会向当前输入法发送 `KEYCODE_BACK`；KBoard 过去先把该事件交给 Fcitx/编辑器，全屏桌面键盘下框架默认处理又不会可靠关闭 IME，导致箭头可见但点击无效。
+- 主屏隐藏修复：`FcitxInputMethodService` 在首次 BACK 按下时明确执行 `requestHideSelf(0)`，并消费对应按下/释放事件，避免事件继续进入远端编辑器。全局键盘内的远程 BACK 仍通过 `sendDesktopSystemKeyState()` 独立发送给远端，不会被本地隐藏逻辑截获。
+- 修改文件：`InputView.kt`（四按钮单行布局和屏幕切换按钮）、`DesktopKeyboard.kt` / `KeyboardWindow.kt`（复用屏幕切换动作）、`FcitxInputMethodService.kt`（主屏系统隐藏 BACK 路由）。
+- 63 号真机验证：正式版覆盖安装且默认输入法配置保留；普通键盘和全局键盘分别在 Display 0 点击系统左下角隐藏箭头，均从 `mShowRequested=true / mInputShown=true` 变为 `false / false`，截图确认键盘完全收起。全局新按钮可产生 `current=0 target=2` 的跨屏请求；同代码在 Display 2 实测可将 IME token 从 D2 切回 D0。全程按 3 秒操作间隔执行，未发现 FATAL、ANR 或 `WindowLeaked`。
+- 构建与身份：`HardwareKeyAnomalyFilterTest`、`DesktopKeyPolicyTest` 通过；正式 Release 构建成功，包名 `com.newlink.kemi.kboard`、版本 `1.4.1`（versionCode 152）、`android.uid.system`，v1/v2 验签通过，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`，APK SHA-256 为 `5ee04329829cce42d26eacbd4c538466204292fd787879e2b56af9163a9f9845`。
+
+## 2026-09-16 - 全局摸鱼键盘可见态 CPU 降载与有效按键音恢复
+
+- 现场与根因：75 号 V900（Android 12、Display 2、1920×1280）全局键盘稳定显示 10 条鱼、29.9Hz 时，10 组 3 秒间隔的 `/proc` 采样平均占用 `60.282%` 单核（`57.911%`–`63.057%`），PSS `108773KB`。`simpleperf` 对同型号现场的前置分析显示主要热点在 `RenderThread`、`CanvasContext::draw`、Skia OpenGL 绘制和圆角按键绘制；水族线程只占较小部分。根因是水族 `TextureView` 每帧更新时，六行完全静态的圆角按键也被反复记录和栅格化。
+- CPU 修复：桌面模式附着时把六行静态按键缓存为硬件合成层，按下、组合键提示等真实变化仍会使对应行失效重绘；退出桌面模式或销毁时立即释放这些层，避免隐藏后保留 GPU 内存。水族目标刷新率从 30Hz 调整为 24Hz，并同步调整自适应鱼群数量阈值；鱼的路线、速度和动作仍按时间步进，不因刷新率降低而变慢。
+- 按键音修复：全局键盘不再在原始 `ACTION_DOWN` 时播放水滴音，只在未取消且确实分发了按键动作后播放一次。兼容部分 Android/OEM 包装层 `performClick()` 返回值不可靠的情况，改为在分发前确认存在点击监听器；取消滑动、越界、空白触摸、语音按钮和被误触过滤器丢弃的硬件事件保持无声。水滴样本预加载和首次成功播放各保留一条一次性日志，播放音量从 `0.30` 微调为 `0.38`，不增加逐键日志开销。
+- 修改文件：`BaseKeyboard.kt`（按键行合成层生命周期）、`DesktopKeyboard.kt`（桌面模式缓存和有效动作音频回调）、`DesktopAquariumView.kt`（24Hz 与自适应阈值）、`CustomGestureView.kt`（按手势最多一次的有效动作反馈）、`InputFeedbacks.kt`（SoundPool 就绪/播放自检与水滴音量）。
+- 75 号真机结果：相同页面、相同副屏和 10 条鱼下，候选版稳定 `23.9Hz`，10 组 3 秒间隔采样平均 `22.010%` 单核（`21.184%`–`22.713%`），较同机旧版降低 `63.49%`，超过“至少降低 30%”目标；PSS 为 `103564KB`，未以明显内存增长换取降载。切回普通键盘后连续 5 组采样均为 `0.000%`，`kboard-aquarium` 线程已退出。
+- 行为验证：真实字母键成功写入编辑框，并出现 `Aquarium key sound playback verified`；重启进程后先执行取消滑动，仅出现样本就绪日志、没有播放日志，随后有效按键才出现一次播放确认。普通/全局模式按 3 秒间隔往返 5 轮，PID 保持不变，无 FATAL、ANR 或 `WindowLeaked`，普通键盘布局与输入未改变。
+- 构建与身份：JVM 回归 `HardwareKeyAnomalyFilterTest`、`DesktopKeyPolicyTest` 通过；最终正式 Release 保持包名 `com.newlink.kemi.kboard`、版本 `1.4.1`（versionCode 152）、`android.uid.system`、v1/v2 验签和平台证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`，APK SHA-256 为 `e136539609e3b7fff49997ccb548680f43007e081c29fd9eb2909ce721536468`。75 号仍安装历史普通 UID 包，按既有迁移约束未卸载或清数据；真机性能验证使用同源码、同 Release 签名但不声明 shared UID 的兼容测试产物，正式产物不改变 system UID 发布规则。
+
 ## 2026-09-13 - 修复退出全局键盘后后台 CPU 持续占用
 
 - 现场：75 号 V900（Android 12、Display 2、1920×1280）上进入全局键盘后再隐藏，水族渲染线程虽然已经退出，KBoard 仍持续占用约 16%–22% 的单核 CPU；从普通键盘直接隐藏仅约 0.04%。

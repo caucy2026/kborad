@@ -66,6 +66,9 @@ class DesktopAquariumView(context: Context) : TextureView(context),
         // TextureView itself rejects background drawables, so DesktopKeyboard supplies a
         // separate ImageView above this surface and below every key. It holds the last aquarium
         // frame until onSurfaceTextureUpdated confirms a real replacement GPU frame.
+        // The water shader always writes alpha=1. Declaring the TextureView opaque avoids an
+        // unnecessary translucent composition path on every 24 Hz frame.
+        isOpaque = true
         isClickable = false
         isFocusable = false
         surfaceTextureListener = this
@@ -294,7 +297,10 @@ private class AquariumRenderThread(
     companion object {
         const val TAG = "KBoardAquarium"
         const val MAX_RENDER_WIDTH = 1080
-        const val TARGET_FRAME_NS = 33_333_334L
+        // 24 Hz keeps the water/fish motion fluid on the V900 while cutting composition work.
+        // Simulation movement remains time-based, so lowering presentation frequency does not
+        // slow fish routes, turns, feeding reactions or weekday formation timing.
+        const val TARGET_FRAME_NS = 41_666_667L
     }
 }
 
@@ -1539,15 +1545,15 @@ private class AquariumEngine {
         if (elapsed < PERFORMANCE_REPORT_NS) return
         val fps = reportFrames * 1_000_000_000f / elapsed
         when {
-            fps < 21f && activeFishCount > MIN_FISH -> {
+            fps < 16.8f && activeFishCount > MIN_FISH -> {
                 activeFishCount = MIN_FISH
                 healthyReports = 0
             }
-            fps < 26f && activeFishCount > MEDIUM_FISH -> {
+            fps < 20.8f && activeFishCount > MEDIUM_FISH -> {
                 activeFishCount = MEDIUM_FISH
                 healthyReports = 0
             }
-            fps > 28.5f -> {
+            fps > 22.8f -> {
                 healthyReports++
                 if (healthyReports >= 2 && activeFishCount < MAX_FISH) {
                     activeFishCount = min(MAX_FISH, activeFishCount + 1)

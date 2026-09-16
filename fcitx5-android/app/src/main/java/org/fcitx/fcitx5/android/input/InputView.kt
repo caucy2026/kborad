@@ -110,6 +110,17 @@ class InputView(
         setOnClickListener { keyboardWindow.toggleDesktopKeyboard() }
     }
 
+    private val desktopScreenSwitchButton =
+        ToolButton(context, R.drawable.ic_switch_display_24, theme).apply {
+            visibility = GONE
+            contentDescription = context.getString(R.string.switch_keyboard_screen)
+            useFullSizeIcon(DESKTOP_OPERATION_ICON_SIZE_DP)
+            setIconTintColor(theme.altKeyTextColor)
+            // Reuse the exact ScreenSwitchAction path used by the ordinary keyboard. This keeps
+            // relay enablement, D0/D2 routing, inset refresh and failure handling in one place.
+            setOnClickListener { keyboardWindow.sendDesktopScreenSwitch() }
+        }
+
     private val desktopEnterButton =
         ToolButton(context, R.drawable.ic_baseline_keyboard_return_24, theme).apply {
             visibility = GONE
@@ -121,6 +132,7 @@ class InputView(
 
     private val desktopOperationButtons = listOf(
         desktopExitButton,
+        desktopScreenSwitchButton,
         desktopVoiceButton,
         desktopEnterButton
     )
@@ -479,7 +491,7 @@ class InputView(
             })
             add(desktopExitButton, lParams(0, dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
                 startOfParent()
-                endToStartOf(desktopVoiceButton)
+                endToStartOf(desktopScreenSwitchButton)
                 bottomOfParent()
                 horizontalChainStyle = LayoutParams.CHAIN_SPREAD
                 horizontalWeight = 1f
@@ -487,8 +499,17 @@ class InputView(
                 marginEnd = dp(DESKTOP_OPERATION_BUTTON_GAP_DP)
                 bottomMargin = dp(DESKTOP_OPERATION_BUTTON_VERTICAL_MARGIN_DP)
             })
-            add(desktopVoiceButton, lParams(0, dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
+            add(desktopScreenSwitchButton, lParams(0, dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
                 startToEndOf(desktopExitButton)
+                endToStartOf(desktopVoiceButton)
+                bottomOfParent()
+                horizontalWeight = 1f
+                marginStart = dp(DESKTOP_OPERATION_BUTTON_GAP_DP)
+                marginEnd = dp(DESKTOP_OPERATION_BUTTON_GAP_DP)
+                bottomMargin = dp(DESKTOP_OPERATION_BUTTON_VERTICAL_MARGIN_DP)
+            })
+            add(desktopVoiceButton, lParams(0, dp(DESKTOP_OPERATION_BUTTON_SIZE_DP)) {
+                startToEndOf(desktopScreenSwitchButton)
                 endToStartOf(desktopEnterButton)
                 bottomOfParent()
                 horizontalWeight = 1f

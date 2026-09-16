@@ -10,6 +10,7 @@ import android.media.SoundPool
 import android.os.Build
 import android.os.VibrationEffect
 import android.provider.Settings
+import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.View
 import org.fcitx.fcitx5.android.R
@@ -171,6 +172,7 @@ object InputFeedbacks {
     private val rippleSoundPrepareStarted = AtomicBoolean(false)
     private var nextRippleSound = 0
     private var activeRippleStream = 0
+    private val ripplePlaybackVerified = AtomicBoolean(false)
 
     /**
      * Decode the short CC0 field recordings before the first desktop-aquarium key press. SoundPool
@@ -194,6 +196,9 @@ object InputFeedbacks {
             pool.setOnLoadCompleteListener { _, _, status ->
                 if (status == 0 && ++loadedCount == RIPPLE_SOUND_RESOURCES.size) {
                     rippleSoundsReady = true
+                    Log.i(TAG, "Aquarium key sounds ready (${RIPPLE_SOUND_RESOURCES.size} samples)")
+                } else if (status != 0) {
+                    Log.w(TAG, "Aquarium key sound failed to load: status=$status")
                 }
             }
             rippleSoundPool = pool
@@ -244,11 +249,19 @@ object InputFeedbacks {
                 0,
                 RIPPLE_PLAYBACK_RATES[soundIndex]
             )
+            if (activeRippleStream == 0) {
+                Log.w(TAG, "Aquarium key sound play was rejected by SoundPool")
+            } else if (ripplePlaybackVerified.compareAndSet(false, true)) {
+                // One line per process is enough for release-device validation without adding
+                // per-key logging overhead to the normal typing path.
+                Log.i(TAG, "Aquarium key sound playback verified")
+            }
         }
     }
 
     private const val PHYSICAL_KEY_UP_VOLUME_SCALE = 0.38f
-    private const val RIPPLE_DEFAULT_VOLUME = 0.30f
+    private const val RIPPLE_DEFAULT_VOLUME = 0.38f
+    private const val TAG = "KBoardInputFeedback"
     private val RIPPLE_SOUND_RESOURCES = intArrayOf(
         R.raw.aquarium_water_touch_1,
         R.raw.aquarium_water_touch_2,

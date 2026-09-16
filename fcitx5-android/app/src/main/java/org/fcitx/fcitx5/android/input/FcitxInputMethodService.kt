@@ -1172,6 +1172,16 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        // The navigation bar's bottom-left hide affordance is delivered to the active IME as
+        // KEYCODE_BACK on this Android 12 build. Never forward that system navigation event into
+        // Fcitx/the editor. The framework's default handler does not dismiss our desktop/fullscreen
+        // input view, so explicitly hide the IME on the first down event and consume the pair.
+        // DesktopKeyboard's explicit remote BACK button uses sendDesktopSystemKeyState() and is
+        // therefore intentionally unaffected.
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.repeatCount == 0) requestHideSelf(0)
+            return true
+        }
         if (isPhysicalHardwareKey(event) && hardwareKeyAnomalyFilter.shouldDropDown(
                 HardwareKeyAnomalyFilter.Key(event.deviceId, keyCode),
                 event.eventTime,
@@ -1199,6 +1209,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            return true
+        }
         if (isPhysicalHardwareKey(event) && hardwareKeyAnomalyFilter.shouldDropUp(
                 HardwareKeyAnomalyFilter.Key(event.deviceId, keyCode),
                 event.eventTime,

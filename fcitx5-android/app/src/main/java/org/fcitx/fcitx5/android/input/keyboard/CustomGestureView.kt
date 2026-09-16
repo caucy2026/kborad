@@ -89,6 +89,8 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
     var onRepeatListener: ((View) -> Unit)? = null
     var onGestureListener: OnGestureListener? = null
     var onTouchDownFeedback: ((View, Float, Float) -> Unit)? = null
+    var onAcceptedActionFeedback: ((View) -> Unit)? = null
+    private var acceptedActionFeedbackPlayed = false
 
     var soundEffect: InputFeedbacks.SoundEffect = InputFeedbacks.SoundEffect.Standard
 
@@ -117,6 +119,13 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                 -touchSlop <= y &&
                 x < (width + touchSlop) &&
                 y < (height + touchSlop)
+    }
+
+    /** Play at most one feedback sample for a gesture that actually dispatched an action. */
+    fun notifyAcceptedAction() {
+        if (acceptedActionFeedbackPlayed) return
+        acceptedActionFeedbackPlayed = true
+        onAcceptedActionFeedback?.invoke(this)
     }
 
     private fun resetState() {
@@ -151,6 +160,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 if (!isEnabled) return false
+                acceptedActionFeedbackPlayed = false
                 drawableHotspotChanged(x, y)
                 isPressed = true
                 if (gestureHapticEnabled) InputFeedbacks.hapticFeedback(this)
@@ -171,6 +181,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                             InputFeedbacks.hapticFeedback(this@CustomGestureView, true)
                         }
                         longPressTriggered = performLongClick()
+                        if (longPressTriggered) notifyAcceptedAction()
                     }
                 }
                 if (repeatEnabled) {
@@ -181,7 +192,10 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                         var lastTriggerTime: Long
                         while (isActive && isEnabled) {
                             lastTriggerTime = SystemClock.uptimeMillis()
-                            onRepeatListener?.invoke(this@CustomGestureView)
+                            onRepeatListener?.let {
+                                it(this@CustomGestureView)
+                                notifyAcceptedAction()
+                            }
                             val t = lastTriggerTime + RepeatInterval - SystemClock.uptimeMillis()
                             if (t > 0) delay(t)
                         }
@@ -212,14 +226,24 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
                         val now = System.currentTimeMillis()
                         if (maybeDoubleTap && now - lastClickTime <= longPressDelay) {
                             maybeDoubleTap = false
-                            onDoubleTapListener?.invoke(this)
+                            onDoubleTapListener?.let {
+                                it(this)
+                                notifyAcceptedAction()
+                            }
                         } else {
                             maybeDoubleTap = true
+                            val dispatchesAction = hasOnClickListeners()
                             performClick()
+                            if (dispatchesAction) notifyAcceptedAction()
                         }
                         lastClickTime = now
                     } else {
+                        // View.performClick() is allowed to return false even after an OEM
+                        // wrapper has dispatched its listener. Capture the listener state before
+                        // dispatch so a real, uncancelled key action cannot lose its audio.
+                        val dispatchesAction = hasOnClickListeners()
                         performClick()
+                        if (dispatchesAction) notifyAcceptedAction()
                     }
                 }
                 return true

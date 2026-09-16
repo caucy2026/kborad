@@ -102,6 +102,9 @@ class DesktopKeyboard private constructor(
             }
             it.keyDownSoundEnabled = false
             it.physicalReleaseSoundEnabled = false
+            // Global-mode water audio follows a successfully dispatched key action, not raw
+            // ACTION_DOWN. Cancelled slides and rejected/empty touches therefore stay silent.
+            it.onAcceptedActionFeedback = { InputFeedbacks.rippleSound() }
         }
         configureHeldModifierKeys()
         configureShortcutSpaceKey()
@@ -165,7 +168,6 @@ class DesktopKeyboard private constructor(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 aquariumView.touchDownAt(normalizedX, normalizedY)
-                InputFeedbacks.rippleSound()
             }
             MotionEvent.ACTION_MOVE -> aquariumView.moveTouchTo(normalizedX, normalizedY)
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> aquariumView.releaseTouch()
@@ -385,6 +387,10 @@ class DesktopKeyboard private constructor(
         onAction(KeyAction.SymAction(KeySym(FcitxKeyMapping.FcitxKey_Return)))
     }
 
+    fun sendScreenSwitchFromOperationBar() {
+        onAction(KeyAction.ScreenSwitchAction)
+    }
+
     override fun onAction(action: KeyAction, source: KeyActionListener.Source) {
         if (action is KeyAction.SpaceLongPressAction &&
             DesktopKeyPolicy.hasShortcutModifier(modifierStates)
@@ -490,6 +496,9 @@ class DesktopKeyboard private constructor(
 
     override fun onAttach() {
         super.onAttach()
+        // The aquarium is the only continuously changing layer. Keep the six static physical-key
+        // rows cached so its 24 Hz frames do not rasterize every rounded key again.
+        setKeyRowLayerCaching(true)
         releaseHeldModifierKeys()
         heldModifierKeys.clear()
         modifierStates.clear()
@@ -511,10 +520,13 @@ class DesktopKeyboard private constructor(
         updateShortcutHints()
         touchpadView.releaseInputState()
         aquariumView.deactivate()
+        // Hidden desktop keyboards must not retain six full-width GPU layer textures.
+        setKeyRowLayerCaching(false)
         super.onDetach()
     }
 
     override fun dispose() {
+        setKeyRowLayerCaching(false)
         touchpadView.dispose()
         super.dispose()
     }
@@ -596,6 +608,7 @@ class DesktopKeyboard private constructor(
                             // not create a duplicate Android modifier DOWN.
                             if (!stateAlreadyHeld) {
                                 onAction(KeyAction.ModifierStateAction(state, down = true))
+                                key.notifyAcceptedAction()
                             }
                         }
                     }

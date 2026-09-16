@@ -228,6 +228,10 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         (currentKeyboard as? DesktopKeyboard)?.sendEnterFromOperationBar()
     }
 
+    fun sendDesktopScreenSwitch() {
+        (currentKeyboard as? DesktopKeyboard)?.sendScreenSwitchFromOperationBar()
+    }
+
     fun onImeWindowShown() {
         (currentKeyboard as? DesktopKeyboard)?.onImeWindowShown()
     }

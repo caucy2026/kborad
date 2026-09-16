@@ -533,6 +533,22 @@ abstract class BaseKeyboard(
     }
 
     /**
+     * Cache or release the complete key rows as compositor layers.
+     *
+     * The desktop aquarium updates its TextureView at 24 Hz. Without row-level layers Android
+     * 12 records and rasterizes every rounded key background again for every aquarium frame,
+     * even though almost all keys are unchanged. A pressed/selected key still invalidates its
+     * owning row, while an idle row can be composed from the cached layer. The layers are
+     * released when desktop mode detaches so a hidden keyboard does not retain GPU memory.
+     */
+    protected fun setKeyRowLayerCaching(enabled: Boolean) {
+        val layerType = if (enabled) View.LAYER_TYPE_HARDWARE else View.LAYER_TYPE_NONE
+        keyRows.forEach { row ->
+            if (row.layerType != layerType) row.setLayerType(layerType, null)
+        }
+    }
+
+    /**
      * Permanently release observers owned by this keyboard instance.
      *
      * This is intentionally separate from [onDetach]: layouts are detached and reattached while
