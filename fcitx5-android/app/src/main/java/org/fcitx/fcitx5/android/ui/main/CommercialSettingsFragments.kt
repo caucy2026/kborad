@@ -8,9 +8,9 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
+import androidx.appcompat.widget.SwitchCompat
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceScreen
-import com.google.android.material.materialswitch.MaterialSwitch
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
@@ -90,8 +90,9 @@ class CommercialThemeFragment : Fragment() {
                 1f,
             )
         }
-        val followSwitch = MaterialSwitch(ctx).apply {
+        val followSwitch = SwitchCompat(ctx).apply {
             text = getString(R.string.follow_system_day_night_theme)
+            showText = false
             isChecked = followSystem
             setPadding(dp(20), dp(8), dp(20), dp(8))
             setOnCheckedChangeListener { _, checked ->

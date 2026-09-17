@@ -1,5 +1,13 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-09-17 - 修复商业版“外观主题”页面点击崩溃
+
+- 根因：商业主题页以代码创建 `MaterialSwitch`，H730 Android 12 上 `SwitchCompat` 默认尝试测量内部 ON/OFF 文本，但 `textOn` 与 `textOff` 均为空，最终在 `StaticLayout` 中对空 `CharSequence` 调用 `length()`，触发主线程 NPE。
+- 修复：明确设置 `showText = false`，保留外部“跟随系统夜间模式”标题、开关状态与主题选择逻辑，仅关闭未使用的开关内部文字布局；真机首次回归又发现 `MaterialSwitch` 在当前非 Material 主题下无法解析颜色属性，开关本体不可见且不可点击，因此改用与现有 AppCompat 主题匹配的 `SwitchCompat`，同时消除对应 `ResourcesCompat` 警告。
+- 构建与签名：复用已验证 WSL Android/NDK 环境执行 `:app:assembleDebug`，196 tasks 构建成功；新增 Android 回归测试的 `:app:compileDebugAndroidTestKotlin` 也构建成功。最终平台签名包为 `bin/KBoard-1.4.2-theme-page-fix-arm64-v8a-platform-signed-test.apk`，包名 `com.newlink.kemi.kboard`、版本 `1.4.2/162`、ABI `arm64-v8a`，APK SHA-256 `31A53123A8C0951567C967095743A22290B852A6E764BF4C5CD0F5FADB59BDF2`。v1/v2/v3 验签通过，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 真机验证：覆盖安装到 `172.21.16.24` 返回 `Success`，未清数据；“外观主题”页面正常显示主题卡片及开关，开关可从 `true` 切换到 `false` 并恢复为 `true`。额外重复返回/进入页面 5 轮，应用 PID 始终为 679；默认输入法仍为主 `FcitxInputMethodService`，目标 NPE、FATAL、ANR 与主题资源警告均为 0。
+- 项目约束：根目录 `AGENTS.md` 已记录根目录 `debug.keystore` 是 H730 平台/正式签名文件、alias、证书指纹和口令保密要求；测试包覆盖安装前也必须执行正式证书校验。
+
 ## 2026-09-16 - 旧 Session 修复包 20 轮定向压力回归
 
 - 在 16.24 执行便签输入/退格、隐藏、设置/浏览器切换、同包中继/主 IME 往返重建，共20轮；40次键盘显示检查通过，36次服务释放，PID始终10501，两类目标异常、KBoard FATAL/ANR均0，默认输入法恢复不变。

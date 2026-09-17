@@ -40,6 +40,14 @@ If local dependencies are already prepared, the verified direct build is documen
 - Do not run `pm clear` without approval; it deletes keyboard settings and user data.
 - Use the `kemi-android-validation` skill for the full device loop.
 
+### APK Signing
+
+- The repository-root `debug.keystore` is KBoard's current H730 platform/formal signing key despite its historical filename; do not substitute the ordinary Android debug key.
+- Use key alias `androiddebugkey`, and identify the key by signer certificate SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`.
+- Test APKs intended to update an installed H730 KBoard package must also be signed with this key so that `adb install -r` preserves the app and its data.
+- Never commit signing passwords or expose them in source, documentation, command output, or logs. Obtain signing credentials only from the approved private credential store.
+- Before deployment, run `apksigner verify --verbose --print-certs` and confirm both the signature schemes and the certificate fingerprint above.
+
 ## Localization
 
 - Android static labels belong in `app/src/main/res/values*/strings.xml`.
