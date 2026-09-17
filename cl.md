@@ -1,5 +1,14 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-09-17 - 隐私政策改为应用内说明页
+
+- 行为调整：“关于 KBoard”和“隐私”页面中的“隐私政策”均改为应用内导航，不再发送浏览器 `ACTION_VIEW` 或打开外部网页；新页面标题为“隐私策略”，正文为“KEMI Kboard不要求联网权限，也不搜集任何个人信息。”。
+- 修改范围：`AboutFragment.kt`、`CommercialSettingsFragments.kt`、`SettingsRoute.kt` 及中英文 `strings.xml`；新增 `CommercialPrivacyPolicyFragmentTest.kt`，覆盖两个入口、目标路由和正文显示。
+- 自动验证：先在缺少新路由和文案资源时确认测试编译失败，再完成实现；`:app:assembleDebug`、`:app:compileDebugAndroidTestKotlin` 和 `:app:assembleDebugAndroidTest` 均成功。16.24 真机运行 2 项 instrumentation 测试，结果 `OK (2 tests)`。
+- 构建与签名：测试包为 `bin/KBoard-1.4.2-local-privacy-policy-arm64-v8a-platform-signed-test.apk`，包名 `com.newlink.kemi.kboard`、版本 `1.4.2/162`、ABI `arm64-v8a`；APK SHA-256 `04D6D6F1BA0203B77F64D018D3A5F69300E7F88467CD2DB9B314FBC02E8F8AB9`，v1/v2/v3 验签通过，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 真机验证：覆盖安装到 `172.21.16.24` 返回 `Success`，未清除用户数据；两个入口均显示同一应用内页面及准确正文，未拉起浏览器。定向日志未发现 FATAL、KBoard ANR、`ActivityNotFoundException`、旧隐私网址或 `ACTION_VIEW`；应用冷启动成功，默认输入法仍为主 `FcitxInputMethodService`。测试辅助包验证后已卸载，主应用保持运行。
+- 发布口径风险：当前工程的在线语音识别链仍声明并使用 `INTERNET`；因此“不要求联网权限”与现有 ASR 网络能力存在表述冲突，商业发布前需确认该文案是否仅指键盘基础输入功能，或同步调整在线语音能力。
+
 ## 2026-09-17 - 修复商业版“外观主题”页面点击崩溃
 
 - 根因：商业主题页以代码创建 `MaterialSwitch`，H730 Android 12 上 `SwitchCompat` 默认尝试测量内部 ON/OFF 文本，但 `textOn` 与 `textOff` 均为空，最终在 `StaticLayout` 中对空 `CharSequence` 调用 `length()`，触发主线程 NPE。

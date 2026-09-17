@@ -78,6 +78,8 @@
     <string name="build_git_hash">Build Git hash</string>
     <string name="source_code">Source code</string>
     <string name="privacy_policy">Privacy policy</string>
+    <string name="commercial_privacy_policy_title">Privacy policy</string>
+    <string name="commercial_privacy_policy_body">KEMI Kboard does not require network permission and does not collect any personal information.</string>
     <string name="license">License</string>
     <string name="open_source_licenses">Open source licenses</string>
     <string name="licenses_of_third_party_libraries">Licenses of third-party libraries</string>

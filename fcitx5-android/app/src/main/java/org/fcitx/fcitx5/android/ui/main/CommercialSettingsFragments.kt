@@ -1,13 +1,13 @@
 package org.fcitx.fcitx5.android.ui.main
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
 import androidx.appcompat.widget.SwitchCompat
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceScreen
@@ -17,10 +17,11 @@ import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.ui.common.PaddingPreferenceFragment
+import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.ui.main.settings.theme.ResponsiveThemeListView
 import org.fcitx.fcitx5.android.ui.main.settings.theme.SimpleThemeListAdapter
-import org.fcitx.fcitx5.android.utils.Const
 import org.fcitx.fcitx5.android.utils.addPreference
+import org.fcitx.fcitx5.android.utils.navigateWithAnim
 import splitties.dimensions.dp
 
 private fun PreferenceScreen.addManagedPreference(
@@ -58,8 +59,28 @@ class CommercialPrivacySettingsFragment : PaddingPreferenceFragment() {
             addManagedPreference(prefs, prefs.clipboardListening.key)
             addManagedPreference(prefs, prefs.clipboardMaskSensitive.key)
             addPreference(R.string.privacy_policy) {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Const.privacyPolicyUrl)))
+                navigateWithAnim(SettingsRoute.CommercialPrivacyPolicy)
             }
+        }
+    }
+}
+
+class CommercialPrivacyPolicyFragment : Fragment() {
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ): View {
+        val ctx = requireContext()
+        return ScrollView(ctx).apply {
+            addView(TextView(ctx).apply {
+                text = getString(R.string.commercial_privacy_policy_body)
+                textSize = 18f
+                setPadding(dp(24), dp(24), dp(24), dp(24))
+            }, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
         }
     }
 }

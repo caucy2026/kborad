@@ -4,8 +4,6 @@
  */
 package org.fcitx.fcitx5.android.ui.main
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
 import android.widget.EditText
@@ -24,7 +22,7 @@ class AboutFragment : PaddingPreferenceFragment() {
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         preferenceScreen = preferenceManager.createPreferenceScreen(requireContext()).apply {
             addPreference(R.string.privacy_policy) {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Const.privacyPolicyUrl)))
+                navigateWithAnim(SettingsRoute.CommercialPrivacyPolicy)
             }
             addPreference(
                 R.string.open_source_licenses,
