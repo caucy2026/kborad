@@ -2218,4 +2218,5 @@ KEMI 设置页品牌化与动态名称中文化。
 - 75 处理前的 `com.newlink.kemi.kboard` 是普通应用 UID 10049，同时存在 `/system/app/KBoard` 系统底包和 `/data` 更新层；带 `android:sharedUserId="android.uid.system"` 的 `56445eaf...` 直接 `install -r` 会被 `INSTALL_FAILED_SHARED_USER_INCOMPATIBLE` 拒绝。这是安装身份不兼容，不是 APK 损坏或签名验证失败。本次已完成迁移并验证为 system UID 安装链，后续升级仍须保持同一 shared UID 和平台证书。
 - 63 本轮没有可证明的“普通 UID 迁移到 UID 1000”操作。可证明事实只有：遗漏 sharedUserId 的首个候选被拒绝；补回 Release manifest 的 sharedUserId 后覆盖成功并保持 UID 1000。这说明 63 在本轮开始前已经处于 system UID 升级链。
 - `.62` 历史上的 `adb remount`/overlayfs 删除 `/system/app/KBoard` 流程针对旧包 `org.fcitx.fcitx5.android`，最终安装的是 `/data/app` 普通 UID 版本；它不能作为 75 迁移到 UID 1000 的依据。63 后来的“卸载错误证书数据包再装平台签名包”记录也没有 shared UID 迁移证据。
-- 本次 75 迁移已经完成，但后续更换设备或重做系统时仍必须先备份设置和 `/data` APK，并只读核对系统底包与更新层各自的包名、manifest sharedUserId、证书、版本、UID 和用户安装状态。禁止手工修改 `packages.xml`；不能把 75 的成功直接推定为其他设备也可无损迁移。
+- 本次 75 迁移已经完成，但迁移后只恢复主 IME 时遗漏了同包 `DisplaySwitchInputMethodService`：首次点击扩展键盘切屏出现 `Display-switch IME relay is not enabled`，补执行同包 relay 的 `ime enable` 后 D2→D0 切屏成功，两个窗口继续保持 1920×1280，原 `56445eaf...` 未出现新增产品崩溃。后续部署检查必须同时确认主 IME 和 relay 已启用，不能只检查默认输入法。
+- 后续更换设备或重做系统时仍必须先备份设置和 `/data` APK，并只读核对系统底包与更新层各自的包名、manifest sharedUserId、证书、版本、UID 和用户安装状态。禁止手工修改 `packages.xml`；不能把 75 的成功直接推定为其他设备也可无损迁移。

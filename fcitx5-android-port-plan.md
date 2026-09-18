@@ -649,4 +649,4 @@ KBoard 不再为跨屏键盘创建 VirtualDisplay 或 Relay Activity。KEMI 通�
 
 遇到 `INSTALL_FAILED_SHARED_USER_INCOMPATIBLE` 时，不要反复 `install -r`，也不要编辑 `/data/system/packages.xml`。先分别提取系统底包和 `/data` 更新层的 APK，检查包名、`sharedUserId`、签名证书和版本，再读取 `dumpsys package` 的 `userId`、`codePath`、`resourcePath`、用户安装状态及当前默认 IME。平台签名相同不等于 shared UID 一定兼容；现装包创建时的 shared UID 身份也是升级约束。
 
-截至 2026-09-18，63 只证明“原链已经是 UID 1000，补回 Release sharedUserId 后可覆盖”，没有记录普通 UID 原地迁移为 UID 1000。75 在处理前是 UID 10049 且带系统底包与 `/data` 更新层，本次已经完成 system UID 安装链迁移，并通过 100 轮 Overlay 打开/关闭与 200 次跨屏切换；这份结果只证明该设备本次迁移和窗口生命周期可用。历史 `.62` 删除系统底包后安装普通用户应用的 overlayfs 流程目标相反，不得复用为 UID 1000 迁移方案；其他设备仍须逐项核对底包、更新层、shared UID、证书和数据备份。
+截至 2026-09-18，63 只证明“原链已经是 UID 1000，补回 Release sharedUserId 后可覆盖”，没有记录普通 UID 原地迁移为 UID 1000。75 在处理前是 UID 10049 且带系统底包与 `/data` 更新层，本次已经完成 system UID 安装链迁移，并通过 100 轮 Overlay 打开/关闭与 200 次跨屏切换；这份结果只证明该设备本次迁移和窗口生命周期可用。迁移后的启用状态必须同时检查主 IME 与同包 `DisplaySwitchInputMethodService` relay：75 首次切屏记录到 `Display-switch IME relay is not enabled`，补启用 relay 后 D2→D0 成功，两个窗口保持 1920×1280。历史 `.62` 删除系统底包后安装普通用户应用的 overlayfs 流程目标相反，不得复用为 UID 1000 迁移方案；其他设备仍须逐项核对底包、更新层、shared UID、证书、主/relay 启用状态和数据备份。
