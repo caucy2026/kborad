@@ -40,6 +40,7 @@ import org.fcitx.fcitx5.android.input.broadcast.PunctuationComponent
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
 import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateComponent
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
+import org.fcitx.fcitx5.android.input.keyboard.DesktopKeyboardModeState
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
 import org.fcitx.fcitx5.android.input.picker.emojiPicker
 import org.fcitx.fcitx5.android.input.picker.emoticonPicker
@@ -255,7 +256,9 @@ class InputView(
         keyboardBottomPadding,
         keyboardBottomPaddingLandscape,
     )
-    private var desktopKeyboardMode = false
+    private val desktopKeyboardModeState = DesktopKeyboardModeState()
+    private val desktopKeyboardMode: Boolean
+        get() = desktopKeyboardModeState.enabled
     private var imeWindowVisible = false
     private var pendingDesktopKeyboardMode: Boolean? = null
     private var inputViewHierarchyReady = false
@@ -613,12 +616,15 @@ class InputView(
             pendingDesktopKeyboardMode = enabled
             return
         }
-        if (desktopKeyboardMode == enabled) {
+        val modeChanged = desktopKeyboardModeState.synchronize(enabled) {
+            // Candidate components can outlive an InputView generation. Always reapply the
+            // current mode so a stale white desktop override cannot survive on a light bar.
+            kawaiiBar.setDesktopKeyboardMode(it)
+        }
+        if (!modeChanged) {
             if (enabled) refreshDesktopKeyboardHeight()
             return
         }
-        desktopKeyboardMode = enabled
-        kawaiiBar.setDesktopKeyboardMode(enabled)
         if (enabled) {
             keyboardWindow.setDesktopSystemBottomInset(lastNavigationBottomInset.coerceAtLeast(0))
         }

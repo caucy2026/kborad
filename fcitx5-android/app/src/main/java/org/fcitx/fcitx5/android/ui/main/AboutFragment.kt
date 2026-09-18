@@ -4,25 +4,25 @@
  */
 package org.fcitx.fcitx5.android.ui.main
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import org.fcitx.fcitx5.android.BuildConfig
+import android.text.InputType
+import android.widget.EditText
+import androidx.appcompat.app.AlertDialog
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.ui.common.PaddingPreferenceFragment
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.utils.Const
 import org.fcitx.fcitx5.android.utils.addCategory
 import org.fcitx.fcitx5.android.utils.addPreference
-import org.fcitx.fcitx5.android.utils.formatDateTime
 import org.fcitx.fcitx5.android.utils.navigateWithAnim
+import org.fcitx.fcitx5.android.utils.toast
 
 class AboutFragment : PaddingPreferenceFragment() {
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         preferenceScreen = preferenceManager.createPreferenceScreen(requireContext()).apply {
             addPreference(R.string.privacy_policy) {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Const.privacyPolicyUrl)))
+                navigateWithAnim(SettingsRoute.CommercialPrivacyPolicy)
             }
             addPreference(
                 R.string.open_source_licenses,
@@ -30,22 +30,36 @@ class AboutFragment : PaddingPreferenceFragment() {
             ) {
                 navigateWithAnim(SettingsRoute.License)
             }
-            addPreference(R.string.source_code, R.string.github_repo) {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Const.githubRepo)))
-            }
-            addPreference(R.string.license, Const.licenseSpdxId) {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Const.licenseUrl)))
-            }
             addCategory(R.string.version) {
                 isIconSpaceReserved = false
-                addPreference(R.string.current_version, Const.versionName)
-                addPreference(R.string.build_git_hash, BuildConfig.BUILD_GIT_HASH) {
-                    val commit = BuildConfig.BUILD_GIT_HASH.substringBefore('-')
-                    val uri = Uri.parse("${Const.githubRepo}/commit/${commit}")
-                    startActivity(Intent(Intent.ACTION_VIEW, uri))
+                addPreference(R.string.current_version, Const.versionName) {
+                    if (EngineeringAccessSession.gate.isUnlocked) {
+                        navigateWithAnim(SettingsRoute.Engineering)
+                    } else if (EngineeringAccessSession.gate.onVersionTapped()) {
+                        showEngineeringPasswordDialog()
+                    }
+                    true
                 }
-                addPreference(R.string.build_time, formatDateTime(BuildConfig.BUILD_TIME))
             }
         }
+    }
+
+    private fun showEngineeringPasswordDialog() {
+        val input = EditText(requireContext()).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            hint = getString(R.string.engineering_password)
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.engineering_settings)
+            .setView(input)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                if (EngineeringAccessSession.gate.unlock(input.text.toString())) {
+                    navigateWithAnim(SettingsRoute.Engineering)
+                } else {
+                    requireContext().toast(R.string.engineering_password_incorrect)
+                }
+            }
+            .show()
     }
 }

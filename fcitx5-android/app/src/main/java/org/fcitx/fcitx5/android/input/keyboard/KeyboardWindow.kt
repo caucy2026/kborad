@@ -92,7 +92,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         )
     }
     private var currentKeyboardName = ""
-    private var desktopMode = false
+    private val desktopModeState = DesktopKeyboardModeState()
     private var floatingMode = false
     private var lastSymbolType: String by AppPrefs.getInstance().internal.lastSymbolLayout
 
@@ -284,9 +284,10 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     private fun notifyBarLayoutChanged() {
         bar.onKeyboardLayoutSwitched(currentKeyboardName == NumberKeyboard.Name)
         val nextDesktopMode = currentKeyboardName == DesktopKeyboard.Name
-        if (desktopMode != nextDesktopMode) {
-            desktopMode = nextDesktopMode
-            inputView.setDesktopKeyboardMode(desktopMode)
+        desktopModeState.synchronize(nextDesktopMode) {
+            // The InputView/candidate surface may have been recreated while the logical keyboard
+            // mode stayed the same, so mode styling must be synchronized on every attachment.
+            inputView.setDesktopKeyboardMode(it)
         }
     }
 }

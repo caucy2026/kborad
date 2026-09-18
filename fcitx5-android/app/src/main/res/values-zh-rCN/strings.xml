@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="kboard_settings">KBoard 设置</string>
+    <string name="input_languages">输入语言</string>
+    <string name="keyboard_settings">键盘设置</string>
+    <string name="appearance_theme">外观主题</string>
+    <string name="privacy">隐私</string>
+    <string name="about_kboard">关于 KBoard</string>
+    <string name="engineering_settings">工程设置</string>
+    <string name="engineering_password">工程密码</string>
+    <string name="engineering_password_incorrect">工程密码错误</string>
     <string name="app_name_release">KEMI语音输入法</string>
     <string name="app_name_debug">KEMI语音输入法</string>
     <string name="save">保存</string>
@@ -69,6 +78,8 @@
     <string name="build_git_hash">构建 Git 哈希</string>
     <string name="source_code">源代码</string>
     <string name="privacy_policy">隐私政策</string>
+    <string name="commercial_privacy_policy_title">隐私策略</string>
+    <string name="commercial_privacy_policy_body">KEMI Kboard不要求联网权限，也不搜集任何个人信息。</string>
     <string name="license">许可</string>
     <string name="open_source_licenses">开源软件许可</string>
     <string name="licenses_of_third_party_libraries">第三方库许可证</string>

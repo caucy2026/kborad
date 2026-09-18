@@ -1,5 +1,22 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-09-17 - 隐私政策改为应用内说明页
+
+- 行为调整：“关于 KBoard”和“隐私”页面中的“隐私政策”均改为应用内导航，不再发送浏览器 `ACTION_VIEW` 或打开外部网页；新页面标题为“隐私策略”，正文为“KEMI Kboard不要求联网权限，也不搜集任何个人信息。”。
+- 修改范围：`AboutFragment.kt`、`CommercialSettingsFragments.kt`、`SettingsRoute.kt` 及中英文 `strings.xml`；新增 `CommercialPrivacyPolicyFragmentTest.kt`，覆盖两个入口、目标路由和正文显示。
+- 自动验证：先在缺少新路由和文案资源时确认测试编译失败，再完成实现；`:app:assembleDebug`、`:app:compileDebugAndroidTestKotlin` 和 `:app:assembleDebugAndroidTest` 均成功。16.24 真机运行 2 项 instrumentation 测试，结果 `OK (2 tests)`。
+- 构建与签名：测试包为 `bin/KBoard-1.4.2-local-privacy-policy-arm64-v8a-platform-signed-test.apk`，包名 `com.newlink.kemi.kboard`、版本 `1.4.2/162`、ABI `arm64-v8a`；APK SHA-256 `04D6D6F1BA0203B77F64D018D3A5F69300E7F88467CD2DB9B314FBC02E8F8AB9`，v1/v2/v3 验签通过，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 真机验证：覆盖安装到 `172.21.16.24` 返回 `Success`，未清除用户数据；两个入口均显示同一应用内页面及准确正文，未拉起浏览器。定向日志未发现 FATAL、KBoard ANR、`ActivityNotFoundException`、旧隐私网址或 `ACTION_VIEW`；应用冷启动成功，默认输入法仍为主 `FcitxInputMethodService`。测试辅助包验证后已卸载，主应用保持运行。
+- 发布口径风险：当前工程的在线语音识别链仍声明并使用 `INTERNET`；因此“不要求联网权限”与现有 ASR 网络能力存在表述冲突，商业发布前需确认该文案是否仅指键盘基础输入功能，或同步调整在线语音能力。
+
+## 2026-09-17 - 修复商业版“外观主题”页面点击崩溃
+
+- 根因：商业主题页以代码创建 `MaterialSwitch`，H730 Android 12 上 `SwitchCompat` 默认尝试测量内部 ON/OFF 文本，但 `textOn` 与 `textOff` 均为空，最终在 `StaticLayout` 中对空 `CharSequence` 调用 `length()`，触发主线程 NPE。
+- 修复：明确设置 `showText = false`，保留外部“跟随系统夜间模式”标题、开关状态与主题选择逻辑，仅关闭未使用的开关内部文字布局；真机首次回归又发现 `MaterialSwitch` 在当前非 Material 主题下无法解析颜色属性，开关本体不可见且不可点击，因此改用与现有 AppCompat 主题匹配的 `SwitchCompat`，同时消除对应 `ResourcesCompat` 警告。
+- 构建与签名：复用已验证 WSL Android/NDK 环境执行 `:app:assembleDebug`，196 tasks 构建成功；新增 Android 回归测试的 `:app:compileDebugAndroidTestKotlin` 也构建成功。最终平台签名包为 `bin/KBoard-1.4.2-theme-page-fix-arm64-v8a-platform-signed-test.apk`，包名 `com.newlink.kemi.kboard`、版本 `1.4.2/162`、ABI `arm64-v8a`，APK SHA-256 `31A53123A8C0951567C967095743A22290B852A6E764BF4C5CD0F5FADB59BDF2`。v1/v2/v3 验签通过，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 真机验证：覆盖安装到 `172.21.16.24` 返回 `Success`，未清数据；“外观主题”页面正常显示主题卡片及开关，开关可从 `true` 切换到 `false` 并恢复为 `true`。额外重复返回/进入页面 5 轮，应用 PID 始终为 679；默认输入法仍为主 `FcitxInputMethodService`，目标 NPE、FATAL、ANR 与主题资源警告均为 0。
+- 项目约束：根目录 `AGENTS.md` 已记录根目录 `debug.keystore` 是 H730 平台/正式签名文件、alias、证书指纹和口令保密要求；测试包覆盖安装前也必须执行正式证书校验。
+
 ## 2026-09-16 - 旧 Session 修复包 20 轮定向压力回归
 
 - 在 16.24 执行便签输入/退格、隐藏、设置/浏览器切换、同包中继/主 IME 往返重建，共20轮；40次键盘显示检查通过，36次服务释放，PID始终10501，两类目标异常、KBoard FATAL/ANR均0，默认输入法恢复不变。
