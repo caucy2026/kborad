@@ -35,6 +35,7 @@ open class TokenReadyInputMethodService : InputMethodService() {
                 override fun attachToken(token: IBinder) {
                     if (retired) return
                     super.attachToken(token)
+                    onSystemImeAttached()
                     showGate.tokenAttached()
                     resumePendingShow()
                 }
@@ -93,6 +94,9 @@ open class TokenReadyInputMethodService : InputMethodService() {
         } else {
             super.onCreateInputMethodInterface()
         }
+
+    /** Called only after Android's input-method manager attaches the real IME window token. */
+    protected open fun onSystemImeAttached() = Unit
 
     private fun resumePendingShow() {
         val generation = showGate.generation

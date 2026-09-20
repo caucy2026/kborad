@@ -19,6 +19,7 @@ import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
+import android.os.Looper
 import android.os.SystemClock
 import android.hardware.display.DisplayManager
 import android.text.SpannableString
@@ -81,6 +82,8 @@ import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.cursor.CursorRange
 import org.fcitx.fcitx5.android.input.cursor.CursorTracker
 import org.fcitx.fcitx5.android.input.keyboard.RemoteMouseInputProtocol
+import org.fcitx.fcitx5.android.input.overlay.KBoardOverlaySession
+import org.fcitx.fcitx5.android.input.overlay.KBoardOverlayService
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.fcitx.fcitx5.android.utils.alpha
 import org.fcitx.fcitx5.android.utils.forceShowSelf
@@ -97,6 +100,10 @@ import java.lang.ref.WeakReference
 import kotlin.math.max
 
 class FcitxInputMethodService : LifecycleInputMethodService() {
+
+    override fun onSystemImeAttached() {
+        KBoardOverlayService.onSystemImeBound()
+    }
 
     private lateinit var fcitx: FcitxConnection
     private val fcitxClientName =
@@ -172,6 +179,11 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     private var capabilityFlags = CapabilityFlags.DefaultFlags
+    private var outputRouteRequestId: Long? = null
+
+    internal fun selectOutputRoute(requestId: Long?) {
+        outputRouteRequestId = requestId.takeIf(KBoardOverlaySession::ownsPhysical)
+    }
 
     private val selection = CursorTracker()
 
@@ -323,6 +335,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         contentViewRef = decorView.findViewById(android.R.id.content)
         lastKnownConfig = resources.configuration
         Log.i(IME_LIFECYCLE_TAG, "created service instance=${System.identityHashCode(this)}")
+        KBoardOverlayService.onImeGenerationAvailable(this)
     }
 
     /**
@@ -392,6 +405,22 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             is FcitxEvent.KeyEvent -> event.data.let event@{
                 if (it.states.virtual) {
                     // KeyEvent from virtual keyboard
+                    val overlayKeyCode = it.sym.keyCode
+                    val overlayFunctionalKey = it.sym.sym in setOf(
+                        FcitxKeyMapping.FcitxKey_BackSpace,
+                        FcitxKeyMapping.FcitxKey_Return,
+                        FcitxKeyMapping.FcitxKey_Left,
+                        FcitxKeyMapping.FcitxKey_Right
+                    )
+                    val overlayChord = it.states.ctrl || it.states.alt || it.states.meta
+                    if (KBoardOverlaySession.ownsPhysical(outputRouteRequestId) &&
+                        overlayKeyCode != KeyEvent.KEYCODE_UNKNOWN &&
+                        (overlayFunctionalKey || overlayChord)
+                    ) {
+                        sendOverlayKey(overlayKeyCode, KeyEvent.ACTION_DOWN, it.states.metaState)
+                        sendOverlayKey(overlayKeyCode, KeyEvent.ACTION_UP, it.states.metaState)
+                        return@event
+                    }
                     when (it.sym.sym) {
                         FcitxKeyMapping.FcitxKey_BackSpace -> handleBackspaceKey()
                         FcitxKeyMapping.FcitxKey_Return -> handleReturnKey()
@@ -443,6 +472,14 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                     if (keyCode != KeyEvent.KEYCODE_UNKNOWN) {
                         // recognized keyCode
                         val eventTime = SystemClock.uptimeMillis()
+                        if (KBoardOverlaySession.ownsPhysical(outputRouteRequestId)) {
+                            sendOverlayKey(
+                                keyCode,
+                                if (it.up) KeyEvent.ACTION_UP else KeyEvent.ACTION_DOWN,
+                                it.states.metaState
+                            )
+                            return@event
+                        }
                         if (it.up) {
                             sendUpKeyEvent(eventTime, keyCode, it.states.metaState)
                         } else {
@@ -594,6 +631,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     fun commitText(text: String, cursor: Int = -1) {
+        if (KBoardOverlaySession.ownsPhysical(outputRouteRequestId)) {
+            KBoardOverlaySession.input("commit", text, cursor)
+            return
+        }
         val ic = currentInputConnection ?: return
         // when composing text equals commit content, finish composing text as-is
         if (composing.isNotEmpty() && composingText.toString() == text) {
@@ -624,6 +665,11 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 setSelection(target, target)
             }
         }
+    }
+
+    fun commitTextFrom(requestId: Long?, text: String, cursor: Int = -1) {
+        selectOutputRoute(requestId)
+        commitText(text, cursor)
     }
 
     fun beginVoiceComposing() {
@@ -691,6 +737,13 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         )
     ) == true
 
+    private fun sendOverlayKey(keyCode: Int, action: Int, metaState: Int = 0) {
+        KBoardOverlaySession.input(
+            "key", arg1 = keyCode, arg2 = action,
+            extras = Bundle().apply { putInt("metaState", metaState) }
+        )
+    }
+
     private fun sendUpKeyEvent(
         eventTime: Long,
         keyEventCode: Int,
@@ -714,13 +767,24 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
      * Forward a desktop modifier edge without entering Fcitx or collapsing it into a chord.
      * The remote mouse channel can operate between this DOWN and the matching UP.
      */
-    fun sendDesktopModifierKeyState(state: KeyState, down: Boolean) {
+    fun sendDesktopModifierKeyState(
+        state: KeyState,
+        down: Boolean,
+        overlayRequestId: Long? = null
+    ) {
         val keyCode = when (state) {
             KeyState.Ctrl -> KeyEvent.KEYCODE_CTRL_LEFT
             KeyState.Alt -> KeyEvent.KEYCODE_ALT_LEFT
             KeyState.Shift -> KeyEvent.KEYCODE_SHIFT_LEFT
             KeyState.Meta -> KeyEvent.KEYCODE_META_LEFT
             else -> return
+        }
+        if (KBoardOverlaySession.ownsPhysical(overlayRequestId)) {
+            KBoardOverlaySession.input(
+                "key", arg1 = keyCode,
+                arg2 = if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP
+            )
+            return
         }
         if (down) {
             if (state in pressedDesktopModifiers || currentInputConnection == null) return
@@ -743,21 +807,36 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
     }
 
-    /** Send one complete physical-style desktop key press to the current editor. */
-    fun sendDesktopKeyPress(keyCode: Int, requestedMetaState: Int = 0) {
+    fun sendDesktopKeyPress(
+        keyCode: Int,
+        requestedMetaState: Int = 0,
+        overlayRequestId: Long? = null
+    ) {
         if (keyCode == KeyEvent.KEYCODE_UNKNOWN || ownedResourcesReleased) return
+        if (KBoardOverlaySession.ownsPhysical(overlayRequestId)) {
+            sendOverlayKey(keyCode, KeyEvent.ACTION_DOWN, requestedMetaState)
+            sendOverlayKey(keyCode, KeyEvent.ACTION_UP, requestedMetaState)
+            return
+        }
         val connection = currentInputConnection ?: return
         val downTime = SystemClock.uptimeMillis()
-        // The service-owned set is authoritative for held modifier lifetimes. The action also
-        // carries lock state (notably CapsLock), which has no separate held-key entry.
         val metaState = KeyStates(*pressedDesktopModifiers.keys.toTypedArray()).metaState or
             requestedMetaState
         sendDownKeyEvent(downTime, keyCode, metaState, connection)
         sendUpKeyEvent(downTime, keyCode, metaState, connection)
     }
 
-    fun sendDesktopMouseMove(dx: Int, dy: Int) {
+    fun sendDesktopMouseMove(dx: Int, dy: Int, overlayRequestId: Long? = null) {
         if (dx == 0 && dy == 0 || ownedResourcesReleased) return
+        if (KBoardOverlaySession.ownsPhysical(overlayRequestId)) {
+            KBoardOverlaySession.input("privateCommand", extras = Bundle().apply {
+                putString("action", RemoteMouseInputProtocol.ACTION)
+                putString(RemoteMouseInputProtocol.EXTRA_TYPE, RemoteMouseInputProtocol.TYPE_MOVE)
+                putInt(RemoteMouseInputProtocol.EXTRA_DX, dx)
+                putInt(RemoteMouseInputProtocol.EXTRA_DY, dy)
+            })
+            return
+        }
         val connection = currentInputConnection ?: return
         synchronized(desktopMouseMoveLock) {
             if (pendingDesktopMouseConnection !== connection) {
@@ -822,8 +901,21 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
     }
 
-    fun sendDesktopMouseButtonState(button: String, down: Boolean) {
+    fun sendDesktopMouseButtonState(
+        button: String,
+        down: Boolean,
+        overlayRequestId: Long? = null
+    ) {
         if (button !in RemoteMouseInputProtocol.BUTTONS) return
+        if (KBoardOverlaySession.ownsPhysical(overlayRequestId)) {
+            KBoardOverlaySession.input("privateCommand", extras = Bundle().apply {
+                putString("action", RemoteMouseInputProtocol.ACTION)
+                putString(RemoteMouseInputProtocol.EXTRA_TYPE, RemoteMouseInputProtocol.TYPE_BUTTON)
+                putString(RemoteMouseInputProtocol.EXTRA_BUTTON, button)
+                putBoolean(RemoteMouseInputProtocol.EXTRA_DOWN, down)
+            })
+            return
+        }
         if (down && button in pressedDesktopMouseButtons) return
         if (!down && button !in pressedDesktopMouseButtons) return
         val targetDisplayId = desktopMouseTargetDisplayId()
@@ -849,8 +941,19 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
     }
 
-    fun sendDesktopSystemKeyState(keyCode: Int, down: Boolean) {
+    fun sendDesktopSystemKeyState(
+        keyCode: Int,
+        down: Boolean,
+        overlayRequestId: Long? = null
+    ) {
         if (keyCode !in DESKTOP_REMOTE_NAVIGATION_KEY_CODES) return
+        if (KBoardOverlaySession.ownsPhysical(overlayRequestId)) {
+            KBoardOverlaySession.input(
+                "key", arg1 = keyCode,
+                arg2 = if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP
+            )
+            return
+        }
         if (down) {
             if (keyCode in pressedDesktopRemoteNavigationKeys) return
             val connection = currentInputConnection ?: return
@@ -910,6 +1013,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
      * This avoids the V900 ROM retargeting the tail of the gesture to KEMI's button underneath.
      */
     fun requestHideSelfAfterTouch(source: View) {
+        if (KBoardOverlaySession.isPhysicalOverlayActive) {
+            KBoardOverlaySession.requestClosePhysical()
+            return
+        }
         cancelPendingShow()
         if (pendingTouchHideRequest != null) return
         source.isEnabled = false
@@ -1046,6 +1153,64 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         return null
     }
 
+    /** Builds the same complete view graph used by the stable system IME. */
+    internal fun createPhysicalOverlayInputView(
+        displayContext: Context,
+        requestId: Long,
+        layoutName: String? = null,
+        callerUid: Int
+    ): InputView {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        capabilityFlags = CapabilityFlags.DefaultFlags
+        val view = InputView(
+            this, fcitx, ThemeManager.activeTheme, displayContext, requestId
+        ).also { view ->
+            view.handleEvents = true
+            view.startInput(
+                EditorInfo().apply {
+                    packageName = KEMI_REMOTE_PACKAGE
+                    inputType = android.text.InputType.TYPE_CLASS_TEXT
+                    imeOptions = EditorInfo.IME_ACTION_NONE
+                },
+                CapabilityFlags.DefaultFlags
+            )
+            view.showDesktopKeyboardForPhysicalOverlay(layoutName)
+            view.onImeWindowShown()
+        }
+        postFcitxJob {
+            activate(callerUid, KEMI_REMOTE_PACKAGE)
+            if (!KBoardOverlaySession.ownsPhysical(requestId)) {
+                deactivate(callerUid)
+                return@postFcitxJob
+            }
+            setCapFlags(CapabilityFlags.DefaultFlags)
+            focus(true)
+            val entry = currentIme()
+            view.post { view.refreshPhysicalOverlayInputMethod(entry) }
+        }
+        return view
+    }
+
+    internal fun disposePhysicalOverlayInputView(view: InputView) {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        view.handleEvents = false
+        view.onImeWindowHidden()
+        view.dispose()
+    }
+
+    internal fun finishPhysicalOverlayInput(callerUid: Int) {
+        postFcitxJob {
+            if (KBoardOverlaySession.isPhysicalOverlayActive) return@postFcitxJob
+            val boundUid = this@FcitxInputMethodService.currentInputBinding?.uid
+            if (boundUid == null) {
+                focus(false)
+            }
+            if (boundUid != callerUid) {
+                deactivate(callerUid)
+            }
+        }
+    }
+
     override fun setInputView(view: View) {
         // KBoard installs its input view manually and onCreateInputView() returns null. Keep the
         // framework call centralized here; onCreateInputView() avoids calling us again while the
@@ -1104,6 +1269,31 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     fun toggleFloatingKeyboard(): Boolean = inputView?.toggleFloatingKeyboard() ?: false
 
     fun toggleImeDisplay() {
+        if (ExpandedKeyboardSwitchPolicy.shouldRequestHostRehome(
+                currentInputEditorInfo?.privateImeOptions
+            )
+        ) {
+            val request = Intent(ExpandedKeyboardSwitchPolicy.SWITCH_ACTION)
+                .setPackage(KEMI_REMOTE_PACKAGE)
+            sendOrderedBroadcast(
+                request,
+                null,
+                object : BroadcastReceiver() {
+                    override fun onReceive(context: Context?, intent: Intent?) {
+                        if (!ownedResourcesReleased) toggleImeDisplaySystem()
+                    }
+                },
+                null,
+                Activity.RESULT_CANCELED,
+                null,
+                null
+            )
+            return
+        }
+        toggleImeDisplaySystem()
+    }
+
+    private fun toggleImeDisplaySystem() {
         val secondaryDisplay = getSystemService(DisplayManager::class.java)
             ?.getDisplay(SECONDARY_IME_DISPLAY_ID)
         if (secondaryDisplay == null) {
@@ -1297,6 +1487,11 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        if (!KBoardOverlaySession.isOverlayEditor(attribute)) {
+            window.window?.decorView?.display?.displayId?.let(
+                KBoardOverlaySession::closeForRegularInput
+            )
+        }
         hardwareKeyAnomalyFilter.reset()
         // update selection as soon as possible
         // sometimes when restarting input, onUpdateSelection happens before onStartInput, and
@@ -1652,8 +1847,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         cancelPendingTouchHideRequest()
         clearPendingDesktopMouseMove()
         releaseDesktopInputStates()
-        postFcitxJob {
-            focus(false)
+        if (!KBoardOverlaySession.isPhysicalOverlayActive) {
+            postFcitxJob {
+                focus(false)
+            }
         }
         capabilityFlags = CapabilityFlags.DefaultFlags
     }
@@ -1672,8 +1869,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         // currentInputBinding can be null on some devices under some special Multi-screen mode
         if (uid == null) return
         Timber.d("onUnbindInput: uid=$uid")
-        postFcitxJob {
-            deactivate(uid)
+        if (!KBoardOverlaySession.isPhysicalOverlayActive) {
+            postFcitxJob {
+                deactivate(uid)
+            }
         }
     }
 
@@ -1731,6 +1930,31 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         private const val MAX_PENDING_MOUSE_DELTA = 240
         private val PROCESS_IME_INSTANCE_LOCK = Any()
         private var processImeInstance: WeakReference<FcitxInputMethodService>? = null
+
+        internal fun currentProcessInstance(): FcitxInputMethodService? =
+            synchronized(PROCESS_IME_INSTANCE_LOCK) {
+                processImeInstance?.get()?.takeUnless { it.ownedResourcesReleased }
+            }
+
+        internal fun requestOverlayImeTokenRefresh(): Boolean {
+            val instance = synchronized(PROCESS_IME_INSTANCE_LOCK) {
+                processImeInstance?.get()?.takeUnless { it.ownedResourcesReleased }
+            } ?: return false
+            instance.window.window?.decorView?.post {
+                if (!instance.ownedResourcesReleased &&
+                    KBoardOverlaySession.virtualDisplayId != android.view.Display.INVALID_DISPLAY
+                ) {
+                    val relay = ComponentName(
+                        instance,
+                        DisplaySwitchInputMethodService::class.java
+                    ).flattenToShortString()
+                    runCatching { instance.switchInputMethod(relay) }
+                        .onFailure { Timber.e(it, "Failed to refresh Overlay IME token") }
+                }
+            }
+            return true
+        }
+
         const val DeleteSurroundingFlag = "org.fcitx.fcitx5.android.DELETE_SURROUNDING"
         private const val ACTION_SET_DISPLAY_IME_POLICY =
             "com.newlink.action.SET_DISPLAY_IME_POLICY"

@@ -6,9 +6,11 @@
 package org.fcitx.fcitx5.android.input
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.graphics.Outline
 import android.os.Build
 import android.util.Log
@@ -26,6 +28,7 @@ import androidx.core.view.updateLayoutParams
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CapabilityFlags
 import org.fcitx.fcitx5.android.core.FcitxEvent
+import org.fcitx.fcitx5.android.core.InputMethodEntry
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.data.InputFeedbacks
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
@@ -40,14 +43,19 @@ import org.fcitx.fcitx5.android.input.broadcast.PunctuationComponent
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
 import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateComponent
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
+import org.fcitx.fcitx5.android.input.keyboard.DesktopKeyboard
 import org.fcitx.fcitx5.android.input.keyboard.DesktopKeyboardModeState
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
+import org.fcitx.fcitx5.android.input.overlay.KBoardOverlaySession
+import org.fcitx.fcitx5.android.input.overlay.PhysicalOverlayHomeGesturePolicy
 import org.fcitx.fcitx5.android.input.picker.emojiPicker
 import org.fcitx.fcitx5.android.input.picker.emoticonPicker
 import org.fcitx.fcitx5.android.input.picker.symbolPicker
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
 import org.fcitx.fcitx5.android.input.preedit.PreeditComponent
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
+import org.fcitx.fcitx5.android.utils.InputMethodUtil
+import org.fcitx.fcitx5.android.utils.navbarFrameHeight
 import org.fcitx.fcitx5.android.utils.unset
 import org.mechdancer.dependency.DynamicScope
 import org.mechdancer.dependency.manager.wrapToUniqueComponent
@@ -77,13 +85,65 @@ import kotlin.math.roundToInt
 class InputView(
     service: FcitxInputMethodService,
     fcitx: FcitxConnection,
-    theme: Theme
-) : BaseInputView(service, fcitx, theme) {
+    theme: Theme,
+    viewContext: Context = service,
+    internal val overlayRequestId: Long? = null
+) : BaseInputView(service, fcitx, theme, viewContext) {
 
     private var disposed = false
+    private var bottomGestureProbeActive = false
+    private var bottomGestureProbeStartX = 0f
+    private var bottomGestureProbeStartY = 0f
+    private var bottomGestureProbeStartTime = 0L
+    private var bottomGestureProbeMaximumPointerCount = 0
 
     val reusableForImeShow: Boolean
         get() = !disposed
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        val requestId = overlayRequestId
+        if (requestId == null) return super.dispatchTouchEvent(event)
+
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            val navigationHeight = context.navbarFrameHeight()
+            bottomGestureProbeActive = event.y >= height - navigationHeight
+            if (bottomGestureProbeActive) {
+                bottomGestureProbeStartX = event.x
+                bottomGestureProbeStartY = event.y
+                bottomGestureProbeStartTime = event.eventTime
+                bottomGestureProbeMaximumPointerCount = event.pointerCount
+            }
+        }
+
+        val observe = bottomGestureProbeActive
+        if (observe) {
+            bottomGestureProbeMaximumPointerCount =
+                maxOf(bottomGestureProbeMaximumPointerCount, event.pointerCount)
+        }
+        val consumed = super.dispatchTouchEvent(event)
+        if (observe && event.actionMasked == MotionEvent.ACTION_UP &&
+            PhysicalOverlayHomeGesturePolicy.shouldClose(
+                startedInBottomStrip = true,
+                deltaX = event.x - bottomGestureProbeStartX,
+                deltaY = event.y - bottomGestureProbeStartY,
+                durationMillis = event.eventTime - bottomGestureProbeStartTime,
+                maximumPointerCount = bottomGestureProbeMaximumPointerCount,
+                minimumUpwardDistancePx = dp(HOME_GESTURE_MIN_DISTANCE_DP).toFloat()
+            ) && KBoardOverlaySession.ownsPhysical(requestId)
+        ) {
+            Log.i(
+                HOME_GESTURE_PROBE_TAG,
+                "event=up action=close-home-gesture display=${display?.displayId} request=$requestId"
+            )
+            KBoardOverlaySession.requestClose(requestId)
+        }
+        if (event.actionMasked == MotionEvent.ACTION_UP ||
+            event.actionMasked == MotionEvent.ACTION_CANCEL
+        ) {
+            bottomGestureProbeActive = false
+        }
+        return consumed
+    }
 
     private val keyBorder by ThemeManager.prefs.keyBorder
 
@@ -151,6 +211,30 @@ class InputView(
         // height as keyboardBottomPadding
         // bottomMargin as WindowInsets (Navigation Bar) offset
         setOnClickListener(placeholderOnClickListener)
+    }
+    private val overlayHideKeyboardButton = imageView {
+        visibility = if (overlayRequestId != null) VISIBLE else GONE
+        setImageResource(R.drawable.ic_keyboard_arrow_down_24)
+        setColorFilter(Color.WHITE)
+        setPadding(dp(12), dp(12), dp(12), dp(12))
+        contentDescription = context.getString(R.string.hide_keyboard)
+        setOnClickListener { overlayRequestId?.let(KBoardOverlaySession::requestClose) }
+    }
+    private val overlayInputMethodButton = imageView {
+        visibility = if (overlayRequestId != null) VISIBLE else GONE
+        setImageResource(R.drawable.ic_baseline_keyboard_24)
+        setColorFilter(Color.WHITE)
+        setPadding(dp(12), dp(12), dp(12), dp(12))
+        contentDescription = context.getString(R.string.choose_input_method)
+        setOnClickListener { InputMethodUtil.showPicker() }
+    }
+    private val overlayGestureHandle = view(::View) {
+        visibility = if (overlayRequestId != null) VISIBLE else GONE
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(2).toFloat()
+            setColor(Color.WHITE)
+        }
     }
     private val floatingWindowHandle = view(::View) {
         background = service.getDrawable(R.drawable.bkg_floating_keyboard_handle)
@@ -534,6 +618,21 @@ class InputView(
                 endToStartOf(rightPaddingSpace)
                 bottomOfParent()
             })
+            add(overlayHideKeyboardButton, lParams(dp(48), dp(48)) {
+                startOfParent()
+                bottomOfParent()
+                marginStart = dp(30)
+            })
+            add(overlayInputMethodButton, lParams(dp(48), dp(48)) {
+                endOfParent()
+                bottomOfParent()
+                marginEnd = dp(30)
+            })
+            add(overlayGestureHandle, lParams(dp(96), dp(3)) {
+                centerHorizontally()
+                bottomOfParent()
+                bottomMargin = dp(7)
+            })
         }
 
         updateKeyboardSize()
@@ -606,9 +705,30 @@ class InputView(
     }
 
     fun toggleFloatingKeyboard(): Boolean {
-        val isFloating = !floatingKeyboard.getValue()
-        floatingKeyboard.setValue(isFloating)
+        val isFloating = if (desktopKeyboardMode) true else !floatingKeyboard.getValue()
+        keyboardWindow.selectFloatingKeyboard(isFloating)
         return isFloating
+    }
+
+    fun showDesktopKeyboardForPhysicalOverlay(layoutName: String? = null) {
+        bottomPaddingSpace.updateLayoutParams<LayoutParams> {
+            height = context.navbarFrameHeight()
+        }
+        overlayHideKeyboardButton.bringToFront()
+        overlayInputMethodButton.bringToFront()
+        overlayGestureHandle.bringToFront()
+        keyboardWindow.restoreOverlayLayout(layoutName)
+        updateOverlayNavigationBackground(
+            keyboardWindow.overlayLayoutName() == DesktopKeyboard.Name
+        )
+    }
+
+    fun physicalOverlayLayoutName(): String = keyboardWindow.overlayLayoutName()
+
+    internal fun refreshPhysicalOverlayInputMethod(entry: InputMethodEntry) {
+        if (!disposed && KBoardOverlaySession.ownsPhysical(overlayRequestId)) {
+            broadcaster.onImeUpdate(entry)
+        }
     }
 
     fun setDesktopKeyboardMode(enabled: Boolean) {
@@ -621,6 +741,7 @@ class InputView(
             // current mode so a stale white desktop override cannot survive on a light bar.
             kawaiiBar.setDesktopKeyboardMode(it)
         }
+        updateOverlayNavigationBackground(enabled)
         if (!modeChanged) {
             if (enabled) refreshDesktopKeyboardHeight()
             return
@@ -690,6 +811,7 @@ class InputView(
             // shifted the whole keyboard down by one system-bar height and squeezed all six key
             // rows (most visibly A/B/C/D) even though the upper screen band was still unused.
             height = if (enabled) desktopKeyboardHeightPx else wrapContent
+            if (enabled) width = matchParent
             if (enabled) {
                 topToBottom = unset
             } else {
@@ -698,6 +820,7 @@ class InputView(
         }
         preedit.ui.root.updateLayoutParams<LayoutParams> {
             if (enabled) {
+                width = matchParent
                 topOfParent()
                 bottomToTop = unset
                 topMargin = dp(KawaiiBarComponent.HEIGHT + 4)
@@ -707,9 +830,17 @@ class InputView(
                 topMargin = 0
             }
         }
+        if (enabled) resetFloatingKeyboardPosition(0f)
         if (enabled) preedit.ui.root.bringToFront()
         updateKeyboardSize()
         updateDesktopCompositionPosition()
+    }
+
+    private fun updateOverlayNavigationBackground(desktopMode: Boolean) {
+        if (overlayRequestId == null) return
+        bottomPaddingSpace.setBackgroundColor(
+            if (desktopMode) DESKTOP_SURFACE_COLOR else theme.barColor
+        )
     }
 
     private fun refreshDesktopKeyboardHeight() {
@@ -722,7 +853,10 @@ class InputView(
     }
 
     private fun updateFloatingKeyboardLayout() {
-        val isFloating = floatingKeyboard.getValue()
+        // Desktop mode owns the full physical panel even when the user previously enabled the
+        // floating keyboard. Keep that preference intact so it can be restored after desktop
+        // mode ends, but never let it shrink or translate the desktop surface.
+        val isFloating = floatingKeyboard.getValue() && !desktopKeyboardMode
         val width = if (isFloating) {
             resources.displayMetrics.widthPixels * floatingKeyboardWidthPercent.getValue()
                 .coerceIn(FLOATING_KEYBOARD_MIN_WIDTH_PERCENT, FLOATING_KEYBOARD_MAX_WIDTH_PERCENT) / 100
@@ -954,7 +1088,13 @@ class InputView(
             }
         }
         bottomPaddingSpace.updateLayoutParams {
-            height = if (desktopKeyboardMode || floatingKeyboard.getValue()) 0 else keyboardBottomPaddingPx
+            height = if (overlayRequestId != null) {
+                context.navbarFrameHeight()
+            } else if (desktopKeyboardMode || floatingKeyboard.getValue()) {
+                0
+            } else {
+                keyboardBottomPaddingPx
+            }
         }
         windowManager.view.updateLayoutParams<LayoutParams> {
             if (desktopKeyboardMode) {
@@ -1032,22 +1172,26 @@ class InputView(
     override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
         val displayId = display?.displayId ?: android.view.Display.INVALID_DISPLAY
         val bottomInset = getNavBarBottomInset(insets)
+        // A physical Overlay is not a system IME window. Its bottom navigation strip is rendered
+        // inside bottomPaddingSpace, so applying the WindowManager-reported inset as an additional
+        // margin creates a second blank strip after ordinary/desktop mode switches.
+        val appliedBottomInset = if (overlayRequestId != null) 0 else bottomInset
         bottomPaddingSpace.updateLayoutParams<LayoutParams> {
             // Assign the current Display's value; never add to the previous margin. This makes
             // repeated D0/D2 migration and rotation idempotent.
-            bottomMargin = bottomInset
+            bottomMargin = appliedBottomInset
         }
-        if (displayId != lastInsetsDisplayId || bottomInset != lastNavigationBottomInset) {
+        if (displayId != lastInsetsDisplayId || appliedBottomInset != lastNavigationBottomInset) {
             Log.i(
                 INSETS_LOG_TAG,
-                "apply display=$displayId navigationBottom=$bottomInset desktop=$desktopKeyboardMode"
+                "apply display=$displayId navigationBottom=$appliedBottomInset desktop=$desktopKeyboardMode"
             )
             lastInsetsDisplayId = displayId
-            lastNavigationBottomInset = bottomInset
+            lastNavigationBottomInset = appliedBottomInset
             if (desktopKeyboardMode) {
                 // Preserve key/button height. Only the intentionally oversized desktop touchpad
                 // yields the pixels occupied by this Display's system navigation bar.
-                keyboardWindow.setDesktopSystemBottomInset(bottomInset)
+                keyboardWindow.setDesktopSystemBottomInset(appliedBottomInset)
                 refreshDesktopKeyboardHeight()
             }
         }
@@ -1115,6 +1259,10 @@ class InputView(
                 punctuation.updatePunctuationMapping(it.data.actions)
                 broadcaster.onStatusAreaUpdate(it.data.actions)
             }
+            is FcitxEvent.ReadyEvent -> service.postFcitxJob {
+                val inputMethodEntry = currentIme()
+                if (!disposed) broadcaster.onImeUpdate(inputMethodEntry)
+            }
             else -> {}
         }
     }
@@ -1142,6 +1290,7 @@ class InputView(
     fun dispose() {
         if (disposed) return
         disposed = true
+        bottomGestureProbeActive = false
         removeCallbacks(deferredInsetsRefresh)
         handleEvents = false
         onImeWindowHidden()
@@ -1201,11 +1350,14 @@ class InputView(
         const val DESKTOP_KEY_HIGHLIGHT_COLOR = 0xFF4EC7E8.toInt()
         const val DESKTOP_TOOLBAR_COLOR = 0xFF0A2232.toInt()
         const val INSETS_LOG_TAG = "KBoardInsets"
+        const val HOME_GESTURE_PROBE_TAG = "KBoardHomeGestureProbe"
+        const val HOME_GESTURE_MIN_DISTANCE_DP = 96
         const val FLOATING_KEYBOARD_RADIUS_DP = 24
         const val FLOATING_RESIZE_CORNER_SIZE_DP = 48
         const val FLOATING_RESIZE_CORNER_PADDING_DP = 8
         const val FLOATING_RESIZE_CORNER_OFFSET_DP = 24
         const val FLOATING_KEYBOARD_DOCK_THRESHOLD_DP = 28
+
     }
 
 }

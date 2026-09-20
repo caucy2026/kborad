@@ -41,6 +41,7 @@ import org.fcitx.fcitx5.android.input.clipboard.ClipboardStateMachine.State.Norm
 import org.fcitx.fcitx5.android.input.clipboard.ClipboardStateMachine.TransitionEvent.ClipboardDbUpdated
 import org.fcitx.fcitx5.android.input.clipboard.ClipboardStateMachine.TransitionEvent.ClipboardListeningUpdated
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
+import org.fcitx.fcitx5.android.input.dependency.inputView
 import org.fcitx.fcitx5.android.input.dependency.theme
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindow
@@ -56,6 +57,7 @@ import splitties.views.dsl.core.withTheme
 class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>() {
 
     private val service: FcitxInputMethodService by manager.inputMethodService()
+    private val inputView by manager.inputView()
     private val windowManager: InputWindowManager by manager.must()
     private val theme by manager.theme()
 
@@ -123,7 +125,7 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>() {
             }
 
             override fun onPaste(entry: ClipboardEntry) {
-                service.commitText(entry.text)
+                service.commitTextFrom(inputView.overlayRequestId, entry.text)
                 if (clipboardReturnAfterPaste) windowManager.attachWindow(KeyboardWindow)
             }
         }

@@ -23,6 +23,7 @@ import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
 import org.fcitx.fcitx5.android.input.bar.ui.idle.ButtonsBarUi
 import org.fcitx.fcitx5.android.input.bar.ui.idle.ClipboardSuggestionUi
+import org.fcitx.fcitx5.android.input.bar.ui.idle.IdleUiVisibilityPolicy
 import org.fcitx.fcitx5.android.input.bar.ui.idle.InlineSuggestionsUi
 import org.fcitx.fcitx5.android.input.bar.ui.idle.NumberRow
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
@@ -253,15 +254,22 @@ class IdleUi(
     fun hideVoiceTranscript() {
         voiceTranscript.text = ""
         voiceTranscript.visibility = View.GONE
-        animator.visibility = if (desktopQuietMode) View.INVISIBLE else View.VISIBLE
+        updateAnimatorVisibility()
     }
 
     fun setDesktopQuietMode(enabled: Boolean) {
         desktopQuietMode = enabled
         menuButton.visibility = if (enabled) View.INVISIBLE else View.VISIBLE
         if (voiceTranscript.visibility != View.VISIBLE) {
-            animator.visibility = if (enabled) View.INVISIBLE else View.VISIBLE
+            updateAnimatorVisibility()
         }
+    }
+
+    private fun updateAnimatorVisibility() {
+        animator.visibility = if (IdleUiVisibilityPolicy.showAnimator(
+                desktopQuietMode,
+                currentState == State.Clipboard
+            )) View.VISIBLE else View.INVISIBLE
     }
 
     private fun clearAnimation() {
@@ -325,6 +333,7 @@ class IdleUi(
             popup.dismissAll()
         }
         currentState = state
+        if (voiceTranscript.visibility != View.VISIBLE) updateAnimatorVisibility()
         updateMenuButtonContentDescription()
         updateMenuButtonRotation(instant = !fromUser)
     }
