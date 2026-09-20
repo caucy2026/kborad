@@ -81,6 +81,8 @@ import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.AppUtil
 import org.fcitx.fcitx5.android.input.voice.IflytekAsrClient
 import org.fcitx.fcitx5.android.input.voice.VoicePermissionActivity
+import org.fcitx.fcitx5.android.input.voice.VoiceOutputRoutePolicy
+import org.fcitx.fcitx5.android.input.overlay.KBoardOverlaySession
 import org.mechdancer.dependency.DynamicScope
 import org.mechdancer.dependency.manager.must
 import splitties.bitflags.hasFlag
@@ -135,6 +137,12 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private var shouldShowVoiceInput: Boolean = false
     private var desktopKeyboardMode: Boolean = false
     private var desktopVoiceButton: ToolButton? = null
+
+    private val useDirectVoiceCommit: Boolean
+        get() = VoiceOutputRoutePolicy.useDirectCommit(
+            desktopKeyboardMode,
+            KBoardOverlaySession.ownsPhysical(inputView.overlayRequestId)
+        )
 
     private val desktopVoiceTranscript by lazy {
         TextView(context).apply {
@@ -495,10 +503,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 voiceCommitJob?.cancel()
                 voiceCommitJob = service.lifecycleScope.launch {
                     delay(VOICE_FINAL_PREVIEW_MS)
-                    if (desktopKeyboardMode) {
-                        // Global mode must not mutate the target editor while listening: some
-                        // adjustPan clients reposition their whole surface on the first composing
-                        // update, which looks like the keyboard zoomed. Commit corrected final once.
+                    if (useDirectVoiceCommit) {
+                        // Global mode and the physical cross-display overlay do not own a normal
+                        // editor connection. Keep partial text local and route the corrected final
+                        // text through the remote input channel exactly once.
                         service.commitTextFrom(inputView.overlayRequestId, text)
                     } else {
                         service.commitVoiceComposing(text)
@@ -518,7 +526,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             },
             onPartial = { text ->
                 if (disposed) return@IflytekAsrClient
-                if (!desktopKeyboardMode) service.updateVoiceComposing(text)
+                if (!useDirectVoiceCommit) service.updateVoiceComposing(text)
                 showVoiceFeedback(text)
             }
         )
@@ -526,7 +534,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private val asrClient by asrClientDelegate
 
     private fun cancelVoiceEditorPreview() {
-        if (!desktopKeyboardMode) service.cancelVoiceComposing()
+        if (!useDirectVoiceCommit) service.cancelVoiceComposing()
     }
 
     private fun showVoiceFeedback(text: CharSequence) {
@@ -612,7 +620,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     voiceStartJob = service.lifecycleScope.launch {
                         delay(VOICE_HOLD_START_DELAY_MS)
                         if (voicePressActive) {
-                            if (!desktopKeyboardMode) service.beginVoiceComposing()
+                            if (!useDirectVoiceCommit) service.beginVoiceComposing()
                             asrClient.start()
                         }
                         voiceStartJob = null
