@@ -86,6 +86,7 @@ ksp {
 }
 
 dependencies {
+    compileOnly(files("hidden-api-stubs/android12-task-stack-stubs.jar"))
     ksp(project(":codegen"))
     implementation(project(":lib:fcitx5"))
     implementation(project(":lib:fcitx5-lua"))

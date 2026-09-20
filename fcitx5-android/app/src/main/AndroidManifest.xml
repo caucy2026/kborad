@@ -20,6 +20,8 @@
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <!-- Platform signature permission used by the global keyboard's per-display mouse pad. -->
     <uses-permission android:name="android.permission.INJECT_EVENTS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="com.newlinksz.kemi.remote.permission.DUAL_SCREEN_KEYBOARD" />
 
     <!-- remove intent queries merged from library manifest (namely Android-Image-Cropper) -->
     <queries tools:node="removeAll" />
@@ -134,6 +136,15 @@
             android:excludeFromRecents="true"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <service
+            android:name=".input.overlay.KBoardOverlayService"
+            android:exported="true"
+            android:permission="${applicationId}.permission.IPC">
+            <intent-filter>
+                <action android:name="${applicationId}.OVERLAY_IPC" />
+            </intent-filter>
+        </service>
 
         <service
             android:name=".input.FcitxInputMethodService"

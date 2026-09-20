@@ -15,6 +15,7 @@ import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateC
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.fcitx
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
+import org.fcitx.fcitx5.android.input.dependency.inputView
 import org.fcitx.fcitx5.android.input.dialog.AddMoreInputMethodsPrompt
 import org.fcitx.fcitx5.android.input.dialog.InputMethodPickerDialog
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener.BackspaceSwipeState.Reset
@@ -22,6 +23,7 @@ import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener.Backspace
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener.BackspaceSwipeState.Stopped
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.CommitAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.DeleteSelectionAction
+import org.fcitx.fcitx5.android.input.keyboard.KeyAction.DesktopKeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.FcitxKeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.LangSwitchAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.MoveSelectionAction
@@ -37,6 +39,7 @@ import org.fcitx.fcitx5.android.input.keyboard.KeyAction.SpaceLongPressAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.SymAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.UnicodeAction
 import org.fcitx.fcitx5.android.input.picker.PickerWindow
+import org.fcitx.fcitx5.android.input.overlay.KBoardOverlaySession
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.switchToNextIME
 import org.mechdancer.dependency.Dependent
@@ -55,6 +58,7 @@ class CommonKeyActionListener :
     private val context by manager.context()
     private val fcitx by manager.fcitx()
     private val service by manager.inputMethodService()
+    private val inputView by manager.inputView()
     private val preeditState: PreeditEmptyStateComponent by manager.must()
     private val horizontalCandidate: HorizontalCandidateComponent by manager.must()
     private val windowManager: InputWindowManager by manager.must()
@@ -96,28 +100,59 @@ class CommonKeyActionListener :
         KeyActionListener { action, _ ->
             when (action) {
                 is FcitxKeyAction -> service.postFcitxJob {
+                    service.selectOutputRoute(inputView.overlayRequestId)
                     sendKey(action.act, action.states.states, action.code)
                 }
                 is SymAction -> service.postFcitxJob {
+                    service.selectOutputRoute(inputView.overlayRequestId)
                     sendKey(action.sym, action.states)
                 }
                 is ModifierStateAction ->
-                    service.sendDesktopModifierKeyState(action.state, action.down)
+                    service.sendDesktopModifierKeyState(
+                        action.state, action.down, inputView.overlayRequestId
+                    )
+                is DesktopKeyAction -> {
+                    if (DesktopKeyPolicy.shouldSendDirectly(
+                            action.sym.sym,
+                            preeditState.isEmpty,
+                            action.shortcutChord
+                        )) {
+                        service.sendDesktopKeyPress(
+                            action.sym.keyCode,
+                            action.states.metaState,
+                            inputView.overlayRequestId
+                        )
+                    } else {
+                        service.postFcitxJob {
+                            service.selectOutputRoute(inputView.overlayRequestId)
+                            sendKey(action.sym, action.states)
+                        }
+                    }
+                }
                 is RemoteMouseMoveAction ->
-                    service.sendDesktopMouseMove(action.dx, action.dy)
+                    service.sendDesktopMouseMove(action.dx, action.dy, inputView.overlayRequestId)
                 is RemoteMouseButtonAction ->
-                    service.sendDesktopMouseButtonState(action.button, action.down)
+                    service.sendDesktopMouseButtonState(
+                        action.button, action.down, inputView.overlayRequestId
+                    )
                 is RemoteSystemKeyAction ->
-                    service.sendDesktopSystemKeyState(action.keyCode, action.down)
+                    service.sendDesktopSystemKeyState(
+                        action.keyCode, action.down, inputView.overlayRequestId
+                    )
                 is CommitAction -> service.postFcitxJob {
+                    service.selectOutputRoute(inputView.overlayRequestId)
                     commitAndReset()
-                    service.lifecycleScope.launch { service.commitText(action.text) }
+                    service.lifecycleScope.launch {
+                        service.commitTextFrom(inputView.overlayRequestId, action.text)
+                    }
                 }
                 is QuickPhraseAction -> service.postFcitxJob {
+                    service.selectOutputRoute(inputView.overlayRequestId)
                     commitAndReset()
                     triggerQuickPhrase()
                 }
                 is UnicodeAction -> service.postFcitxJob {
+                    service.selectOutputRoute(inputView.overlayRequestId)
                     commitAndReset()
                     triggerUnicode()
                 }
@@ -145,7 +180,13 @@ class CommonKeyActionListener :
                     }
                 }
                 is ShowInputMethodPickerAction -> showInputMethodPicker()
-                is ScreenSwitchAction -> service.toggleImeDisplay()
+                is ScreenSwitchAction -> {
+                    if (inputView.overlayRequestId != null) {
+                        KBoardOverlaySession.requestSwitchPhysicalDisplay(inputView.overlayRequestId)
+                    } else {
+                        service.toggleImeDisplay()
+                    }
+                }
                 is MoveSelectionAction -> {
                     when (backspaceSwipeState) {
                         Stopped -> {

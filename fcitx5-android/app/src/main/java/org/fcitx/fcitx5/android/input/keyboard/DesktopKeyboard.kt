@@ -102,8 +102,12 @@ class DesktopKeyboard private constructor(
             }
             it.keyDownSoundEnabled = false
             it.physicalReleaseSoundEnabled = false
+            // Global-mode water audio follows a successfully dispatched key action, not raw
+            // ACTION_DOWN. Cancelled slides and rejected/empty touches therefore stay silent.
+            it.onAcceptedActionFeedback = { InputFeedbacks.rippleSound() }
         }
         configureHeldModifierKeys()
+        configureShortcutSpaceKey()
         touchpadView.onMouseMove = { dx, dy ->
             onAction(KeyAction.RemoteMouseMoveAction(dx, dy))
         }
@@ -164,7 +168,6 @@ class DesktopKeyboard private constructor(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 aquariumView.touchDownAt(normalizedX, normalizedY)
-                InputFeedbacks.rippleSound()
             }
             MotionEvent.ACTION_MOVE -> aquariumView.moveTouchTo(normalizedX, normalizedY)
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> aquariumView.releaseTouch()
@@ -186,24 +189,6 @@ class DesktopKeyboard private constructor(
         private const val DESKTOP_BACKSPACE_TOP_COLOR = 0xB06E3540.toInt()
         private const val DESKTOP_BACKSPACE_BOTTOM_COLOR = 0x98431E2A.toInt()
         private const val DESKTOP_BACKSPACE_STROKE_COLOR = 0xFFE17882.toInt()
-
-        // These keys model a physical desktop keyboard and must leave the IME as standard
-        // Android KeyEvents. Marking them Virtual makes the service's text-oriented branch
-        // consume keys without Unicode (Esc/F-keys/Caps/Tab/Up/Down) before a remote host can
-        // receive them. Keep this list local to DesktopKeyboard so ordinary layouts retain their
-        // composition-aware virtual-key behaviour.
-        private val RawDesktopControlKeySyms = buildSet {
-            add(FcitxKeyMapping.FcitxKey_Escape)
-            addAll(FcitxKeyMapping.FcitxKey_F1..FcitxKeyMapping.FcitxKey_F12)
-            add(FcitxKeyMapping.FcitxKey_BackSpace)
-            add(FcitxKeyMapping.FcitxKey_Tab)
-            add(FcitxKeyMapping.FcitxKey_Caps_Lock)
-            add(FcitxKeyMapping.FcitxKey_Return)
-            add(FcitxKeyMapping.FcitxKey_Left)
-            add(FcitxKeyMapping.FcitxKey_Right)
-            add(FcitxKeyMapping.FcitxKey_Up)
-            add(FcitxKeyMapping.FcitxKey_Down)
-        }
 
         private val ShortcutModifiers = setOf(KeyState.Ctrl, KeyState.Alt, KeyState.Meta)
 
@@ -394,6 +379,7 @@ class DesktopKeyboard private constructor(
     private val modifierStates = linkedSetOf<KeyState>()
     private val heldModifierKeys = linkedMapOf<TextKeyView, KeyState>()
     private val textKeys by lazy { allViews.filterIsInstance<TextKeyView>() }
+    private var capsLockEnabled = false
     private var currentImeName: String = ""
     private var currentImeLanguageCode: String = ""
 
@@ -401,7 +387,17 @@ class DesktopKeyboard private constructor(
         onAction(KeyAction.SymAction(KeySym(FcitxKeyMapping.FcitxKey_Return)))
     }
 
+    fun sendScreenSwitchFromOperationBar() {
+        onAction(KeyAction.ScreenSwitchAction)
+    }
+
     override fun onAction(action: KeyAction, source: KeyActionListener.Source) {
+        if (action is KeyAction.SpaceLongPressAction &&
+            DesktopKeyPolicy.hasShortcutModifier(modifierStates)
+        ) {
+            return
+        }
+
         // Ctrl+Space → language switch
         if (action is KeyAction.SymAction &&
             action.sym == KeySym(FcitxKeyMapping.FcitxKey_space) &&
@@ -411,11 +407,71 @@ class DesktopKeyboard private constructor(
             return
         }
 
-        val isRawDesktopControlKey = action is KeyAction.SymAction &&
-                action.sym.sym in RawDesktopControlKeySyms
-        val states = if (
-            modifierStates.any { it in ShortcutModifiers } || isRawDesktopControlKey
-        ) {
+        if (action is KeyAction.SymAction && DesktopKeyPolicy.isRawControl(action.sym.sym)) {
+            if (action.sym.sym == FcitxKeyMapping.FcitxKey_Caps_Lock) {
+                capsLockEnabled = !capsLockEnabled
+                updateModifierKeys()
+            }
+            val states = KeyStates(*modifierStates.toTypedArray())
+            super.onAction(
+                KeyAction.DesktopKeyAction(
+                    action.sym,
+                    states,
+                    shortcutChord = DesktopKeyPolicy.hasShortcutModifier(modifierStates)
+                ),
+                source
+            )
+            return
+        }
+
+        // A desktop chord is not text composition. Send its physical main key through the same
+        // InputConnection KeyEvent path as Caps/F-keys so KEMI receives Ctrl/Alt/Command plus the
+        // main key. Keep unmodified characters (and Shift-only typing) in Fcitx for Chinese input.
+        if (DesktopKeyPolicy.hasShortcutModifier(modifierStates)) {
+            val shortcutSym = DesktopKeyPolicy.shortcutKeySym(action)
+            shortcutSym?.let { sym ->
+                super.onAction(
+                    KeyAction.DesktopKeyAction(
+                        sym,
+                        KeyStates(*modifierStates.toTypedArray()),
+                        shortcutChord = true
+                    ),
+                    source
+                )
+                return
+            }
+        }
+
+        // In desktop English mode printable keys must behave like a physical keyboard. The
+        // proxy editor does not always receive a final commitText when these keys first enter
+        // Fcitx, which made visible A-Z/number/symbol keys appear dead in a remote session.
+        // Chinese keeps the Fcitx path because its lowercase pinyin preedit and candidates are
+        // intentional. Ctrl+Space was handled above and remains the language switch gesture.
+        if (DesktopKeyPolicy.shouldSendPrintableDirectly(isChineseInputMethodActive())) {
+            val physicalSym = when (action) {
+                is KeyAction.FcitxKeyAction -> DesktopKeyPolicy.shortcutKeySym(action.act)
+                is KeyAction.SymAction -> action.sym.takeIf {
+                    it.sym == FcitxKeyMapping.FcitxKey_space
+                }
+                else -> null
+            }
+            if (physicalSym != null) {
+                val physicalStates = modifierStates.toMutableSet().apply {
+                    if (capsLockEnabled) add(KeyState.CapsLock)
+                }
+                super.onAction(
+                    KeyAction.DesktopKeyAction(
+                        physicalSym,
+                        KeyStates(*physicalStates.toTypedArray()),
+                        shortcutChord = true
+                    ),
+                    source
+                )
+                return
+            }
+        }
+
+        val states = if (modifierStates.any { it in ShortcutModifiers }) {
             KeyStates(*modifierStates.toTypedArray())
         } else {
             KeyStates(*(modifierStates + KeyState.Virtual).toTypedArray())
@@ -424,7 +480,12 @@ class DesktopKeyboard private constructor(
             is KeyAction.FcitxKeyAction -> {
                 val shifted = KeyState.Shift in modifierStates
                 val label = ShiftedSymbols[action.act]?.takeIf { shifted }
-                    ?: if (shifted) action.act.uppercase() else action.act.lowercase()
+                    ?: DesktopKeyPolicy.applyLetterCase(
+                        action.act,
+                        shifted,
+                        capsLockEnabled,
+                        isChineseInputMethodActive()
+                    )
                 action.copy(act = label, states = states)
             }
             is KeyAction.SymAction -> action.copy(states = states)
@@ -435,6 +496,9 @@ class DesktopKeyboard private constructor(
 
     override fun onAttach() {
         super.onAttach()
+        // The aquarium is the only continuously changing layer. Keep the six static physical-key
+        // rows cached so its 24 Hz frames do not rasterize every rounded key again.
+        setKeyRowLayerCaching(true)
         releaseHeldModifierKeys()
         heldModifierKeys.clear()
         modifierStates.clear()
@@ -456,10 +520,13 @@ class DesktopKeyboard private constructor(
         updateShortcutHints()
         touchpadView.releaseInputState()
         aquariumView.deactivate()
+        // Hidden desktop keyboards must not retain six full-width GPU layer textures.
+        setKeyRowLayerCaching(false)
         super.onDetach()
     }
 
     override fun dispose() {
+        setKeyRowLayerCaching(false)
         touchpadView.dispose()
         super.dispose()
     }
@@ -479,13 +546,7 @@ class DesktopKeyboard private constructor(
     }
 
     private fun updateSpaceLanguageLabel() {
-        val chineseActive = currentImeLanguageCode.startsWith("zh", ignoreCase = true) ||
-            currentImeName.contains("pinyin", ignoreCase = true) ||
-            currentImeName.contains("chinese", ignoreCase = true) ||
-            currentImeName.contains("shuangpin", ignoreCase = true) ||
-            currentImeName.contains("wubi", ignoreCase = true) ||
-            currentImeName.contains("cangjie", ignoreCase = true) ||
-            currentImeName.contains("zh", ignoreCase = true)
+        val chineseActive = isChineseInputMethodActive()
         val langLabel = if (chineseActive) "拼 音" else "English"
         findViewById<View>(R.id.button_space)?.let { space ->
             (space as? TextKeyView)?.mainText?.setLayoutStableText(langLabel)
@@ -505,9 +566,22 @@ class DesktopKeyboard private constructor(
         }
     }
 
+    private fun isChineseInputMethodActive(): Boolean =
+        currentImeLanguageCode.startsWith("zh", ignoreCase = true) ||
+            currentImeName.contains("pinyin", ignoreCase = true) ||
+            currentImeName.contains("chinese", ignoreCase = true) ||
+            currentImeName.contains("shuangpin", ignoreCase = true) ||
+            currentImeName.contains("wubi", ignoreCase = true) ||
+            currentImeName.contains("cangjie", ignoreCase = true) ||
+            currentImeName.contains("zh", ignoreCase = true)
+
     private fun updateModifierKeys() {
         textKeys.forEach { key ->
             val label = (key.def as? KeyDef.Appearance.Text)?.displayText ?: return@forEach
+            if (label == "Caps") {
+                key.isSelected = capsLockEnabled
+                return@forEach
+            }
             val state = when (label) {
                 "Ctrl" -> KeyState.Ctrl
                 "Alt" -> KeyState.Alt
@@ -534,6 +608,7 @@ class DesktopKeyboard private constructor(
                             // not create a duplicate Android modifier DOWN.
                             if (!stateAlreadyHeld) {
                                 onAction(KeyAction.ModifierStateAction(state, down = true))
+                                key.notifyAcceptedAction()
                             }
                         }
                     }
@@ -555,6 +630,30 @@ class DesktopKeyboard private constructor(
                 // pressed visuals, sound and multi-pointer dispatch.
                 false
             }
+        }
+    }
+
+    /**
+     * Dispatch shortcut-space on touch-down while its modifier is still physically held.
+     * Space normally clicks on touch-up, which can race the final modifier release in a
+     * multi-pointer stream and leave Command+Space inside the local Chinese IME.
+     */
+    private fun configureShortcutSpaceKey() {
+        val key = findViewById<KeyView>(R.id.button_space) ?: return
+        val previous = key.onGestureListener ?: OnGestureListener.Empty
+        key.onGestureListener = OnGestureListener { view, event ->
+            val shortcutDown = event.type == GestureType.Down &&
+                DesktopKeyPolicy.hasShortcutModifier(modifierStates)
+            if (shortcutDown) {
+                onAction(
+                    KeyAction.DesktopKeyAction(
+                        KeySym(FcitxKeyMapping.FcitxKey_space),
+                        KeyStates(*modifierStates.toTypedArray()),
+                        shortcutChord = true
+                    )
+                )
+            }
+            shortcutDown || previous.onGesture(view, event)
         }
     }
 

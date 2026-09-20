@@ -21,6 +21,12 @@ import timber.log.Timber
  */
 class DisplaySwitchInputMethodService : InputMethodService() {
 
+    // This service only relays the IME token; it never owns a keyboard UI. The framework can
+    // send show requests before attachToken here as well as to the primary service.
+    override fun onShowInputRequested(flags: Int, configChange: Boolean) = false
+
+    override fun showWindow(showInput: Boolean) = Unit
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private var returnPosted = false
 

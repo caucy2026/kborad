@@ -34,10 +34,12 @@ import splitties.views.dsl.core.add
 import splitties.views.dsl.core.frameLayout
 import splitties.views.dsl.core.lParams
 import splitties.views.dsl.core.matchParent
+import timber.log.Timber
 
 class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), EssentialWindow,
     InputBroadcastReceiver {
 
+    private val taskGate = KeyboardWindowTaskGate()
     private val service by manager.inputMethodService()
     private val inputView by manager.inputView()
     private val fcitx by manager.fcitx()
@@ -48,13 +50,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     private val bar: KawaiiBarComponent by manager.must()
     private val returnKeyDrawable: ReturnKeyDrawableComponent by manager.must()
 
-    companion object : EssentialWindow.Key {
-        // Keep the user's explicit desktop-mode choice across editor focus changes and the
-        // InputView recreation performed by Android during rotation. Process restart still
-        // returns to the normal keyboard, which avoids making a temporary mode permanent.
-        @Volatile
-        private var desktopModeRequested = false
-    }
+    companion object : EssentialWindow.Key {}
 
     override val key: EssentialWindow.Key
         get() = KeyboardWindow
@@ -90,8 +86,11 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         )
     }
     private var currentKeyboardName = ""
-    private var desktopMode = false
-    private var floatingMode = false
+    private val desktopModeState = DesktopKeyboardModeState()
+    private var presentationMode = KeyboardPresentationMode.decode(
+        AppPrefs.getInstance().internal.lastKeyboardPresentationMode.getValue()
+    )
+    private var floatingMode = presentationMode == KeyboardPresentationMode.Floating
     private var lastSymbolType: String by AppPrefs.getInstance().internal.lastSymbolLayout
 
     private val currentKeyboard: BaseKeyboard? get() = keyboards[currentKeyboardName]
@@ -115,9 +114,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         // alive. Build the first drawable frame from the user's retained desktop-mode choice;
         // attaching TextKeyboard here and switching asynchronously in onStartInput caused a
         // visible one-frame flash of the ordinary keyboard in remote-desktop clients.
-        attachLayout(
-            if (desktopModeRequested) DesktopKeyboard.Name else TextKeyboard.Name
-        )
+        attachLayout(presentationMode.layoutName)
         return keyboardView
     }
 
@@ -147,7 +144,12 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
             TextKeyboard.Name if (floatingMode) -> TextKeyboard.FloatingName
             else -> requested
         }
+        val generation = taskGate.captureGeneration()
         ContextCompat.getMainExecutor(service).execute {
+            if (!taskGate.canRun(generation)) {
+                Timber.d("Drop layout switch for retired KeyboardWindow: target=$target")
+                return@execute
+            }
             if (keyboards.containsKey(target)) {
                 if (remember && target != TextKeyboard.Name) {
                     lastSymbolType = target
@@ -168,7 +170,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     }
 
     override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
-        val targetLayout = if (desktopModeRequested) {
+        val targetLayout = if (presentationMode == KeyboardPresentationMode.Desktop) {
             DesktopKeyboard.Name
         } else {
             when (info.inputType and InputType.TYPE_MASK_CLASS) {
@@ -189,19 +191,56 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     }
 
     fun showDesktopKeyboard() {
-        desktopModeRequested = true
+        rememberPresentationMode(KeyboardPresentationMode.Desktop)
         switchLayout(DesktopKeyboard.Name, remember = false)
+    }
+
+    internal fun overlayLayoutName(): String = currentKeyboardName
+
+    internal fun restoreOverlayLayout(name: String?) {
+        val restored = when (name) {
+            DesktopKeyboard.Name -> KeyboardPresentationMode.Desktop
+            TextKeyboard.FloatingName -> KeyboardPresentationMode.Floating
+            TextKeyboard.Name -> KeyboardPresentationMode.Normal
+            else -> KeyboardPresentationMode.decode(
+                AppPrefs.getInstance().internal.lastKeyboardPresentationMode.getValue()
+            )
+        }
+        presentationMode = restored
+        floatingMode = restored == KeyboardPresentationMode.Floating
+        when (restored) {
+            KeyboardPresentationMode.Floating ->
+                AppPrefs.getInstance().keyboard.floatingKeyboard.setValue(true)
+            KeyboardPresentationMode.Normal ->
+                AppPrefs.getInstance().keyboard.floatingKeyboard.setValue(false)
+            KeyboardPresentationMode.Desktop -> Unit
+        }
+        switchLayout(restored.layoutName, remember = false)
     }
 
     fun toggleDesktopKeyboard() {
         val target = if (currentKeyboardName == DesktopKeyboard.Name) {
-            desktopModeRequested = false
-            if (floatingMode) TextKeyboard.FloatingName else TextKeyboard.Name
+            AppPrefs.getInstance().keyboard.floatingKeyboard.setValue(false)
+            rememberPresentationMode(KeyboardPresentationMode.Normal)
+            TextKeyboard.Name
         } else {
-            desktopModeRequested = true
+            rememberPresentationMode(KeyboardPresentationMode.Desktop)
             DesktopKeyboard.Name
         }
         switchLayout(target, remember = false)
+    }
+
+    fun selectFloatingKeyboard(enabled: Boolean) {
+        val mode = if (enabled) KeyboardPresentationMode.Floating else KeyboardPresentationMode.Normal
+        AppPrefs.getInstance().keyboard.floatingKeyboard.setValue(enabled)
+        rememberPresentationMode(mode)
+        floatingMode = enabled
+        switchLayout(mode.layoutName, remember = false)
+    }
+
+    private fun rememberPresentationMode(mode: KeyboardPresentationMode) {
+        presentationMode = mode
+        AppPrefs.getInstance().internal.lastKeyboardPresentationMode.setValue(mode.persistedValue)
     }
 
     fun desktopFirstRowTopOnScreen(): Int? =
@@ -221,6 +260,10 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         (currentKeyboard as? DesktopKeyboard)?.sendEnterFromOperationBar()
     }
 
+    fun sendDesktopScreenSwitch() {
+        (currentKeyboard as? DesktopKeyboard)?.sendScreenSwitchFromOperationBar()
+    }
+
     fun onImeWindowShown() {
         (currentKeyboard as? DesktopKeyboard)?.onImeWindowShown()
     }
@@ -231,6 +274,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
 
     /** Permanently release every keyboard created for this InputView generation. */
     fun dispose() {
+        taskGate.retire()
         currentKeyboard?.onDetach()
         keyboards.values.forEach { it.dispose() }
         if (::keyboardView.isInitialized) keyboardView.removeAllViews()
@@ -272,9 +316,10 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     private fun notifyBarLayoutChanged() {
         bar.onKeyboardLayoutSwitched(currentKeyboardName == NumberKeyboard.Name)
         val nextDesktopMode = currentKeyboardName == DesktopKeyboard.Name
-        if (desktopMode != nextDesktopMode) {
-            desktopMode = nextDesktopMode
-            inputView.setDesktopKeyboardMode(desktopMode)
+        desktopModeState.synchronize(nextDesktopMode) {
+            // The InputView/candidate surface may have been recreated while the logical keyboard
+            // mode stayed the same, so mode styling must be synchronized on every attachment.
+            inputView.setDesktopKeyboardMode(it)
         }
     }
 }

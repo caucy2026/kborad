@@ -418,7 +418,7 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
 
     private companion object {
         const val TAP_TIMEOUT_MS = 280L
-        const val TARGET_FRAME_NS = 33_333_334L
+        const val TARGET_FRAME_NS = 41_666_667L
         const val NANOS_PER_MS = 1_000_000L
     }
 

@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="KBoard Input Injector" />
+    <instrumentation
+        android:name=".MultiTouchInstrumentation"
+        android:targetPackage="com.newlink.kboard.testinjector"
+        android:functionalTest="true"
+        android:handleProfiling="false"
+        android:label="KBoard real multi-touch injector" />
+</manifest>

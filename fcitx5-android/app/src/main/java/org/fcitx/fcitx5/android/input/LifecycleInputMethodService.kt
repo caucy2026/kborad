@@ -4,14 +4,13 @@
  */
 package org.fcitx.fcitx5.android.input
 
-import android.inputmethodservice.InputMethodService
 import androidx.annotation.CallSuper
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.setViewTreeLifecycleOwner
 
-open class LifecycleInputMethodService : InputMethodService(), LifecycleOwner {
+open class LifecycleInputMethodService : TokenReadyInputMethodService(), LifecycleOwner {
 
     private val lifecycleRegistry by lazy { LifecycleRegistry(this) }
 

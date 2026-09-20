@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sharedUserId="android.uid.system">
+
+    <!-- Observe-only Android 12 Home probe; no task mutation is performed. -->
+    <uses-permission android:name="android.permission.MANAGE_ACTIVITY_TASKS" />
+</manifest>

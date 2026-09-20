@@ -5,6 +5,7 @@
 
 package org.fcitx.fcitx5.android.input
 
+import android.content.Context
 import android.util.DisplayMetrics
 import android.view.View
 import android.view.WindowInsets
@@ -34,8 +35,9 @@ import kotlin.math.max
 abstract class BaseInputView(
     val service: FcitxInputMethodService,
     val fcitx: FcitxConnection,
-    val theme: Theme
-) : ConstraintLayout(service) {
+    val theme: Theme,
+    viewContext: Context = service
+) : ConstraintLayout(viewContext) {
 
     /**
      * Update UI (from cached events in FcitxAPI) to match fcitx's state, before ready to receive real events

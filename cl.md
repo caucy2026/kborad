@@ -1864,9 +1864,314 @@ KEMI 设置页品牌化与动态名称中文化。
 
 ---
 
+## V1.62 - 2026-09-06
+
+### 主题
+修复 Android 12 远程办公压力场景中 IME 在 token 尚未设置时显示窗口的主线程崩溃，建立输入生命周期门控。
+
+### 过程
+- 读取 `/private/tmp/kemi-three-platform-stress-20260906-final2/android75-logcat.txt`，正式窗口内确认 5 次 `com.newlink.kemi.kboard` 主线程崩溃：04:47:11.631、05:00:55.847、05:41:46.253、06:48:30.334、07:08:53.106；共同路径为 `showSoftInputWithToken -> showSoftInput -> showWindow -> SoftInputWindow.show`，异常为 `Window token is not set yet.`。
+- Android 12 的显示 Binder 消息与 `initializeInternal/attachToken`、输入连接启动、旧服务销毁存在顺序竞争。上游 `showWindow` 在真正调用 `SoftInputWindow.show` 之前已经设置 `mInShowWindow/mWindowVisible` 等状态，事后吞异常既不能恢复 token，也可能留下错误的可见状态。
+- 75 系统原 APK 包名已为 `com.newlink.kemi.kboard`，版本仍为 1.4.1/152；DEX 中有旧的 after-destroy 兼容字符串，但没有当前源码中的 before-attachToken 捕获字符串，不能只凭相同版本名判断修复已部署。原始堆栈没有组件实例信息，无法把五次崩溃逐一归属主服务或切屏中继；两条显示入口均处理。
+
+### 修改
+- 新增 `ImeShowGate.kt` 和 `TokenReadyInputMethodService.kt`。只有已完成 token 绑定、当前输入生命周期有效、`currentInputStarted` 为真、当前 `InputConnection` 和窗口 attributes token 非空时，才进入框架显示流程。
+- 未就绪请求合并为一个当前生命周期的显示意图；`attachToken` 与 `onStartInput` 的就绪事件触发一次主线程消息交接，再经系统 `requestShowSelf` 获取新的显示调用上下文。没有计时重试或显示异常捕获。原 ResultReceiver 当次返回未改变状态，不保留旧 WithToken 上下文；显式/隐式/强制标志按两套 Android API 的不同含义转换。
+- 隐藏意图、隐藏窗口、输入视图结束、失焦结束、解绑、重绑和服务销毁/被替换时作废旧请求代次。主服务释放资源前即退役显示入口，迟到的就绪回调不能重新显示旧窗口；解绑先保存 uid，再执行父类清理与 native deactivate。
+- `LifecycleInputMethodService.kt` 接入新基类，`FcitxInputMethodService.kt` 接入生命周期和触摸隐藏取消；删除 `Android12ImeFrameworkCompat.kt` 及其测试中原有两类显示异常匹配代码。保留与本次无关的 Android 12 bind-before-initialize 精确兼容。
+- `DisplaySwitchInputMethodService.kt` 明确拒绝显示请求与 `showWindow`：中继只交接 token，不应创建键盘 UI。
+- 新增 `ImeShowGateTest.kt`（10 项，含连续 20 次显示隐藏）及可复用真机脚本 `scripts/test-ime-window-lifecycle.py`（逐次断言系统和真实窗口可见状态、PID、日志，测试结束恢复默认 IME）。
+
+### 验证
+- `ImeShowGateTest` 10/10 与保留的 `Android12ImeFrameworkCompatTest` 3/3 通过；签名 Release 构建、R8、lintVital、`git diff --check` 通过，未安装 Debug APK。
+- 最终验证包为 `com.newlink.kemi.kboard`，1.4.1/152，arm64-v8a；v1/v2 签名验证通过，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。APK SHA-256 `811f6dec318dfae45d1776fb5bf717f86f2f143e61daceb1ac567f615ed9c227`，固定备份 `/private/tmp/kboard-token-regression/final-811f6dec.apk`，设备回读哈希一致。
+- 75（`192.168.3.75:5555`，API 31，D0）最终隔离窗口为 **08:50:47–08:58:00 +0800**：约 3 秒动作间隔，**20 次显示/隐藏 + 20 次 HOME/恢复 + 20 次中继/主服务重建，60/60 通过**。每次同时断言 `mInputShown` 与 `mWindowVisible/mDecorViewVisible`，重建后 token 实际变化；起止 PID 均为 **26438**。
+- 回归窗口完整 logcat 中 **FATAL EXCEPTION、ANR、Window token is not set yet、Input dispatching timed out 均为 0**；最终 HOME 后连续静置检查和清理后 dumpsys 均确认隐藏，未发生迟到回弹。默认 IME 保持主服务，未清除数据。
+- 证据目录 `/private/tmp/kboard-token-regression/final-paced/`：`summary.json`、`progress.json`、逐轮 dumpsys、`logcat.txt`、`device-identity.json`、`exit-info.txt`、两类 JUnit XML 和 `apk-signature.txt`；`show-hide-final.png`、`home-resume-final.png`、`relay-recreate-final.png`、`final-home-hidden.png` 已保存，实际查看显示/隐藏截图正常。
+- 早先 run4 已完成 52 轮，但在 08:45:36 被另一重复任务的覆盖安装中断，系统记录 `stop ... due to installPackageLI`，不是 FATAL/ANR；协调暂停并发操作后重新完成上述同一最终 APK 的 60 轮，不把中断轮次冒充最终通过。
+
+### 待办与风险
+- token/输入连接门控限定于 V900 Android 12/API 31；其他 Android 版本保留系统 InputMethodImpl 显示行为，仅保留销毁保护。已保留系统显式/隐式/强制显示策略，不反射修改框架私有状态。
+- 本轮以 Notes 真实输入连接和同包中继重建进行定向回归；不能替代 Windows/macOS 实际远程连接/断开的完整三小时压力复测。
+- 全量 JVM 测试初次运行 22 项中 1 项失败：既有 `ThemeSerializationTest.version2` 在第 101 行断言“旧主题不需要迁移”失败，主题代码不在本次修改范围；定向输入法测试和 Release 构建通过。
+- canonical main 工作区原有的中继自动启用、native 子模块及 cl.md 改动保留；本次构建使用该既有构建环境，本次提交只包含窗口生命周期修复、相应测试、脚本和文档。没有发布或上传 APK。
+
+---
+
+## V1.63 - 2026-09-18
+
+### 主题
+新增由 KEMI 签名客户端按需调用的双屏键盘覆盖层，使现有 KBoard IME 能在指定物理屏底部显示，同时把最终输入和桌面控制事件回传给保持焦点的远程会话。
+
+### 过程
+- 沿用唯一主 `FcitxInputMethodService`，没有新增第三个可选输入法，也没有改变既有主服务与切屏中继的普通输入路径。
+- 物理目标屏只承载 `TYPE_APPLICATION_OVERLAY` 的键盘区域；实际编辑器 Activity 和 IME 窗口运行在私有 `VirtualDisplay`，不会用 Activity 抢占目标屏应用焦点。
+- 调用方同时提供源屏、目标屏、目标尺寸和键盘高度；不写死 D2。任一源/目标屏移除、调用进程死亡、Surface 丢失、普通应用重新获得输入或超时都会关闭会话并释放资源。
+- 首个候选虽沿用平台证书，但 Release 最终清单遗漏 `android:sharedUserId="android.uid.system"`，63 无损覆盖时返回 `INSTALL_FAILED_SHARED_USER_INCOMPATIBLE`。现通过 Release 专用 manifest overlay 恢复现装包的系统共享 UID 身份，不要求卸载或清数据。
+- 系统 UID 候选首次真机联调时，私有 VirtualDisplay Activity 已成功 resumed，但 `showSoftInput` 早于 RelayEditor 成为系统 served view，系统明确记录 `Ignoring showSoftInput ... is not served`，因此 IME token 仍停在 D0 并最终触发 ready timeout；HDMI 视频帧和 portui resumed 状态未受影响。
+- served-view 候选复测进一步确认 Activity 已在私有 VD 正常 Displayed，但该 VD 只有 PRIVATE/PRESENTATION/OWN_CONTENT_ONLY、`touch NONE`，Android 12 仍把 `mCurTokenDisplayId` 保持为 D0。根因是显示本身未取得本地 IME 所需的 trusted display group、system decorations 与触摸能力，且创建 VD 前没有应用动态 display IME policy 和刷新 token。
+- 后续现场显示不全与布局错乱来自调用方把目标高乘 0.52，实际只创建 1920×665 VD，系统再扣除 Insets 后应用区仅 569px；上一版 DesktopKeyboard 以完整物理屏高度和导航 Insets 计算，裁短 VD 会改变 orientation/metrics 并压缩同一套布局。KEMI 侧改为传完整 1920×1280，KBoard 不新增第二套键盘布局。
+- 完整 1920×1280 可信 VD 在 V900 厂商双屏合成器上被识别为镜像显示层，现场造成黑屏、主屏壁纸复制到副屏并让 HDMI portui 退出；该路径已明确放弃。KBoard 现强制把 Overlay 画布限制为物理目标高的 52%，1280 高目标最多创建 665px 的 Surface/Window/VD，调用方即使误传全高也不会再次生成全屏层。
+
+### 修改
+- 新增 `IKBoardOverlayService` / `IKBoardOverlayCallback` AIDL，以及 `KBoardOverlayService`、`KBoardOverlayActivity`、`KBoardOverlaySession` 和请求参数校验。
+- Overlay 服务受应用签名级 IPC 权限保护，并在 Binder 入口继续校验调用 UID 包含 `com.newlinksz.kemi.remote` 且签名证书在 KEMI 允许列表内；所有回调携带 `requestId` 与 `sessionId`。
+- 触摸只在底部键盘覆盖区被接收并映射到私有显示，其余区域继续交给目标应用。拼音组合保留在私有编辑器内，只在 `commitText` 最终上屏时回传；删除、按键、编辑动作、私有命令、选择及远程鼠标事件继续逐项回传。
+- 会话结束前会补发仍按住的 Ctrl/Shift/Alt/Meta 与鼠标按钮抬起事件；`onReady` 只在虚拟编辑器已接管输入、IME 已显示且经过有效绘制帧后发送一次。
+- `app/src/release/AndroidManifest.xml`：只为正式 Release 恢复 `android.uid.system`，Debug 清单不受影响。
+- `KBoardOverlayActivity.kt` 新增附着、窗口焦点和 `onCreateInputConnection` 三条件驱动的有界启动时序：先 `requestFocus/restartInput` 建立私有显示 served view，再在下一绘制节拍执行 `showSoftInput`；最多 6 次、间隔 120ms，成功立即停止，不创建重复 Activity，也不回退到物理屏。
+- 新增 `OverlayImeStartGate.kt` 及两项状态机测试，覆盖焦点/附着等待、InputConnection 就绪、次数上限与成功终止。
+- 新增 `OverlayVirtualDisplayPolicy.kt`：私有 VD 保持非 PUBLIC，并增加 Android 12 的 `SUPPORTS_TOUCH`、`SHOULD_SHOW_SYSTEM_DECORATIONS`、`TRUSTED`、`OWN_DISPLAY_GROUP`；正式清单请求平台签名系统应用所需的 `ADD_TRUSTED_DISPLAY` 与 `INTERNAL_SYSTEM_WINDOW`。
+- 创建 VD 后先向现有 V900 display IME policy 接口为动态 VD 设置 `local`，再启动私有 Activity；RelayEditor 建立 InputConnection 后调用现有 `DisplaySwitchInputMethodService` 一次性切换并返回主 KBoard，强制系统按新 policy 创建 VD token。Overlay 结束时把该临时 display policy 恢复为 `fallback`。
+- Overlay 编辑器通过专用 `privateImeOptions` 标记识别，主服务不会把这次 token 刷新误判为普通应用抢焦点；其他编辑器仍沿用原关闭 Overlay 行为。ready timeout 延长到 8 秒，真实输入视图有帧的判定不变。
+- 新增 `OverlaySurfacePolicy.kt` 和透明主题：物理 Overlay Window、SurfaceView holder、VD 输出 Surface、私有 Activity Window、decor 与根容器统一使用 `PixelFormat.TRANSLUCENT` / 透明背景，禁止 dim 和黑色清屏；SurfaceView 使用 alpha 合成，未被原键盘占用的完整 VD 区域透出底层 HDMI。
+- Overlay 继续直接调用上一版 `InputView.showDesktopKeyboardForOverlay()` 与原 `DesktopKeyboard`，没有复制或修改鼠标/字符切换、键位尺寸和操作样式。
+- 新增 `OverlayDesktopLayoutPolicy.kt`：短画布先固定保留原 56dp 底部操作栏和退出按钮，再保留至少 48dp 鼠标区，六排原键位在剩余高度内等比分配且每排不少于 32dp；物理目标高度只参与布局约束，最终 Surface/Window/VD 始终使用安全短高。
+- `InputView`、`KeyboardWindow`、`DesktopKeyboard` 只增加 Overlay 短画布高度与触控区高度注入；仍使用同一组 DesktopKeyboard 键定义、字符切换、鼠标事件、Enter/语音/退出操作。私有 VD 不再请求 system decorations，避免额外导航栏扣高；非 Overlay 和既有跨屏模式继续使用原全尺寸算法。
+
+### 验证
+- `OverlayRequestPolicyTest` 先失败后实现通过，最终定向测试与 Kotlin/AIDL 编译通过。
+- 平台签名 Release 完整执行 `assembleRelease`、R8 和 `lintVitalRelease` 成功；合并清单确认仍只有原主服务和切屏中继声明 `android.view.InputMethod`，Overlay 服务不是可选 IME。
+- 最终 APK 为 `com.newlink.kemi.kboard` 1.4.1 arm64-v8a，v1/v2 签名有效，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- `aapt2 dump xmltree` 核对最终 APK 顶层 manifest 同时包含 `package="com.newlink.kemi.kboard"`、`versionCode=152` 与 `android:sharedUserId="android.uid.system"`；修正候选 SHA-256 为 `4b47e37390e55bcc4ebbff29f5e646b7add7a19b98a41490faf06561842ec96b`。
+- served-view 修复后的 `OverlayImeStartGateTest` 与 `OverlayRequestPolicyTest` 通过，平台签名 Release、R8、lintVital 和 `git diff --check` 通过；最终候选 SHA-256 为 `2ef36df50d58d92b25c9b37ae88ece0be07e6bf4096b1d05cb8836c7cd4eb23d`。
+- 新增的 `OverlayVirtualDisplayPolicyTest` 与全部 Overlay 定向测试通过；最终 APK 清单确认系统 UID、两项 trusted-display 权限、平台签名均有效，VD IME 路由候选 SHA-256 为 `b70161beacf8873dee8229be05498486a0bd52fe4bd453e4b4376dac177e040b`。
+- `OverlaySurfacePolicyTest` 先失败后实现通过，全部 Overlay 定向测试、平台签名 Release、R8、lintVital 和 `git diff --check` 通过；透明承载候选 SHA-256 为 `46aa0976f1f05efca06b0ae7f261110392c168364897257bb96b81749c46d380`。
+- `OverlayDesktopLayoutPolicyTest` 先失败后实现通过，并验证 1920×665、density 2 下操作栏 112px、鼠标区至少 96px、六排键各至少 64px、总高度不超过 665px；请求策略测试确认 1280 全高请求会被限制为 665px。最终短画布候选 SHA-256 为 `09ac030f1926e60ad0dabf6163f3ed32dc4a03f91450c31edb71d0a8e52475b3`。
+- `09ac030f` 真机静态门禁确认数学策略未作用到真实六排 View：键盘被挤在底部约 460px，鼠标区裁断且退出操作不明确，因此未进入输入或十轮测试。修正后 `BaseKeyboard` 直接给六个真实行 View 设置短画布固定行高和 packed chain，`DesktopKeyboard` 读取实际 header/六行边界，`InputView` 读取实际键盘窗口、操作栏和三个按钮边界；任何实际 View 越界或不可见都不会发送 `onReady`。退出键增加可见“退出全键盘”文字。最终真实 View 门禁候选 SHA-256 为 `b1154797894a6ea6e6473729262c60377db2f49ba138f4f9d14436a16f3f89b9`。
+
+### 待办与风险
+- 按本轮约束只产出和静态验证候选包，没有安装到 63。真实 HDMI 双屏下的焦点保持、触摸坐标、首帧就绪与 KEMI 回调消费仍需双方联调后才能标记为真机验收通过。
+
+### 物理屏覆盖 proof 补充验证
+- `b1154797` 在 63 现场仍出现键盘压缩、主屏壁纸复制到副屏以及 HDMI/键盘多层叠加，证明 V900 厂商合成器会把短高 VirtualDisplay 同样纳入镜像合成；VirtualDisplay 路径停止使用。
+- `KBoardOverlayService` 改为通过物理目标屏的 `createDisplayContext` 直接取得 `WindowManager`，添加 `TYPE_APPLICATION_OVERLAY` 透明窗口；不创建 VirtualDisplay、不启动 Activity、不调用系统 IME。Manifest 同时移除 Overlay Activity 注册及 `ADD_TRUSTED_DISPLAY` 权限。
+- 平台签名 Release 构建、R8、lintVital、v1/v2 签名和 `git diff --check` 通过，APK SHA-256 为 `06c834e926862a7f1b98f1733ab644944cedbb0650c0ec3962a5381594b5becf`。
+- 覆盖安装到 63 成功，包保持 1.4.1/152、uid 1000。KEMI 真实远程会话点击“键盘”后日志确认 `physicalDisplay=2 type=2038 size=1920x665`；WindowManager 确认窗口为 `APPLICATION_OVERLAY/TRANSLUCENT`、frame `[0,615][1920,1280]`。`com.huanglong.portui/.MainActivity` 全程在 D2 保持 RESUMED 且 Surface shown，D0 KEMI 同时保持 RESUMED。
+- 通过 D2 关闭入口后窗口立即移除，KEMI 收到 `overlay_closed_1` 并恢复 hidden 状态，HDMI Activity 未退出。当前 proof 只包含验证条，尚未接入完整 DesktopKeyboard 和字符/鼠标 IPC。
+
+---
+
 ## 维护规则（当前生效）
 
 - 只记录输入法项目，不写其他项目记录。
 - 每条记录固定包含：主题、过程、修改、验证、待办。
 - 新增内容按时间追加，不覆盖上一条历史。
 - 根目录 `cl.md` 是唯一变更日志，项目目录不再保留重复副本。
+
+## 2026-09-18：物理屏完整 InputView Overlay 候选（待 63 真机验收）
+
+- 根因：物理 Overlay 承载已证明可行，但在 Service 内单独构造 `DesktopKeyboard`/`TextKeyboard`/`NumberKeyboard` 和底部按钮会丢失原 `InputView + KeyboardWindow + KawaiiBar` 的层级、测量、候选栏和切换状态。
+- 改动：`KBoardOverlayService` 现在只管理目标物理 Display 的 `WindowManager`、Binder 会话和生命周期，直接挂载输入服务构造的完整 `InputView`；视图使用目标屏 `createDisplayContext`，窗口高度由完整原视图 `WRAP_CONTENT` 实际测量，不再使用 665 或另造高度公式。
+- 输入：覆盖视图携带 requestId，字符仍经 Fcitx 本地引擎和候选处理，最终提交、退格、Enter、方向键、组合键主键、修饰键边沿及鼠标事件只在匹配的覆盖会话中经 Binder 回传；普通 IME View 使用 null requestId，保持原 InputConnection 路径。
+- 切屏：覆盖视图的原切屏按钮改为在两个物理 Display 间重建同一完整视图，保留普通/数字/全键盘模式；迁移前释放已按住的修饰键与鼠标键，不调用旧的厂商 IME policy/relay 路径。
+- 验证：`:app:compileDebugKotlin` 通过；overlay 定向单元测试通过；Release、R8 和 lint 构建通过；`git diff --check` 通过。全量 JVM 测试中既存 `ThemeSerializationTest.version2` 失败，与本次 Overlay 改动无关。
+- 候选：`fcitx5-android/build/kboard-physical-overlay-candidate.apk`，包名 `com.newlink.kemi.kboard`，版本 `1.4.1/152`，仅 `arm64-v8a`，v1/v2/v3 签名有效，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`，APK SHA-256 `d5928086613529f0206eb9e33095f03c2a3a5301a46f6d7e4f0bfd8ef6773558`。
+- 未验证：尚未安装到 63；原版 UI 像素对比、双屏肉眼合成、HDMI frameindex 持续增长、全/普通/符号/候选/鼠标/组合键/切屏、普通 APP 隔离、十轮开关与压力测试均需按 `cross-display-keyboard.md` 第 32 节顺序真机验收。当前 HDMI Activity `RESUMED` 但截图为黑色，不能据此声称视频持续播放。
+
+## 2026-09-18：恢复稳定版布局并修复物理 Overlay 输入生命周期
+
+- 基线：以 2026-09-17 真机稳定画面和 `e24046b3` 的桌面键盘实现作布局基线；`DesktopKeyboard.kt`、`ToolButton.kt` 已恢复为基线内容，`InputView.kt`、`KeyboardWindow.kt` 相对基线只保留物理 Overlay 上下文、会话编号及布局状态恢复接口。
+- 界面：恢复底部原有退出、切屏、语音、Enter 四个图标按钮及其原位置和尺寸，移除后加的“退出全键盘”中文文字；不再为 Overlay 创建缩短版键盘或改写原键盘布局。
+- 稳定性：物理屏根视图补齐 `ViewTreeLifecycleOwner`，修复 `CustomGestureView.onTouchEvent` 读取空 `CoroutineScope` 的崩溃；创建视图前恢复 Fcitx capability/focus/startInput 生命周期，避免普通键盘显示“不可用”。普通输入会话的旧 VirtualDisplay 清理逻辑现在只处理真实旧虚拟会话，不会误关物理 Overlay。
+- 系统栏：窗口附着和切屏后请求显示目标屏系统导航栏。普通 Overlay 不提供系统 IME 可见状态，因此原系统隐藏键盘/输入法切换按钮是否出现、以及系统栏是否改变 HDMI 可视尺寸，必须在 63 真机确认，静态构建不作已恢复结论。
+- 验证：Overlay 定向单元测试、Debug Kotlin 编译、Release、R8、lintVital 和 `git diff --check` 全部通过。最终包 `fcitx5-android/build/kboard-physical-overlay-stable-layout.apk`，包名 `com.newlink.kemi.kboard`，版本 `1.4.1/152`，arm64-v8a；v1/v2/v3 签名有效，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`，APK SHA-256 `8ac21e9f64a8fe6439ade277c32d4c9f8e1ce8b509b379f49a23496e84a2cc32`。
+- 待验证：本任务未操作 63。需由设备测试方覆盖安装后确认四按钮、普通/全键盘切换、真实点击才有按键音、误触保护、24Hz 刷新节流、系统栏按钮、HDMI frameindex 与 CPU 占用。
+- 63 首次覆盖安装 `8ac21e9` 后，设备回读 SHA 一致，但 KEMI 第一次打开即收到 `REASON_START_FAILED(6)`；现场没有 KBoard 启动异常，确认是安装后系统尚未创建主 `FcitxInputMethodService`，物理 Overlay 不能依赖用户先在普通应用唤起一次键盘。
+- Overlay 服务现会在进程实例缺失时显式启动主输入法服务，并以 50ms 间隔最多等待 2 秒完成初始化；等待期间保留原请求和回调，新请求、隐藏、销毁均可取消，Overlay 关闭后释放仅为冷启动建立的 started-service 状态。冷启动修复重新通过 Overlay 定向测试、Debug Kotlin、Release/R8/lint、签名和 `git diff --check`。
+- 冷启动候选 `fcitx5-android/build/kboard-physical-overlay-cold-start.apk`，APK SHA-256 `cce20ae2a66a211d3a13bb533618d0699e9b383098ae5297e28ecc24d28280d8`；包名、版本、ABI 和签名证书不变，需在 63 杀掉/重装后的全冷状态直接点击 KEMI 键盘验证。
+- `cce20ae` 在 63 全冷状态已直接进入 ready，HDMI 帧持续增长；实机同时确认普通键盘空格仍为“不可用”，且物理 Overlay 不具备系统 IME 导航态，单纯 `show(navigationBars)` 不会生成左下隐藏和右下输入法切换按钮。
+- 普通键盘根因是冷启动只创建了服务，系统没有调用 `onBindInput`，Fcitx 没有创建/激活 InputContext。Overlay 现用经签名校验的 KEMI 调用 UID 显式 `activate`，再设置 capability、focus，并从 native `currentIme()` 回写当前会话视图；异步回写核对 requestId，关闭后的旧任务只清理自己的 context。系统 `onFinishInput/onUnbindInput` 在物理会话有效时不再错误地 focus-out/deactivate；关闭时仅在当前普通 binding 不属于同一 UID 时释放 Overlay context。
+- 依据 75 原系统栏参考图 `/private/tmp/kboard75-reference-d2.png`，在 Overlay 的原底部 padding 区恢复左下隐藏按钮、右下输入法选择按钮及中间手势条；高度读取系统 `navigation_bar_frame_height`，主体键盘定义、键位和四颗操作按钮不变。隐藏按钮关闭当前 Overlay，右侧按钮调用系统输入法选择器。
+- P0 候选 `fcitx5-android/build/kboard-physical-overlay-p0-fixes.apk`，SHA-256 `e41179f037b2f35433838352075bec7a8cde4881039ec67070d17a63162d0337`；Overlay 定向测试、Debug Kotlin、Release/R8/lint、v1/v2/v3 签名和 `git diff --check` 通过，待 63 核验普通空格、两角按钮位置/功能及跨屏关闭行为。
+- `e41179f` 在 63 显示两角按钮和普通模式 `English`，但全键盘切换后操作栏下方出现约 96px 浅灰空带。根因是 Overlay 内建导航区域、`onApplyWindowInsets` 的 bottom margin 和模式切换时的 padding height 三处重复处理同一导航高度。
+- 物理 Overlay 现统一只用 `bottomPaddingSpace.height = navigation_bar_frame_height` 承载导航区域，忽略 WindowManager 针对非 IME Overlay 返回的额外 bottom inset；普通系统 IME 路径保持原 inset 算法。普通模式导航底色跟随主题，全键盘模式跟随深色桌面背景，左右按钮和手势条保留，键盘主体不再额外压缩。
+- 去重候选固定为 `fcitx5-android/build/kboard-physical-overlay-final-candidate.apk`，SHA-256 `0b7f715be0db93b631e5a7a20c14d07a5da35110dc4e3fa19cf89dca4882ab04`；定向测试、Debug Kotlin、Release/R8/lint、v1/v2/v3 签名和 `git diff --check` 通过。普通模式真实输入和全部按钮仍待 63 点击验收，不能仅以显示 `English` 判定输入可用。
+- `0b7f715` 在 63 首次打开全键盘时已消除重复高度，但唯一导航区仍被 `showDesktopKeyboardForPhysicalOverlay()` 的固定主题浅色覆盖；后续模式刷新偶尔变深，导致首开和往返切换不一致。
+- 导航底色现由单一 `updateOverlayNavigationBackground(desktopMode)` 管理，并在布局恢复后按实际 layout name、以及每次 `setDesktopKeyboardMode` 的提前返回之前执行；删除首开固定浅色写入。固定候选路径保持 `fcitx5-android/build/kboard-physical-overlay-final-candidate.apk`，新 SHA-256 `c4ba7c0647a9489b2183825e014227e98b95bab74c9b8ca5d6e0a0e81802840d`，待 63 验证首开和多轮普通/全键盘切换底色一致。
+- 跨屏现场进一步确认 D0 的 `NavigationBar0` 为真实 96px 系统窗口，KBoard Overlay 同时保留内部 96px 导航区时会形成两层；仅修改内部背景不能解决键盘被上移的问题。D0 的 KBoard frame 为 `[0,16][1920,1184]`，系统导航 frame 为 `[0,1184][1920,1280]`。
+- 物理 Overlay 的 Window LayoutParams 在 Android 11+ 现设置 `fitInsetsTypes=0`，不再被系统导航 inset 缩小；窗口附着及跨屏后请求隐藏目标屏真实导航栏，只保留 Overlay 内部恢复的左右按钮和手势条。该变化只作用于物理 Overlay，不修改系统 IME policy；窗口关闭后由底层应用重新控制系统栏。
+- 跨屏单导航层候选继续使用固定路径 `fcitx5-android/build/kboard-physical-overlay-final-candidate.apk`，SHA-256 更新为 `28fd1500912d9fd018d940ec9594ee7631bf9eb675e64e73a3a9e37315079703`；构建、定向测试、R8、lint、v1/v2/v3 签名及 `git diff --check` 通过，必须由 63 核验 D0/D2 Window frame、系统 NavigationBar 可见性、左右按钮及关闭后的系统栏恢复。
+- 63 在普通/小键盘切换后捕获 Android 12 主线程崩溃：`ImsConfigurationTracker.onInitialize` 抛出 `onInitialize can be called only once`。根因是冷启动使用 `startService` 后，started-state 跨越系统 IME 的解绑/重绑，厂商 IMMS 对同一 `InputMethodImpl` 再次 initialize。
+- 冷启动不再创建任何透明 Activity，也不在物理屏启动 Activity。Overlay 现在先短暂启动主 IMS、立即建立同进程内部 Service binding 托管其生命周期，再清除 started-state；Overlay 关闭时解除内部 binding。系统 IMMS 仍通过标准 `android.view.InputMethod` binding 初始化，且一次系统解绑后没有 started-state 把旧 IMS 实例继续留到下一次 initialize。
+- 普通键盘第六颗“小键盘/浮动键盘”按钮恢复原语义，但操作对象改为按钮所属的当前 `InputView`；不再调用服务里可能为空或属于系统 IME 窗口的 `inputView`，避免 Overlay 按钮切换错误宿主。
+- 上述生命周期、按钮与单导航层合并候选仍为 `fcitx5-android/build/kboard-physical-overlay-final-candidate.apk`，SHA-256 `60e93b29d7548adf187095c5892cc824a343b2a0e005a48c0ee737eca4a6dd9a`；定向测试、Debug Kotlin、Release/R8/lint、v1/v2/v3 签名、`git diff --check` 通过，并确认 Overlay 冷启动路径无新增 Activity/ActivityOptions/startActivity。
+- 2026-09-18：修复物理屏覆盖层冷启动后系统输入法重新绑定可能触发 `onInitialize can be called only once` 的生命周期问题。覆盖层冷启动所用的临时绑定现在只在 Android 输入法管理器真正附加窗口令牌后释放，由系统绑定接管服务生命周期，避免 started service 跨越解绑/重绑继续存活。
+- 2026-09-18：修复已开启小键盘时进入桌面键盘会沿用浮动宽度和位移的问题。桌面模式强制键盘与预编辑区域恢复全宽、清零浮动位移，同时保留用户的小键盘偏好，退出桌面模式后按原设置恢复。
+- 验证：`:app:compileDebugKotlin`、覆盖层单元测试和 `:app:assembleRelease` 通过；`git diff --check` 通过。正式候选 APK 为 `fcitx5-android/build/kboard-physical-overlay-final-candidate.apk`，SHA-256 为 `56445eaffe6a74509fe1ba6cfbe13e401213e7d54e07709d318a3255338d6398`；`apksigner` 验证 v1/v2/v3 有效，证书 SHA-256 保持 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。设备侧仍需验证冷启动、系统解绑/重绑、桌面全宽、跨屏、底栏和 HDMI 帧连续性。
+
+## 2026-09-18：当日物理屏键盘改造总结、架构边界与风险追踪
+
+### 最终需求与验收口径
+
+- KEMI 远程会话保持原视频 Activity、编辑焦点和 HDMI Surface，不通过透明 Activity 或新的全屏显示层抢占目标屏；KBoard 在指定物理屏底部显示原有完整 `InputView`。
+- 普通、数字、符号、拼音候选和桌面全键盘继续共用原组件与原布局。跨屏只迁移承载窗口并重建 View，不复制第二套键盘定义。
+- Overlay 上的文字、退格、Enter、方向键、组合键、HOME/BACK、鼠标移动和鼠标键必须回到发起会话；普通应用输入必须继续走 Android `InputConnection`，两条输出通道不得串线。
+- 按键音只在动作真正被接受并分发后播放。误触、滑出取消、空白触点、重复 DOWN 或被策略拒绝的手势不得播放按键音。水族与触控板刷新率降为 24Hz，并缓存静态键盘行以降低持续合成和 CPU/GPU 占用。
+- 63 上的 `56445eaf...` 得到用户“初步测试可以”的现场结论。75 已完成 100 轮跨屏往返、合计 200 次切屏，但这只覆盖窗口与会话生命周期；没有完成 100 轮打开/关闭，也没有完成 100 轮完整组合键回归，不能把本条写成全面验收通过。
+
+### 当前有效架构
+
+1. `KBoardOverlayService` 是受签名权限保护的 Binder 入口。它同时校验调用 UID、`com.newlinksz.kemi.remote` 包名和允许的签名指纹，管理唯一 `requestId/sessionId` 所有权、调用方死亡、目标屏移除、窗口附着、切屏与关闭回调。
+2. 服务使用目标物理 Display 的 `createDisplayContext()` 和 `WindowManager` 添加 `TYPE_APPLICATION_OVERLAY`。窗口透明、位于底部、`FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCH_MODAL`，仅键盘区域接收触摸；不创建 VirtualDisplay，不启动透明 Activity，不请求目标应用焦点。
+3. `FcitxInputMethodService` 仍是唯一主输入法引擎和组件所有者。物理 Overlay 直接请求它为目标 Display 创建原始 `InputView + KeyboardWindow + KawaiiBar + DesktopKeyboard`，并补齐 `ViewTreeLifecycleOwner`；销毁必须显式调用 Overlay View 的释放路径，不能只依赖系统 IME Window 的 detach 回调。
+4. 每个 `InputView` 携带可空的 `overlayRequestId`。`CommonKeyActionListener`、语音提交和剪贴板提交以该编号选择输出路由：拥有有效物理会话时走 `KBoardOverlaySession` Binder 回传，否则走当前普通 `InputConnection`。异步 Fcitx 任务执行前后都必须重新核对所有权，避免关闭或换屏后的旧任务写入新会话。
+5. 冷启动先短暂 `startService` 创建主 IMS，再用同进程内部 binding 托管初始化并立即清除 started-state。Android 输入法管理器真正调用 `attachToken` 后，`TokenReadyInputMethodService.onSystemImeAttached()` 通知 Overlay 释放临时 binding，由系统标准 `android.view.InputMethod` binding 接管生命周期。这样既支持从未唤起过普通键盘的全冷启动，也避免旧 IMS 跨越系统解绑后在下一次 `initializeInternal` 被重复初始化。
+6. Overlay 自己模拟底部左右按钮和手势条，并让 Window 不适配真实系统导航 Insets；附着和跨屏后隐藏目标屏真实 NavigationBar，避免系统 96px 栏与内部 96px 栏叠加。关闭 Overlay 后由底层 Activity 重新控制系统栏。
+7. 桌面模式与浮动模式运行时互斥。桌面模式强制键盘和预编辑区 `MATCH_PARENT`、清零浮动位移并隐藏浮动控制点；用户的浮动偏好值不被清除，退出桌面后按原偏好恢复。
+
+### 当日失败实验及停止使用原因
+
+| 方案/候选 | 现场结果 | 根因 | 后续禁止事项 |
+| --- | --- | --- | --- |
+| 私有 VirtualDisplay + Relay Activity | token 留在 D0、键盘压缩，随后出现壁纸镜像、黑屏和 HDMI Activity 退出 | V900 厂商合成器把全高和短高 VD 都纳入镜像层；可信显示和 served-view 时序也不能保证物理屏本地 IME token | 不恢复 VD、trusted display policy、Relay Activity 或 52% 短画布路径 |
+| 透明 Activity 直接放物理屏 | 会改变焦点/任务栈，反向模式和 HDMI 页面有被抢占风险 | Activity 天然参与焦点、生命周期和输入法 served-view 仲裁 | 物理 Overlay 冷启动和显示都不得依赖 Activity |
+| Service 直接新造简化键盘 | 原布局、候选、数字/符号、KawaiiBar 和状态恢复缺失 | 绕过完整 `InputView` 组件树 | 不维护第二套桌面键盘或第二套高度公式 |
+| 只 `startService` 冷启动 IMS | 首次可打开，但系统解绑/重绑后崩溃 `onInitialize can be called only once` | started-state 让旧 IMS 在系统解绑后继续存活 | started-state 必须立即清除，生命周期只由临时 binding→系统 binding 交接 |
+| 内部 binding 保持到 Overlay 关闭 | 仍可能跨越系统 IME 解绑，重复初始化风险未消失 | 临时 binding 与系统 binding 没有明确交接点 | 以系统 `attachToken` 为唯一交接事件；不得覆盖 final `onBind()` 猜测绑定来源 |
+| 只改导航区颜色 | D0 仍有双层 96px 导航区，键盘整体上移 | 真实 `NavigationBar0` 和 Overlay 内部栏同时占空间 | 颜色不能代替 Window frame/Insets 验证 |
+| 浮动偏好直接参与桌面布局 | DesktopKeyboard 宽度变成约 807px 并位于屏幕中间 | `updateFloatingKeyboardLayout()` 在桌面模式仍写宽度、位移和 outline | 所有浮动几何都必须先排除 `desktopKeyboardMode` |
+| 在原始 `ACTION_DOWN` 播放水滴声 | 误触、滑出取消和未分发手势也会有声音 | 声音早于动作接受结果 | 音效只挂在 `notifyAcceptedAction/onAcceptedActionFeedback` 后 |
+
+### 可追踪回归清单
+
+| ID | 触发步骤 | 必须满足 | 明确失败判据 | 主要源码 |
+| --- | --- | --- | --- | --- |
+| KB-OVL-001 冷启动 | 强停/重启后，不先打开普通输入框，直接从 KEMI 打开键盘 | 一次进入 ready，原 UI 完整，HDMI 帧继续 | `REASON_START_FAILED/READY_TIMEOUT`、黑屏、Activity 被切走 | `KBoardOverlayService.kt`、`FcitxInputMethodService.kt` |
+| KB-OVL-002 系统接管 | Overlay 冷启动后在普通应用唤起、隐藏、解绑并再次唤起系统 IME | 只存在当前 IMS generation；普通键盘可输入 | `onInitialize can be called only once`、旧 PID/旧 View 继续响应 | `TokenReadyInputMethodService.kt`、`LifecycleInputMethodService.kt`、`KBoardOverlayService.kt` |
+| KB-OVL-003 跨屏 | D0/D2 各打开，点击切屏，重复往返 | 每次只有一个 Overlay window；模式和布局名恢复；旧屏立即移除 | 双窗口、旧屏残影、输入仍发旧 session、HDMI 停帧 | `KBoardOverlayService.kt`、`KBoardOverlaySession.kt`、`KeyboardWindow.kt` |
+| KB-OVL-004 输出隔离 | Overlay 与普通应用轮流输入中文、英文、退格、Enter、剪贴板、语音 final | Overlay 事件只回 KEMI；普通应用只收自己的 InputConnection | 串字、关闭后迟到提交、普通应用使 Overlay 输入失效 | `CommonKeyActionListener.kt`、`FcitxInputMethodService.kt`、`KawaiiBarComponent.kt` |
+| KB-OVL-005 触摸 Scope | 打开 Overlay 后快速普通/桌面/符号切换、切屏、关闭，同时滑动键盘 | 无空 lifecycle scope，无 detached View 回调 | `CustomGestureView` scope 崩溃、WindowLeaked、关闭后仍响应 | `InputView.kt`、`BaseInputView.kt`、`CustomGestureView.kt` |
+| KB-OVL-006 底栏 | D0/D2 普通与桌面首开及往返切换 | 始终只有一层底栏；左右按钮和手势条可见可点；背景随模式一致 | 白/灰空带、双导航栏、主体少 96px、关闭后系统栏不恢复 | `PhysicalOverlayWindowPolicy.kt`、`InputView.kt`、`KBoardOverlayService.kt` |
+| KB-OVL-007 浮动互斥 | 先开启浮动键盘，再进入桌面；退出桌面 | 桌面全宽且 x=0；退出后恢复原浮动偏好 | 桌面约 807px 居中、残留 translation/outline/控制点 | `InputView.kt`、`DesktopKeyboardModeState.kt` |
+| KB-OVL-008 功能键与音效 | 点击有效键、滑出取消、空白误触、长按修饰键、Enter、语音 | 只有真实接受动作发声；Enter/语音不重复发声；修饰键边沿成对 | 误触有声、一键双声、卡住 Ctrl/Alt/Cmd/鼠标键 | `InputFeedbacks.kt`、`BaseKeyboard.kt`、`DesktopKeyboard.kt`、`KeyAction.kt` |
+| KB-OVL-009 桌面组合键 | 测 Ctrl/Alt/Command+字母/空格、Shift/Caps、F1-F12、方向、HOME/BACK | 主键与修饰状态完整回传；中文无修饰仍走 Fcitx | 只有修饰键没有主键、Space 被长按逻辑吞掉、Caps 大小写错 | `DesktopKeyPolicy.kt`、`DesktopKeyboard.kt`、`FcitxInputMethodService.kt` |
+| KB-OVL-010 鼠标与视频焦点 | 移动、左右中键、切屏、关闭时按住按钮，同时观察 HDMI frameindex | 鼠标事件归当前 session；关闭补 UP；视频 Activity 一直 RESUMED 且帧增长 | 事件回灌、卡键、跨 session、portui pause/stop、帧停止 | `DesktopTouchpadView.kt`、`CommonKeyActionListener.kt`、`KBoardOverlaySession.kt` |
+| KB-OVL-011 24Hz 资源 | 桌面水族与触控板持续运行，普通模式/隐藏后再采样 | 活动目标约 24Hz；隐藏后停止；静态键行缓存仅在 attach 期间存在 | 仍约 30/60Hz、隐藏后持续绘制、GPU layer 未释放、PSS 线性增长 | `DesktopAquariumView.kt`、`DesktopTouchpadView.kt`、`DesktopKeyboard.kt` |
+| KB-OVL-012 关闭原因 | 隐藏、调用方死亡、Display 移除、普通输入接管、服务销毁 | 每次只回调一次正确 reason，释放窗口/按键/Context | 重复回调、遗留窗口、普通输入误关新会话 | `KBoardOverlayService.kt`、`OverlayRequestPolicy.kt` |
+
+### 已验证与未验证边界
+
+- 已验证：Overlay 定向 JVM 测试、Debug Kotlin 编译、Release/R8/lint 构建、`git diff --check`、APK v1/v2/v3 签名和固定证书；63 安装包 SHA 与 `56445eaf...` 一致，用户反馈初步可用；75 完成 system UID 安装链迁移，并完成 100 轮跨屏往返、合计 200 次切屏，窗口与会话生命周期未见失败。该结果不包含 100 轮打开/关闭或完整组合键验证。
+- 尚未完整验证：真实语音、剪贴板、全部中英文候选、所有组合键与鼠标按钮；系统 IME 多次解绑重绑；D0/D2 系统栏恢复；HDMI 长时间 frameindex；CPU/GPU/PSS 长期曲线。已有一次组合键自动化运行因 D0 上 KEMI 抢走接收器焦点，无法证明事件进入真实 `InputConnection`，该次结果作废且不得计为通过。
+- 自动化工具已补齐：`tools/real-input-receiver` 是独立真实 `InputConnection` 接收器，只记录按键边沿、meta、repeat、时间、Display 和 accepted；commit/composing 只记录长度，不记录文本。`tools/real-input-injector` 是另一独立包的 `UiAutomation.injectInputEvent` instrumentation，按参数发送 DOWN→有序 POINTER_DOWN→逆序 POINTER_UP→UP，支持 display、pointer id/坐标、hold、pointer step 和 rounds，并输出机器 JSON。两包已在 ORICO 构建成功，源码和命令见 `tools/real-input-harness.md`。Android 12 首版因直接调用 `InputEvent.setDisplayId` 不兼容而失败，现已改为兼容查找并生成平台签名包；下一次必须先做单键正控、确认接收器保持 served view、Display 与坐标正确，再进入 100 轮组合门禁。
+- 追随规则：发现问题时先记录回归 ID、候选 SHA、设备/Display、触发序列、窗口 frame、PID/IMS generation、HDMI Activity 状态和过滤日志，再修改源码；修复后重跑该 ID 与相邻的输出隔离、底栏、跨屏三组，不以截图正常替代输入和生命周期验证。
+
+### 75 安装链差异与本次处理结论（后续部署前仍需核对）
+
+#### 2026-09-18 本次改动细节与风险总览
+
+##### 1. 三种键盘模式与状态记忆
+
+- 键盘展示状态统一为 `normal`、`floating`、`desktop` 三态。只有用户明确点击普通、浮动或全局键盘切换按钮时才更新持久化偏好；临时进入数字、符号等子布局不会覆盖用户选择。
+- 新建 `InputView`、进程重建和物理 Overlay 首次打开时读取该状态；跨屏重建优先沿用当前会话的实际模式，避免切屏后退回普通键盘。
+- 桌面模式会主动排除浮动键盘保存的宽度、位移、圆角和控制点；退出桌面模式后再恢复原浮动偏好，防止桌面键盘缩成约 807px 并悬在屏幕中间。
+- 风险：旧版本留下的非法偏好值、极端进程重建顺序或临时布局退出路径可能造成模式回落。必须分别对三种模式执行“关闭重开、杀进程重开、D0↔D2 往返”连续 100 轮，并检查实际窗口宽度、位置和布局名，不能只看按钮状态。
+
+##### 2. KEMI 扩展键盘切屏协议
+
+- 恢复成熟协议分支：只有编辑器的 `privateImeOptions` 精确等于 `com.newlinksz.kemi.remote.EXPANDED_KEYBOARD` 时，KBoard 才向 KEMI 定向发送 `SWITCH_EXPANDED_KEYBOARD` 有序广播；收到 host 迁移结果后，再调用系统 DisplaySwitch relay 刷新 IME token。
+- 普通应用保持原系统输入路径，不发送 KEMI 私有广播。主 IME 与同包 `DisplaySwitchInputMethodService` 都必须处于 enabled 状态。
+- 风险：只观察 `mCurTokenDisplayId` 会产生假阳性。曾出现 token 短暂切换但 KEMI 没收到广播、host 未迁移、旧 Overlay 仍停在原屏的情况。完整判定必须同时核对 KEMI receiver、host display、Overlay request/source/target、真实截图和持续窗口状态。
+
+##### 3. 物理屏 Overlay 架构与生命周期
+
+- 继续使用唯一主 `FcitxInputMethodService`。物理屏只承载底部 `TYPE_APPLICATION_OVERLAY`；编辑器与 IME 窗口运行在私有 VirtualDisplay，避免键盘 Activity 抢走 HDMI/KEMI 的前台焦点。
+- Binder 接口受签名权限、调用包和证书三层校验。每个请求带 `requestId/sessionId`，旧请求、旧输入连接、旧绘制回调和旧关闭事件不能影响新会话。
+- 冷启动通过临时 binding 拉起 IMS，并以系统 `attachToken` 为交接点立即解除 started-state，避免系统解绑后旧服务仍存活并再次执行 `onInitialize`。
+- 会话关闭、调用方死亡、屏幕移除、普通输入接管和服务销毁都会释放 Window、Surface、VirtualDisplay、Context，并补发仍按住的修饰键和鼠标按钮 UP；`onClosed` 每个会话只能回调一次。
+- 风险：这是跨 Binder、Window、VirtualDisplay、IME token 和调用方生命周期的并发路径。任何 generation 判断遗漏都可能引发迟到弹窗、旧屏残影、串会话输入、Window 泄漏或重复初始化。冷启动、快速开关、调用方死亡、屏幕移除、系统 IME 解绑重绑、D0↔D2 必须分别连续 100 轮并保留首个失败现场。
+
+##### 4. 键盘布局、触摸边界与系统导航栏
+
+- Overlay 画布限制为物理目标高度的 52%，避免 1920×1280 全尺寸可信 VD 被 V900 合成器识别成镜像层，导致副屏黑屏、主屏壁纸复制或 HDMI Activity 退出。
+- 短画布固定保留 56dp 底部操作栏和至少 48dp 鼠标区，其余空间按比例分给六排键位；仍复用同一份 `DesktopKeyboard` 键定义和交互逻辑。
+- Overlay Window 使用完整物理屏宽度，并保持 `FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCH_MODAL | FLAG_LAYOUT_IN_SCREEN`。键盘框内触摸归 KBoard，框外触摸继续传给 KEMI/HDMI；真实系统导航栏覆盖在 Overlay 之上，不参与键盘尺寸计算。
+- 首次附着及跨屏重建后主动请求显示系统导航栏，恢复真实的底部 Home 手势区域。Overlay 内的白色手势条仅是视觉元素，不具备系统 Home 事件能力。
+- 风险：窗口 frame 或 Insets 计算偏差会造成键盘区域触摸穿透到底层工具栏，或框外区域被键盘截获；全高 VD 会重新触发黑屏风险。必须用真实多点注入分别验证键盘内、边界、框外、系统导航区，且同步检查 HDMI frame index、Activity resumed 状态和是否出现 `projection_stopped`。
+
+##### 5. 按键音与误触规则
+
+- 按键音从原始 `ACTION_DOWN` 移到动作真正被接受后的统一反馈点。有效字符、功能键和已触发的点击才播放声音；滑出取消、空白区域、未分发手势和被策略拒绝的事件不播放。
+- Enter、语音等已有独立反馈的动作经过统一去重，避免一次操作播放两次；长按修饰键只有在真实边沿被接受时反馈。
+- 风险：新增加的按键类型若绕过 `notifyAcceptedAction/onAcceptedActionFeedback`，可能无声；若同时保留旧反馈入口，则可能双声。字符、Enter、语音、Ctrl/Alt/Command、鼠标键、滑出取消和空白误触需各连续 100 次核验，并同步确认下游只收到一次动作。
+
+##### 6. 桌面组合键、中文输入和事件隔离
+
+- 桌面键盘补齐 Ctrl、Alt、Command/Meta 与字母、Space 的主键边沿，支持 Shift/Caps 三态、F1–F12、方向键、HOME/BACK。无修饰中文字符仍经过 Fcitx 组合与候选流程，最终 `commitText` 才回传 KEMI。
+- Overlay 与普通输入连接严格隔离；候选点击、删除、Enter、剪贴板、语音 final 和远程鼠标事件都必须属于当前 session。关闭或切屏后的迟到候选、语音结果和按键回调不得提交到新会话。
+- 风险：修饰键 DOWN/UP 不平衡会造成远端卡键；`Ctrl+Space` 与语言切换、长按空格逻辑可能冲突；候选更新和会话切换竞争可能串字。必须用真实 InputConnection 接收器验证完整边沿、meta、repeat、display 和 session，而不能用日志中“按钮已点击”代替最终输入结果。
+
+##### 7. 24Hz 刷新率与资源占用
+
+- 桌面水族动画与触控板活动刷新目标降至约 24Hz；隐藏、detach 或退出桌面模式后停止帧调度。静态键行缓存只在 View attach 生命周期内存在，退出时释放。
+- 目标是降低持续显示桌面键盘时的 CPU/GPU 唤醒次数，而不改变按键事件、鼠标采样和输入延迟语义。
+- 风险：24Hz 只降低动画调度频率，不保证整机 CPU 固定下降；触摸事件、系统合成、HDMI 解码和日志仍可能占用资源。需要用同一设备、同一 HDMI 场景对比 CPU、GPU、PSS、掉帧和触摸延迟，至少覆盖持续活动、静态显示和隐藏后三种状态；若隐藏后仍有帧回调或 PSS 线性增长即判失败。
+
+##### 8. Home 手势专项：当前仍未闭环
+
+- 稳定候选 `kboard-mode-expanded-home-gesture-platform.apk`，SHA-256 `62d1b16f82e44bf62640915f4c4e33a5070195b7ad15bbe942080f68971c18f1`，已经证明 D0 主屏 Home 路径可稳定关闭 Overlay；这不代表 D2 副屏通过。
+- 后续候选 `kboard-home-system-nav-close-platform.apk`，SHA-256 `a0b9a9469fc185ba464f92dc054a9cd9fc8fadb8cb9ef39b6ade57ebfcb1ca30`，增加 `ACTION_CLOSE_SYSTEM_DIALOGS` 的 `homekey/recentapps` 处理以及 pendingStart/session 代次保护。该方案在 D0 可工作，但在 D2 实测失败：副屏 Home 已让 `SecondaryDisplayLauncher` 成为 input/control target，KBoard 却没有收到新的系统关闭广播，Overlay 仍然残留。
+- 因此 `a0b9…` 是必须保留的已知失败候选，禁止发布或标为修复完成。周期广播 `SET_SECONDARY_HOME_NAV_HIDDEN` 只管理副屏导航栏显隐，且显式发给 SystemUI，不代表一次 Home；Overlay 内视觉手势条也不能提供 Home 事件。
+- 当前唯一有 AOSP 依据的下一步是先做平台签名的只记录探针，验证 Android 12 `TaskStackListener` 的 `onTaskMovedToFront` 与 `onActivityRestartAttempt` 是否在目标 display 上可靠触发，尤其必须覆盖“D2 已经是 SecondaryDisplayLauncher，Overlay 盖在其上，再次上滑 Home”。未取得这个实机证据前，不再构建猜测性关闭候选。
+- 风险：`TaskStackListener` 是隐藏系统 API，需要与 V900 Android 12 ROM 精确匹配的接口桩；即使 AOSP 有对应行为，厂商 ROM 也可能不回调。如果“Launcher 已可见时再次 Home”没有事件，必须由 ROM/SystemUI 提供按 display 的 Home 回调，或由 KEMI/Launcher 显式通知 KBoard。
+
+##### 9. 发布门禁与已知验证缺口
+
+- APK 判定必须固定 SHA、包名、版本、shared UID、平台证书和 ABI。设备安装后需回读 APK 并核对哈希；构建成功、签名成功或单张截图均不等于运行通过。
+- 每个历史缺陷都保留为永久回归项。专项 100 轮必须连续执行，任一轮失败即冻结候选并保留首个失败的日志、窗口状态、截图、PID/IMS generation、request/session、display 和 HDMI 状态；不能通过重跑覆盖失败。
+- 当前仍缺少完整 100 轮证据的项目包括：三态模式重启保持、中文长句及候选翻页、全部组合键与鼠标按钮、按键音正负例、真实语音、剪贴板、系统 IME 重绑、D0/D2 系统栏恢复、HDMI 长时间连续帧，以及 CPU/GPU/PSS 长时曲线。
+- 在 D2 Home 问题闭环并且上述专项全部通过前，本次版本只能视为测试候选，不能视为全量验收完成。
+
+##### 10. Home 只记录探针、IME generation 恢复与全局剪贴板修正
+
+- 副屏 Home 不再继续猜测关闭条件。新增 Android 12 `TaskStackListener` 只记录探针，监听 `onTaskMovedToFront` 与 `onActivityRestartAttempt`，输出事件类型、Overlay 目标屏、task 屏、taskId、HOME 分类、组件、可见状态、request/session；探针固定标记 `action=observe-only`，不调用 `close()`，注册失败也只记录错误，不影响 Overlay 服务。
+- 隐藏 API 通过 compile-only Android 12 签名桩编译，桩类不会打入 APK；运行时只使用设备 boot classpath 的真实 `ActivityTaskManager`/`TaskStackListener`。Release 请求平台签名权限 `MANAGE_ACTIVITY_TASKS`。`displayId` 只作探针日志和分类使用，读取失败时退回 `INVALID_DISPLAY` 并明确写日志，不会误关键盘。
+- 新增 IME generation 迁移：新 `FcitxInputMethodService` 完成创建后通知 Overlay 服务；若当前可见 Overlay 仍持有已被 `releaseOwnedResources("superseded")` 断开的旧 IMS，则在同一 display、同一 request/session、同一布局下由新 IMS 创建替换 View，附着成功后才移除旧 View，并把 owner 更新为新 IMS。迁移失败会显式关闭死会话，避免保留“画面还在但输入和切屏都失效”的僵尸键盘。
+- 该修复针对已复现的 KQ-21/KQ-22：a0b9 在 D2 Home 残留后，20:35:27 点击切屏时旧 `FcitxInputMethodService@156507770` 已 disconnected，`KeyboardWindow.attachLayout` 抛 `FcitxDaemon.DisconnectedException`。后续验证必须在不重启 KBoard 的前提下完成 Home 残留→IMS 重建→切屏→继续输入，不能通过重启掩盖。
+- 全局键盘剪贴板的根因不是系统剪贴板读取失败：普通键盘已经能显示同一内容。桌面模式调用 `setDesktopQuietMode(true)` 后把整个 idle animator 隐藏，状态虽已切到 `Clipboard`，提示仍不可见。现仅在“新鲜剪贴板提示”状态允许 animator 显示，其他空闲工具继续隐藏；点击提示仍通过 `commitTextFrom(inputView.overlayRequestId, text)` 发送给当前 Overlay session，对应远程电脑由 callback 的 request/session 决定。
+- 定向测试 `IdleUiVisibilityPolicyTest` 2/2、`HomeTaskStackProbePolicyTest` 2/2、`OverlayImeGenerationPolicyTest` 1/1 通过；Release、R8、lintVital 构建通过，`git diff --check` 通过。当前产物仍是未签名 APK，SHA-256 `8d87b495019e28399b8d4bef4e71f320601212cabb9d61eec8ed1134b9c73dc5`，不得安装到设备或作为候选交付。
+- 仍需平台签名后的 75 实测：非 HOME→D2 HOME、D2 已是 HOME 再次 Home、普通点击/另一屏动作负控；KQ-21/KQ-22 连续 100 轮；复制文本→打开全局键盘→提示可见→点击后只到当前远程会话连续 100 轮。任何首次失败都必须保留，不得重跑覆盖。
+- 用户明确授权读取既定私密凭据后，已使用 `/Users/newlink/kemi/keystore/debug.keystore`、alias `androiddebugkey` 生成平台签名候选 `fcitx5-android/build/kboard-home-probe-ime-clipboard-platform.apk`。最终 SHA-256 `2d73036fd74d793734b8def65b13d509d2ecb1561c95ff092a8d6666f832995e`；包名 `com.newlink.kemi.kboard`、版本 `1.4.1/152`、ABI `arm64-v8a`、shared UID `android.uid.system`；zipalign 通过，v1/v2 签名有效，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。本轮没有操作 75，设备结果仍为 BLOCKED，必须由既定独占测试任务完成上述场景后才能判断探针通道和两项修复。
+
+#### 2026-09-18 模式记忆与扩展切屏协议修正候选
+
+- 新增持久化三态 `normal/floating/desktop`。只有用户点击普通、浮动或全局键盘切换时更新；新建 InputView、进程重建和物理 Overlay 首开读取该值，跨屏重建继续优先传递当前布局。旧数据或非法值安全回落普通键盘。
+- 浮动按钮在全局模式下会明确切到浮动键盘；全局按钮退出时明确切回普通键盘。桌面与浮动几何继续互斥，模式记忆不复用临时数字/符号布局。
+- 最小恢复主仓成熟扩展协议：编辑器 `privateImeOptions` 精确匹配 `com.newlinksz.kemi.remote.EXPANDED_KEYBOARD` 时，先向 KEMI 定向发送 `SWITCH_EXPANDED_KEYBOARD` 有序广播，等待 host 迁移回调后才进入原系统 relay/token 切换；普通应用仍直接使用原系统路径。
+- Home 手势专项将物理 Overlay 首次附着和跨屏重建后的 `hide(navigationBars)` 改为主动 `show(navigationBars)`；原因是底层 KEMI/SecondaryDisplayLauncher 也可能处于沉浸状态，仅删除 KBoard 的 hide 请求不能保证 NavigationBar surface 与 mandatory bottom gesture target 恢复。继续保持 `setFitInsetsTypes(0)`、完整物理屏宽度、`FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCH_MODAL | FLAG_LAYOUT_IN_SCREEN` 和原键盘布局，让系统栏覆盖在 Overlay 之上而不参与尺寸计算，避免压缩键盘或底层视频。
+- `KeyboardPresentationModeTest`、`ExpandedKeyboardSwitchPolicyTest`、新增 Home 手势策略断言和全部 Overlay 定向 JVM 测试通过；平台签名 Release、R8、lintVital 与 `git diff --check` 通过。最新候选为 `fcitx5-android/build/kboard-mode-expanded-home-gesture-platform.apk`，SHA-256 `62d1b16f82e44bf62640915f4c4e33a5070195b7ad15bbe942080f68971c18f1`，包名 `com.newlink.kemi.kboard`、版本 `1.4.1/152`、shared UID `android.uid.system`，v1/v2 签名有效，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 本轮按要求没有操作设备、没有推送。75 先做 Home 上滑正控及白条/视频尺寸检查，再把首次弹出、D0↔D2 双向切屏、扩展收回、键盘隐藏后系统栏恢复纳入专项 100 次；同时验证三种模式关闭重开、KEMI receiver、host、Overlay request 和 token 屏幕一致。只看到 token 变化不能判 PASS。
+
+- 75 处理前的 `com.newlink.kemi.kboard` 是普通应用 UID 10049，同时存在 `/system/app/KBoard` 系统底包和 `/data` 更新层；带 `android:sharedUserId="android.uid.system"` 的 `56445eaf...` 直接 `install -r` 会被 `INSTALL_FAILED_SHARED_USER_INCOMPATIBLE` 拒绝。这是安装身份不兼容，不是 APK 损坏或签名验证失败。本次已完成迁移并验证为 system UID 安装链，后续升级仍须保持同一 shared UID 和平台证书。
+- 63 本轮没有可证明的“普通 UID 迁移到 UID 1000”操作。可证明事实只有：遗漏 sharedUserId 的首个候选被拒绝；补回 Release manifest 的 sharedUserId 后覆盖成功并保持 UID 1000。这说明 63 在本轮开始前已经处于 system UID 升级链。
+- `.62` 历史上的 `adb remount`/overlayfs 删除 `/system/app/KBoard` 流程针对旧包 `org.fcitx.fcitx5.android`，最终安装的是 `/data/app` 普通 UID 版本；它不能作为 75 迁移到 UID 1000 的依据。63 后来的“卸载错误证书数据包再装平台签名包”记录也没有 shared UID 迁移证据。
+- 本次 75 迁移已经完成，但迁移后只恢复主 IME 时遗漏了同包 `DisplaySwitchInputMethodService`：首次点击扩展键盘切屏出现 `Display-switch IME relay is not enabled`。补执行同包 relay 的 `ime enable` 后只能证明系统 IME token 短暂切到 D0；KEMI 没有收到扩展键盘切屏回调，也没有重建 host，Overlay `requestId=11` 仍为 `source=0,target=2,visible`，因此不得判定反向切屏成功。后续点击还可能穿透到 KEMI toolbar 并触发 `projection_stopped`。
+- 静态复核确认回归根因：主仓成熟实现的 `toggleImeDisplay()` 仍会识别 `privateImeOptions == com.newlinksz.kemi.remote.EXPANDED_KEYBOARD`，向 KEMI 发送 `SWITCH_EXPANDED_KEYBOARD` 有序广播，等待 `DualScreenKeyboardSwitchReceiver` 迁移编辑器/host 后再切系统 IME token；生成 `56445eaf...` 的 Overlay 工作树遗漏了这整个分支，只保留 ROM relay 路径。修复必须最小合回成熟分支，不能整体覆盖并丢失 Overlay 生命周期修复；回归必须同时验证 KEMI 收到广播、host 目标屏改变、Overlay request 更新、截图和连续窗口状态，不能再只看 `mCurTokenDisplayId` 或瞬时 `shown=true`。
+- 后续部署检查必须同时确认主 IME 和 relay 已启用，不能只检查默认输入法；该检查只能保证 relay 可调用，不能替代 KEMI 扩展模式协议验证。
+- 后续更换设备或重做系统时仍必须先备份设置和 `/data` APK，并只读核对系统底包与更新层各自的包名、manifest sharedUserId、证书、版本、UID 和用户安装状态。禁止手工修改 `packages.xml`；不能把 75 的成功直接推定为其他设备也可无损迁移。
+
+## 2026-09-19：目标屏 Home 清理闭环（KBoard 1.4.1+162）
+
+### 现场与根因
+
+- 75 的 D2 显示物理 Overlay 时，从底部执行 Home，系统已把目标任务切换到 `SecondaryDisplayLauncher`，但键盘仍残留。
+- `TaskStackListener` 已准确产生 HOME 候选，旧实现只记录 `action=observe-only`，没有关闭当前 Overlay。这是系统 Home 已生效而 KBoard 生命周期没有收口，不是手势未识别。
+
+### 最小修正
+
+- `HomeTaskStackProbePolicy` 增加目标归属判断；只有 HOME 候选的 display 与当前 Overlay 目标 display 一致才允许进入关闭路径。
+- `KBoardOverlayService` 在收到候选时冻结 `requestId/sessionId/targetDisplayId`，切回主线程后再次核对当前可见会话仍与快照一致，才调用 `close(REASON_SYSTEM_NAVIGATION)`；pending start 使用同样的代次条件取消。
+- 非 HOME、另一屏、旧 request、旧 session 和已经切换目标屏的迟到回调全部忽略。没有改普通失焦规则、键盘布局、输入分发或扩展切屏协议。
+- 版本基数 15→16；ARM64 APK versionCode 162。平台证书和 `android.uid.system` 升级链保持不变。
+
+### 验证
+
+- `HomeTaskStackProbePolicyTest` 先红后绿；2026-09-19 最终重跑 `BUILD SUCCESSFUL`。
+- 75 安装候选 SHA-256：`07e1a5cd1c23017344fd5acd4c595c153697a00cf35dc5405d797d00e1a15b61`；UID 1000；默认输入法未改变。
+- Home 专项连续 100/100：每轮目标屏进入 Launcher，Overlay 都被清除；运行日志出现 `action=close-home-task`。
+- 与 KEMI 1.4.126+278 组合执行扩展→D2 键盘→D0/D2 切换→隐藏→收回→单屏立即重开→再次切屏/隐藏，连续 100/100；无 fatal、ANR、断连或残留键盘。
+- KBoard 隐藏后五个 2 秒 `/proc` 采样均为 0 jiffies；循环 PSS 从 101037 KB 开始，峰值 174354 KB，静置 30 秒回落 102163 KB，未见持续线性增长。
+- 全应用单元测试 46 项中 45 项通过；旧 `ThemeSerializationTest.version2` 仍失败（期望 version 2 不迁移，实际发生迁移）。该测试及主题序列化代码未被本次 Home 修正改动，因此不能把它算成本次回归，但全量门禁仍需单独清零。
+
+完整设备报告：`/Users/newlink/kemi/RustDesk/client/kemi-docs/PAD75-KEMI278-KBOARD162-RELEASE-GATE-20260919.md`。

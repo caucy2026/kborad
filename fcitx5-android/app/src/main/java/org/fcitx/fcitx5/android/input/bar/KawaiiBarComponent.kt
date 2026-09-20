@@ -68,6 +68,7 @@ import org.fcitx.fcitx5.android.input.clipboard.ClipboardWindow
 import org.fcitx.fcitx5.android.input.dependency.UniqueViewComponent
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
+import org.fcitx.fcitx5.android.input.dependency.inputView
 import org.fcitx.fcitx5.android.input.dependency.theme
 import org.fcitx.fcitx5.android.input.editing.TextEditingWindow
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
@@ -103,6 +104,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private val context by manager.context()
     private val theme by manager.theme()
     private val service by manager.inputMethodService()
+    private val inputView by manager.inputView()
     private val windowManager: InputWindowManager by manager.must()
     private val horizontalCandidate: HorizontalCandidateComponent by manager.must()
     private val commonKeyActionListener: CommonKeyActionListener by manager.must()
@@ -497,7 +499,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                         // Global mode must not mutate the target editor while listening: some
                         // adjustPan clients reposition their whole surface on the first composing
                         // update, which looks like the keyboard zoomed. Commit corrected final once.
-                        service.commitText(text)
+                        service.commitTextFrom(inputView.overlayRequestId, text)
                     } else {
                         service.commitVoiceComposing(text)
                     }
@@ -720,7 +722,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     windowManager.attachWindow(ClipboardWindow())
                 }
                 floatingKeyboardButton.setOnClickListener {
-                    updateFloatingKeyboardState(service.toggleFloatingKeyboard())
+                    updateFloatingKeyboardState(inputView.toggleFloatingKeyboard())
                 }
                 desktopKeyboardButton.setOnClickListener {
                     Timber.d("Desktop keyboard button clicked")
@@ -736,7 +738,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             clipboardUi.suggestionView.apply {
                 setOnClickListener {
                     ClipboardManager.lastEntry?.let {
-                        service.commitText(it.text)
+                        service.commitTextFrom(inputView.overlayRequestId, it.text)
                     }
                     clipboardTimeoutJob?.cancel()
                     clipboardTimeoutJob = null
