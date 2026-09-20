@@ -1027,6 +1027,12 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             pendingTouchHideSource = null
             source.isEnabled = true
             releaseDesktopInputStates()
+            // The desktop keyboard can be hosted on D0 while its editor/input connection remains
+            // on D2. In that state requestHideSelf() updates the editor display's IME state, but
+            // the SoftInputWindow currently attached to D0 can remain visible. Close the window
+            // owned by this service generation as well; the delayed callback still guarantees
+            // ACTION_UP has left the button before the hierarchy is detached.
+            hideWindow()
             requestHideSelf(0)
         }
         pendingTouchHideRequest = request
@@ -1122,6 +1128,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onWindowShown() {
         super.onWindowShown()
+        DesktopNavigationHideBridge.confirm(
+            display?.displayId ?: android.view.Display.DEFAULT_DISPLAY
+        )
         inputView?.onImeWindowShown()
         inputView?.requestCurrentDisplayInsets("window_shown")
         try {
@@ -1135,6 +1144,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     override fun onWindowHidden() {
         cancelPendingTouchHideRequest()
         releaseDesktopInputStates()
+        DesktopNavigationHideBridge.onImeWindowHidden()
         inputView?.onImeWindowHidden()
         super.onWindowHidden()
     }
@@ -1311,6 +1321,11 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         @Suppress("DEPRECATION")
         val currentDisplayId = display?.displayId ?: android.view.Display.DEFAULT_DISPLAY
         val moveToSecondary = currentDisplayId != SECONDARY_IME_DISPLAY_ID
+        if (moveToSecondary) {
+            DesktopNavigationHideBridge.disarm()
+        } else {
+            DesktopNavigationHideBridge.arm(applicationContext)
+        }
         val mode = if (moveToSecondary) DISPLAY_IME_MODE_LOCAL else DISPLAY_IME_MODE_FALLBACK
         val policyIntent = Intent(ACTION_SET_DISPLAY_IME_POLICY)
             .setPackage(DISPLAY_IME_POLICY_PACKAGE)
@@ -1369,7 +1384,15 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         // DesktopKeyboard's explicit remote BACK button uses sendDesktopSystemKeyState() and is
         // therefore intentionally unaffected.
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (event.repeatCount == 0) requestHideSelf(0)
+            if (event.repeatCount == 0) {
+                // After D2 -> D0 migration the editor and IME window intentionally live on
+                // different displays. requestHideSelf() is routed through IMMS using the editor
+                // client and can leave the current D0 SoftInputWindow visible. Close the window
+                // owned by this service generation as well, then let IMMS converge its state.
+                releaseDesktopInputStates()
+                hideWindow()
+                requestHideSelf(0)
+            }
             return true
         }
         if (isPhysicalHardwareKey(event) && hardwareKeyAnomalyFilter.shouldDropDown(
@@ -1953,6 +1976,16 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 }
             }
             return true
+        }
+
+        internal fun hideFromNavigationBridge() {
+            val service = synchronized(PROCESS_IME_INSTANCE_LOCK) {
+                processImeInstance?.get()
+            } ?: return
+            if (service.ownedResourcesReleased) return
+            service.releaseDesktopInputStates()
+            service.hideWindow()
+            service.requestHideSelf(0)
         }
 
         const val DeleteSurroundingFlag = "org.fcitx.fcitx5.android.DELETE_SURROUNDING"

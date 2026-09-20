@@ -1336,10 +1336,11 @@ class InputView(
         const val DESKTOP_PREEDIT_GAP_DP = 0
         const val DESKTOP_SIDE_PADDING_DP = 0
         const val DESKTOP_VERTICAL_INSET_DP = 20
-        // Preserve the established input/candidate buffer above F1. Only reduce the actual
-        // pointer header by 48dp so the remote desktop remains visible above the keyboard.
+        // Preserve the established input/candidate buffer above F1 and the fixed pointer header.
+        // Reclaim only the unused strip above the complete desktop keyboard; the existing
+        // six-row constraint chain distributes this height evenly without moving keys sideways.
         const val DESKTOP_TOUCHPAD_HEIGHT_DP = 272
-        const val DESKTOP_TOP_REVEAL_DP = 56
+        const val DESKTOP_TOP_REVEAL_DP = 8
         const val DESKTOP_ROW_COUNT = 6f
         const val DESKTOP_LAYOUT_WIDTH_UNITS = 15f
         const val DESKTOP_MIN_HEIGHT_PERCENT = 35

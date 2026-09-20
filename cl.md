@@ -1,5 +1,14 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-09-20 - 副屏编辑器切主屏后左下角隐藏键候选（远程桌面回归，禁止发布）
+
+- 现场与根因：在 Display 2 的便签输入框唤起 KBoard，再把键盘切到 Display 0 后，IME 窗口和 token 已位于主屏，但输入连接仍属于 Display 2。V900 Android 12 的主屏导航栏会把左下角 BACK 事件发送给主屏前台应用，而不是 D2 所属的输入法会话，因此按钮可见但无法隐藏键盘；单纯调用 `requestHideSelf()`、设置 BACK disposition 或改变 IME 焦点属性均不能可靠解决，后者还会破坏跨屏窗口稳定性，未保留这些实验方案。
+- 修复：新增 `DesktopNavigationHideBridge`。仅在 KBoard 执行 D2→D0 路由时，使用现有 system UID 与 `INTERNAL_SYSTEM_WINDOW` 权限，在 Display 0 系统左下角导航隐藏键上建立透明、不可聚焦、固定小范围的命中层；点击后同时释放桌面组合键/鼠标状态、关闭当前 IME 窗口并请求系统收起输入法。D0 确认显示前有 6 秒失败超时，反向切屏、窗口隐藏或点击成功后立即移除，避免残留和遮挡其他导航按钮。
+- 修改文件：`AndroidManifest.xml`（声明平台签名级内部窗口权限）、`DesktopNavigationHideBridge.kt`（D0 隐藏键桥接及生命周期清理）、`FcitxInputMethodService.kt`（跨屏路由接入、窗口显示确认和统一隐藏入口）。未修改便签、KEMI 远程办公、普通键盘布局、全局键盘按键协议、水族背景和语音逻辑。
+- 构建与签名：正式 Release 和 `DesktopKeyboardModeStateTest` 联合构建通过；包名 `com.newlink.kemi.kboard`、版本 `1.4.1`（versionCode 182）、UID 1000，v1/v2 验签通过，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`；APK SHA-256 为 `d23056c9b9da2eceeb50c1a673d7d0b9f00cc3404a88c32cd9623f3c605b5d39`。
+- 63 号普通便签定向验证：正式包覆盖安装成功且未清数据。按“Display 2 打开便签搜索框→弹出普通键盘→点击切屏→Display 0 点击左下角隐藏键”路径，点击后 `mShowRequested=false / mInputShown=false`，桥接层按 `armed → confirmed → disarmed` 清理，未见 KBoard FATAL、ANR、`WindowLeaked` 或输入分发超时。
+- 发布阻断：随后在真实 KEMI 扩展远程桌面复测发现，当前 canonical 源码缺失 2026-09-18 记录中的物理 Overlay 实现，并恢复成“发送 `SWITCH_EXPANDED_KEYBOARD` 后继续迁移系统 IME token”的旧路径。D2 键盘切到 D0 后，D0 远程视频虽仍保持约 27 FPS，但可见区域被系统 IME 从全屏压缩到约 y=568 上方；这违反“键盘不得改变远程视频 Activity/Surface 尺寸”的发布门禁。因此 versionCode 182 仅是失败候选，不得作为正式修复或发布依据；必须恢复独立物理 Overlay 路径并同时通过 KB-OVL-003、KB-OVL-006、KB-OVL-010 后才能重新发布。
+
 ## 2026-09-17 - 隐私政策改为应用内说明页
 
 - 行为调整：“关于 KBoard”和“隐私”页面中的“隐私政策”均改为应用内导航，不再发送浏览器 `ACTION_VIEW` 或打开外部网页；新页面标题为“隐私策略”，正文为“KEMI Kboard不要求联网权限，也不搜集任何个人信息。”。
@@ -2222,3 +2231,13 @@ KEMI 设置页品牌化与动态名称中文化。
 - 静态复核确认回归根因：主仓成熟实现的 `toggleImeDisplay()` 仍会识别 `privateImeOptions == com.newlinksz.kemi.remote.EXPANDED_KEYBOARD`，向 KEMI 发送 `SWITCH_EXPANDED_KEYBOARD` 有序广播，等待 `DualScreenKeyboardSwitchReceiver` 迁移编辑器/host 后再切系统 IME token；生成 `56445eaf...` 的 Overlay 工作树遗漏了这整个分支，只保留 ROM relay 路径。修复必须最小合回成熟分支，不能整体覆盖并丢失 Overlay 生命周期修复；回归必须同时验证 KEMI 收到广播、host 目标屏改变、Overlay request 更新、截图和连续窗口状态，不能再只看 `mCurTokenDisplayId` 或瞬时 `shown=true`。
 - 后续部署检查必须同时确认主 IME 和 relay 已启用，不能只检查默认输入法；该检查只能保证 relay 可调用，不能替代 KEMI 扩展模式协议验证。
 - 后续更换设备或重做系统时仍必须先备份设置和 `/data` APK，并只读核对系统底包与更新层各自的包名、manifest sharedUserId、证书、版本、UID 和用户安装状态。禁止手工修改 `packages.xml`；不能把 75 的成功直接推定为其他设备也可无损迁移。
+
+---
+
+## 2026-09-18 - 改动记录专项 JVM 回归 100 遍
+
+- 对照近期记录和当前未提交的 KEMI 扩展键盘切屏修复，按三组建立专项门禁：IME 生命周期（迟到光标、销毁后排队布局、显示门控、Android 12 框架兼容）、跨屏路由（扩展键盘策略、系统 relay 管理）、桌面输入（异常硬件键过滤、组合键策略）。
+- 当前扩展模式判断原本直接耦合在 `FcitxInputMethodService`，现抽出 `ImeDisplaySwitchPolicy` 并新增 `ImeDisplaySwitchPolicyTest`。测试先因策略入口不存在而编译失败，再以最小实现转绿；扩展 KEMI 标记走宿主协调切屏，普通、空值和相似但不相等的标记保持系统切屏路径。
+- 100 轮从 2026-09-18 18:22:58 至 18:29:32（Asia/Shanghai）连续运行。每轮强制重跑上述 8 个测试类，100/100 轮通过，合计 800 个测试类轮次；100 份 Gradle 日志均包含 `BUILD SUCCESSFUL`，没有 `BUILD FAILED` 或失败标记。
+- 测试期间源码指纹始终为 `6b4b933e7be19e3362a76d0036fcb49bb28c679e5c1a23f0aaddae761c9f911f`。汇总、逐轮时间和日志保存在 `/Volumes/ORICO/kemi-build-cache/app-release-gate/kboard/20260918-change-regression-100/`。
+- 本轮证明纯策略、生命周期防护和按键路由的 JVM 稳定性；当前没有在线 ADB 设备，因此不把它计作扩展键盘真实宿主迁移、双屏窗口、截图、HDMI 视频连续性、CPU/GPU/PSS 或 100 轮真机耐久通过。

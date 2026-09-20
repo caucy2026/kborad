@@ -154,12 +154,22 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
                 if (remember && target != TextKeyboard.Name) {
                     lastSymbolType = target
                 }
-                if (target == currentKeyboardName) return@execute
+                if (target == currentKeyboardName) {
+                    // A recreated/rebound bar may still carry desktop-only visibility even when
+                    // the keyboard layout name is already correct. Reapply the actual mode before
+                    // treating a same-layout request as a no-op.
+                    notifyBarLayoutChanged()
+                    return@execute
+                }
                 detachCurrentLayout()
                 attachLayout(target)
-                if (windowManager.isAttached(this)) {
-                    notifyBarLayoutChanged()
-                }
+                // Synchronize ordinary/desktop visual state as part of the layout transaction.
+                // Waiting for WindowManager.isAttached() leaves a race during IME rebinds and
+                // cross-display moves: TextKeyboard is already visible, but KawaiiBar can retain
+                // desktop quiet mode and hide the ordinary toolbar and its switch controls.
+                // onAttached() deliberately repeats this idempotent synchronization after a
+                // window reattach, but it must never be the only restoration path.
+                notifyBarLayoutChanged()
             } else {
                 if (remember) {
                     lastSymbolType = PickerWindow.Key.Symbol.name

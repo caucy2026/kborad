@@ -12,6 +12,7 @@
         android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
         tools:node="remove" />
 
+    <uses-permission android:name="com.newlinksz.kemi.remote.permission.DUAL_SCREEN_KEYBOARD" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -22,6 +23,7 @@
     <!-- Platform signature permission used by the global keyboard's per-display mouse pad. -->
     <uses-permission android:name="android.permission.INJECT_EVENTS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW" />
     <uses-permission android:name="com.newlinksz.kemi.remote.permission.DUAL_SCREEN_KEYBOARD" />
 
     <!-- remove intent queries merged from library manifest (namely Android-Image-Cropper) -->
