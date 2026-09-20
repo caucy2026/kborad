@@ -603,3 +603,50 @@ adb -s 192.168.3.62:5555 shell dumpsys window windows
 - 真机脚本：`python3 scripts/test-ime-window-lifecycle.py --serial 192.168.3.75:5555 --interval 3 --output /private/tmp/kboard-token-regression/final-paced`。默认使用 `com.newlink.notes/.NotesActivity` 的搜索框 `(300,180)`，其他设备通过 `--editor/--x/--y` 指定已存在的真实编辑器。三阶段各 20 轮：显示/隐藏、HOME/恢复、同包中继/主服务重建；`--interval` 默认 3 秒，控制测试动作间隔。
 - ADB 触摸前通过 UIAutomator 等待界面空闲，再逐次轮询实际状态；不在应用显示逻辑增加固定延时。Android 12 的 dump 字段 `mIsInputViewShown` 隐藏后可能仍为 true，它是布局决策缓存；必须用 `mInputShown` 和 `mWindowVisible/mDecorViewVisible` 验证实际显示/隐藏。
 - 脚本保存每次 dumpsys、PID、截图、完整 logcat 和 JSON 汇总；无需 `pm clear` 或清理系统日志。回归结束恢复主 IME。
+
+---
+
+## 2026-09-18 物理屏 Overlay 最终技术路线与排障索引
+
+### 当前路线（后续开发只沿用这一条）
+
+KBoard 不再为跨屏键盘创建 VirtualDisplay 或 Relay Activity。KEMI 通过签名保护的 AIDL 请求 `KBoardOverlayService`；服务在目标物理 Display 的 `WindowManager` 上添加底部 `TYPE_APPLICATION_OVERLAY`，并向唯一的 `FcitxInputMethodService` 请求一棵完整原生 `InputView`。View 内部以 `overlayRequestId` 区分输出通道：物理会话回传 Binder，普通系统输入继续使用 `InputConnection`。跨屏时先释放旧 View 的修饰键、鼠标按钮和生命周期资源，再在另一物理 Display 重建同布局 View。
+
+冷启动的 IMS 生命周期采用“短暂 started-state + 内部 binding + 系统 binding 交接”：`startService` 只负责创建实例，随后立即 `stopService` 清 started-state；内部 binding 保证系统 IMMS 接管前实例不被销毁；Android 12 `InputMethodImpl.attachToken` 成功后调用 `onSystemImeAttached()`，Overlay 在主线程释放内部 binding。不要尝试覆盖 `AbstractInputMethodService.onBind()`，该方法是 final；也不要把内部 binding 保持到 Overlay 关闭，否则系统解绑后旧 IMS 仍可能存活并在下次 initialize 崩溃。
+
+### 已淘汰代码/策略的识别
+
+- `KBoardOverlayActivity`、`OverlayImeStartGate`、`OverlayVirtualDisplayPolicy`、`OverlaySurfacePolicy`、`OverlayDesktopLayoutPolicy` 及相应测试记录了早期 VirtualDisplay 探索，它们不代表当前运行路径。Manifest 已不注册 Overlay Activity，当前 Service 不应创建 VD 或启动它。后续清理前保留文件是为了追踪失败实验；任何人若重新接线，必须先证明不会复现镜像、黑屏、HDMI 退出和短画布压缩。
+- 当前必须存在的运行路径是 `KBoardOverlayService`、`KBoardOverlaySession`、`PhysicalOverlayWindowPolicy`、完整 `InputView`、`FcitxInputMethodService` 和两条 AIDL。判断架构时以最终合并 Manifest 和实际调用链为准，不能只看目录里仍存在的历史类。
+- Release 的 `android.uid.system`、平台签名和 KEMI 调用方签名校验共同构成升级及 IPC 前提。证书或 shared UID 任一变化，都可能导致覆盖安装失败或权限能力下降。
+
+### 现场问题到证据的最短映射
+
+| 现象 | 优先检查 | 常见根因 |
+| --- | --- | --- |
+| 首次点击直接关闭/超时 | Overlay start attempt、IMS create 日志、Fcitx ready、回调 reason | 主 IMS 未冷启动、内部 binding 提前释放、Fcitx context 未激活 |
+| `onInitialize can be called only once` | IMS identity、create/release、attachToken、unbind 时间线 | started-state 或内部 binding 让旧 IMS 跨系统解绑存活 |
+| 显示 English 但不能打字 | 当前 context UID、focus/activate、outputRouteRequestId、Binder input 回调 | 只有 UI 状态恢复，没有有效 Fcitx InputContext 或路由所有权 |
+| 桌面键盘居中变窄 | floating preference、desktop mode、keyboardView width/translation | 浮动几何未与桌面模式互斥 |
+| 底部白条/灰条/少一行 | KBoard window frame、真实 NavigationBar frame、bottomPaddingSpace | Window Insets、真实系统栏、内部模拟栏重复占高 |
+| 一次点击两声或误触有声 | accepted action 日志、DOWN/UP/CANCEL、Enter/语音独立通道 | 音效绑在原始 DOWN，或本地与远端反馈重复 |
+| HDMI 黑屏/壁纸镜像 | Display 列表、VirtualDisplay、portui lifecycle、Surface frameindex | 误恢复 VD/Activity 路径，或 Overlay 抢焦点/系统合成层 |
+| 关闭后串字/卡组合键 | requestId/sessionId、queued Fcitx job、modifier/mouse UP | 异步任务未复核所有权，销毁未补释放边沿 |
+
+### 每次候选必须保存的追踪字段
+
+1. APK SHA-256、签名证书 SHA-256、包名、versionCode/versionName、安装方式与安装结果。
+2. 设备编号、Android 版本、D0/D2 physical size、密度、KBoard Window frame、真实 NavigationBar frame。
+3. Overlay `requestId/sessionId`、source/target display、关闭 reason、调用方 UID/包签名校验结果。
+4. 主 IMS instance identity、PID、create/release、system attachToken、bind/unbind/start/finish input 顺序。
+5. 当前 layout name、desktop/floating 状态、keyboard width/height/translation、底栏高度与实际可点击边界。
+6. HDMI/portui Activity 的 RESUMED 状态、Surface shown 状态和测试前后 frameindex。
+7. 测试轮数、失败轮次、首个失败操作序列、FATAL/ANR/WindowLeaked/输入超时过滤结果，以及测试前后 PSS/CPU/GPU/绘制帧率。
+
+完整回归编号、触发步骤、预期、失败判据和源码映射见根目录 `cl.md` 的“2026-09-18：当日物理屏键盘改造总结、架构边界与风险追踪”。
+
+### system UID 升级链检查
+
+遇到 `INSTALL_FAILED_SHARED_USER_INCOMPATIBLE` 时，不要反复 `install -r`，也不要编辑 `/data/system/packages.xml`。先分别提取系统底包和 `/data` 更新层的 APK，检查包名、`sharedUserId`、签名证书和版本，再读取 `dumpsys package` 的 `userId`、`codePath`、`resourcePath`、用户安装状态及当前默认 IME。平台签名相同不等于 shared UID 一定兼容；现装包创建时的 shared UID 身份也是升级约束。
+
+截至 2026-09-18，63 只证明“原链已经是 UID 1000，补回 Release sharedUserId 后可覆盖”，没有记录普通 UID 原地迁移为 UID 1000。75 在处理前是 UID 10049 且带系统底包与 `/data` 更新层，本次已经完成 system UID 安装链迁移，并通过 100 轮 Overlay 打开/关闭与 200 次跨屏切换；这份结果只证明该设备本次迁移和窗口生命周期可用。迁移后的启用状态必须同时检查主 IME 与同包 `DisplaySwitchInputMethodService` relay，但 relay 启用只解决系统 token 路径：75 补启用后 `mCurTokenDisplayId=0` 且短时 `shown=true`，KEMI 却没有收到回调或重建 host，Overlay request 仍指向 D2，不能判定切屏成功。静态对比确认候选工作树遗漏了主仓已有的 `EXPANDED_KEYBOARD` 标记判断与 `SWITCH_EXPANDED_KEYBOARD` 广播；修复和验收必须同时证明 KEMI receiver、host、Overlay request、截图与连续状态一致。历史 `.62` 删除系统底包后安装普通用户应用的 overlayfs 流程目标相反，不得复用为 UID 1000 迁移方案；其他设备仍须逐项核对底包、更新层、shared UID、证书、主/relay 启用状态和数据备份。
