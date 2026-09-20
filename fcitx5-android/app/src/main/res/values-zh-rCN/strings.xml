@@ -348,4 +348,12 @@
     <string name="desktop_mouse_right">右键</string>
     <string name="desktop_system_home">HOME</string>
     <string name="desktop_system_back">BACK</string>
+    <string name="market_update_latest">当前已是最新版本</string>
+    <string name="market_update_checking">正在检查更新…</string>
+    <string name="market_update_failed">检查失败，请稍后重试</string>
+    <string name="market_update_title">KBoard 有新版本</string>
+    <string name="market_update_message">发现新版本 %1$s，可前往 KEMI 商城手动升级。</string>
+    <string name="market_update_later">稍后</string>
+    <string name="market_update_open_store">前往 KEMI 商城</string>
+    <string name="market_update_store_unavailable">KEMI 商城不可用或不支持此链接，请检查设备上的商城应用。</string>
 </resources>

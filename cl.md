@@ -1,5 +1,36 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-09-18 - 138 平台签名测试包部署与版本入口实测
+
+- 用户提供签名口令后仅经不回显交互传给签名工具，未持久化口令。新包 v1/v2/v3 验签通过，平台指纹 c8a2e9...92ab8，APK SHA256 `1BB439F8F57020253066D4DC441EBC56B6FD99211F0EF6A8B4AE597D391DA354`。
+- 138 首次增量安装因设备离线失败，重连确认旧版未变后用 `install --no-incremental -r` 成功；当前 1.4.2/162、system UID1000、默认主输入法保持，未卸载或清数据。
+- 界面实测：关于页正常，接口 available=false 无红点，短按提示“当前已是最新版本”；持续按住 8.5 秒弹工程密码框，松手未跳商城。随后取消密码框、留在关于页供用户查看。
+- 局限：商城当前没有更高版本，未验证有新版红点/跳转/实际升级，不制造假更新。截图与记录见 `test-reports/version-entry-20260918/deploy-138/`；未提交或推送 Git。
+
+## 2026-09-18 - 138 版本入口测试包构建，待平台签名部署
+
+- 用户要求部署到 172.21.16.138；ADB 核对现有 1.4.1/152、system UID1000，旧包平台证书指纹与指定值一致，已备份旧 APK。
+- 同步当前本地应用源码/资源到已有 WSL 构建副本前先备份；assembleDebug 成功（196 tasks，4m29s），生成 `bin/KBoard-1.4.2-version-entry-138-debug.apk`，版本 1.4.2/162、arm64。
+- 阻断：产物仍使用普通 Debug 证书，需要私密凭证存储中的平台签名口令才能重签；已请求用户提供私密文件路径。未安装、卸载、清数据或修改设备默认输入法，未提交推送。
+- 证据：`test-reports/version-entry-20260918/deploy-138/README.md`、构建日志和旧 APK 备份；不宣称新界面已经在 138 验收。
+
+## 2026-09-18 - 版本行更新红点及 8 秒长按工程入口
+
+- 行为：关于页版本号有商城新版时显示红点，短按跳转 KEMI 商城；确认无新版时提示“当前已是最新版本”，未知/失败可重试，检查中不重复请求。“稍后”仅忽略自动弹窗，不隐藏更新红点。
+- 工程入口：版本行由连续点击 7 次改为持续按住 8 秒弹出原密码框；中途移出、滑动、多指、取消、离开页面停止计时，长按触发后松手不执行短按。
+- 修改：AboutFragment、MainActivity、MarketUpdateController、中英文资源；新增 VersionPreference、VersionHoldGesture、MarketVersionState 与 5 项 JVM 测试；同步发布说明。
+- 审查修正：红点改为原位更新，避免更新结果触发 RecyclerView 重绑定而中断正在进行的长按；手动检查的后续跳转绑定 About 页视图生命周期。
+- 验证：先记录缺少实现的失败基线，最终 Debug/Release Kotlin 编译成功；新增和既有定向测试共 20 项通过。证据见 `test-reports/version-entry-20260918/REPORT.md`。
+- 限制：.24 当前普通 UID10052 与正式 system UID 不兼容，本次未部署、清数据、卸载、提交或推送。实际红点/触摸/商城交互尚待真机验收；长时间保持同页前台的缓存过期刷新仍需补测及完善，不以本次定向测试代替发布验收。
+
+## 2026-09-18 - 最近商业 UI 与候选显示改动专项回归
+
+- 范围：在 16.24 回归商业首页/工程密码入口、外观主题、两条隐私策略入口、英文输入与退格、中文候选，以及全局键盘往返后的候选颜色恢复和键盘显示/隐藏。
+- 自动化：`EngineeringAccessGateTest` 3 项、`DesktopKeyboardModeStateTest` 2 项、`CommercialPrivacyPolicyFragmentTest` 2 项通过；Gradle 构建共 238 tasks 成功。`CommercialThemeFragmentTest` 1 项因导航动画完成前立即查找开关而失败，单独重复 3 次均在 `assertNotNull(switch)`，手工等待页面稳定后的主题开关和 5 次进出均通过，判定为测试时序缺陷而非产品崩溃。
+- 设备兼容：设备基线是普通 UID 的 `1.4.1/152`，正式 system UID 包无损覆盖返回 `INSTALL_FAILED_SHARED_USER_INCOMPATIBLE`；未卸载或清数据，改用同源码、同平台证书、仅移除 `sharedUserId` 的普通 UID `1.4.2/162` 兼容测试变体完成本轮 UI/输入逻辑回归。
+- 结果：最近四项用户功能手工回归通过；`nihao` 候选在普通模式和全局键盘往返后均清晰可见，输入法进程不重启；FATAL、KBoard ANR、DisconnectedException、Required value was null、NPE、ActivityNotFoundException 与 StaticLayout 匹配数均为 0，默认输入法未改变。
+- 限制：该结果不替代正式 system UID/系统镜像验收，也未覆盖 5 小时 Monkey、麦克风/ASR、商城升级或完整双屏发布门禁。完整报告和证据见 `test-reports/ui-regression-20260918/REPORT.md`。
+
 ## 2026-09-17 - 隐私政策改为应用内说明页
 
 - 行为调整：“关于 KBoard”和“隐私”页面中的“隐私政策”均改为应用内导航，不再发送浏览器 `ACTION_VIEW` 或打开外部网页；新页面标题为“隐私策略”，正文为“KEMI Kboard不要求联网权限，也不搜集任何个人信息。”。
@@ -16,6 +47,23 @@
 - 构建与签名：复用已验证 WSL Android/NDK 环境执行 `:app:assembleDebug`，196 tasks 构建成功；新增 Android 回归测试的 `:app:compileDebugAndroidTestKotlin` 也构建成功。最终平台签名包为 `bin/KBoard-1.4.2-theme-page-fix-arm64-v8a-platform-signed-test.apk`，包名 `com.newlink.kemi.kboard`、版本 `1.4.2/162`、ABI `arm64-v8a`，APK SHA-256 `31A53123A8C0951567C967095743A22290B852A6E764BF4C5CD0F5FADB59BDF2`。v1/v2/v3 验签通过，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
 - 真机验证：覆盖安装到 `172.21.16.24` 返回 `Success`，未清数据；“外观主题”页面正常显示主题卡片及开关，开关可从 `true` 切换到 `false` 并恢复为 `true`。额外重复返回/进入页面 5 轮，应用 PID 始终为 679；默认输入法仍为主 `FcitxInputMethodService`，目标 NPE、FATAL、ANR 与主题资源警告均为 0。
 - 项目约束：根目录 `AGENTS.md` 已记录根目录 `debug.keystore` 是 H730 平台/正式签名文件、alias、证书指纹和口令保密要求；测试包覆盖安装前也必须执行正式证书校验。
+
+## 2026-09-16 - 修复普通键盘中文候选文字偶发不可见
+
+- 现场证据确认候选引擎正常：异常时输入 `nihao` 后候选栏肉眼为空，但空格仍会提交“你好”；详细日志同时包含 `CandidateListEvent(total=261, candidates=[你好, ...])`。问题属于候选文字渲染，不是拼音词库或 Fcitx 候选生成失败。
+- 根因：全局键盘为深色水族背景向候选适配器设置白色文字覆盖色；输入视图和候选组件可独立重建，但 `KeyboardWindow` 与 `InputView` 都把“模式值未变化”当成完整 no-op，导致新一代普通浅色候选栏在部分生命周期路径没有重新收到清除覆盖色的指令，白字残留后视觉上像空栏。
+- 修复：新增 `DesktopKeyboardModeState`，将逻辑模式变化与视图样式同步分离；每次键盘窗口附着或布局通知都重发当前模式，`InputView` 即使收到重复的普通模式也强制清除候选颜色覆盖，其他桌面布局变化仍只在实际模式切换时执行。
+- 自动测试：新增 `DesktopKeyboardModeStateTest`，修复前因状态同步器不存在而失败；修复后两项通过，明确覆盖“重复 normal 仍重新应用 normal 候选样式”。
+- 构建与签名：WSL 原生 Debug 构建成功；平台签名测试包 `bin/KBoard-1.4.2-candidate-color-fix-arm64-v8a-platform-signed-test.apk`，SHA-256 `73973DB665CD60E047E6CA044B8E080E9DDD07DB3E8D4C92387279959C451C27`，v1/v2/v3 验签通过，证书 SHA-256 保持 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 真机验证：覆盖安装到 `172.21.16.24` 返回 Success，默认主 IME 未改变。普通中文模式真实触摸输入 `nihao` 可见“你好”等候选；随后进入全局键盘、退出回普通键盘并再次输入 `nihao`，候选文字仍以深色正常显示，未复现白字残留。未执行 `pm clear`，未触发语音。
+
+## 2026-09-16 - 商业版设置首页与密码保护的完整工程入口
+
+- 设置首页收敛为输入语言、键盘设置、外观与主题、隐私、关于 KBoard 五个用户入口；上游工程配置不再直接暴露给普通用户。
+- “关于 KBoard”的版本项连续点击 7 次后弹出工程密码输入框，固定密码 `2580`；验证成功后进入完整工程设置，解锁状态仅在当前应用进程内保留。
+- 工程设置恢复全部原入口：全局选项、输入法、附加组件、完整主题、虚拟键盘、候选窗口、剪贴板、符号、插件、高级和开发者选项。
+- 新增 `EngineeringAccessGateTest`，覆盖第 7 次点击、错误密码拒绝及正确密码解锁；复用既有 WSL 原生构建环境执行定向单测与 `:app:assembleDebug`，联合构建通过（203 tasks）。Windows SDK 下同名 CMake 目录仅有元数据，不能用于 native 打包；完整环境仍位于 WSL `/opt/android-sdk`。产物为 `bin/KBoard-1.4.2-commercial-ui-engineering-unlock-arm64-v8a-debug.apk`，SHA-256 `D0A71B689BD8EFEBD468FA2342DD54E7B20B2395BA8C3C2F6565F87447F63DFB`；尚未做真机 UI 验证。
+- 平台签名测试包覆盖安装到 `172.21.16.24` 后完成基础回归：商业首页、7 次点击、密码 `2580`、完整工程入口、英文触摸输入、退格、显示/隐藏和进程稳定性通过；无目标 FATAL/ANR。首轮拼音 `nihao` 可形成 `ni hao` 预编辑但候选栏肉眼为空；后续已确认是全局键盘白色候选覆盖色在普通浅色候选栏残留，并由同日候选颜色同步修复完成真机回归，详情见 `test-reports/commercial-ui-basic-20260916/REPORT.md`。
 
 ## 2026-09-16 - 旧 Session 修复包 20 轮定向压力回归
 
@@ -51,7 +99,16 @@
 - 75 号真机结果：相同页面、相同副屏和 10 条鱼下，候选版稳定 `23.9Hz`，10 组 3 秒间隔采样平均 `22.010%` 单核（`21.184%`–`22.713%`），较同机旧版降低 `63.49%`，超过“至少降低 30%”目标；PSS 为 `103564KB`，未以明显内存增长换取降载。切回普通键盘后连续 5 组采样均为 `0.000%`，`kboard-aquarium` 线程已退出。
 - 行为验证：真实字母键成功写入编辑框，并出现 `Aquarium key sound playback verified`；重启进程后先执行取消滑动，仅出现样本就绪日志、没有播放日志，随后有效按键才出现一次播放确认。普通/全局模式按 3 秒间隔往返 5 轮，PID 保持不变，无 FATAL、ANR 或 `WindowLeaked`，普通键盘布局与输入未改变。
 - 构建与身份：JVM 回归 `HardwareKeyAnomalyFilterTest`、`DesktopKeyPolicyTest` 通过；最终正式 Release 保持包名 `com.newlink.kemi.kboard`、版本 `1.4.1`（versionCode 152）、`android.uid.system`、v1/v2 验签和平台证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`，APK SHA-256 为 `e136539609e3b7fff49997ccb548680f43007e081c29fd9eb2909ce721536468`。75 号仍安装历史普通 UID 包，按既有迁移约束未卸载或清数据；真机性能验证使用同源码、同 Release 签名但不声明 shared UID 的兼容测试产物，正式产物不改变 system UID 发布规则。
+## 2026-09-15 - 修复双屏 KEMI 重开时旧布局任务访问已断开的 Fcitx
 
+- 现场：客户使用 `KBoard-1.4.1-152-d7bea470-arm64-v8a-systemuid-platform-signed-release.apk`，在副屏反复打开/退出 KEMI 远程、设备号输入数字和退格、收起键盘并切换主屏应用后，KBoard 偶发弹出崩溃日志。
+- 根因：`KeyboardWindow.switchLayout()` 提交到主线程的布局任务没有绑定到所属 `InputView` 生命周期；旧 IME Service 被替换并断开 Fcitx 后，排队任务仍进入 `attachLayout()`，由 `runImmediately()` 抛出未捕获的 `FcitxDaemon.DisconnectedException`。
+- 修复：新增 `KeyboardWindowTaskGate`；布局任务捕获所属 generation，`KeyboardWindow.dispose()` 先 retire 门控，旧 generation 的任务执行前直接丢弃。没有吞掉存活实例的连接异常，也没有修改键盘布局、输入逻辑或 Fcitx native 行为。
+- 部署兼容：恢复主 Manifest 的 `android:sharedUserId="android.uid.system"`；测试包使用项目根目录 `debug.keystore` 平台证书签名，证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 自动验证：新增 JVM 回归测试，修复前因门控缺失失败，修复后两项通过；`:app:testDebugUnitTest` 定向测试与 `:app:assembleDebug` 联合构建通过（203 tasks）。
+- 真机：修复包 `1.4.2`（versionCode 162）无损覆盖到 `172.21.16.24`，UID 1000、默认 IME 保持不变。按客户路径完成最终100轮压力测试；期间268次 Service release、68次 InputView重建、36条 invalid-token，KBoard PID始终为11550，FATAL/DisconnectedException/ANR/进程死亡均为0。
+- 证据：`test-reports/kboard-crash-regression-20260915-fix-100-final/` 保存完整 logcat、设备包基线和 JSON 汇总；首次脚本运行因 Windows GBK 解码停止，不计入最终结果，修正为 UTF-8 后重新完整执行。
+- 风险：自动脚本以固定坐标操作当前 KEMI 1.4.122 页面；其中73次日志明确记录代理 IME 接受显示请求，快速循环时部分请求在采样前被后续隐藏/切页覆盖。最终结论覆盖本机高频竞态回归，不替代客户设备、客户系统镜像上的长时间验收。
 ## 2026-09-13 - 修复退出全局键盘后后台 CPU 持续占用
 
 - 现场：75 号 V900（Android 12、Display 2、1920×1280）上进入全局键盘后再隐藏，水族渲染线程虽然已经退出，KBoard 仍持续占用约 16%–22% 的单核 CPU；从普通键盘直接隐藏仅约 0.04%。
@@ -63,6 +120,48 @@
 - 真机结果：75 号机覆盖安装成功且仍为默认输入法；Display 2 普通/全局模式往返后，30 秒平均 CPU `0.649%`，追加 10 轮模式往返后 60 秒平均 `0.308%`，除隐藏收尾的首个采样外其余采样均为 `0%`；PID 保持 `16518`，无新 FATAL、ANR 或异常退出。
 - 风险：首个隐藏后 3 秒窗口仍可能包含一次约 6% 的正常收尾采样；后续采样归零。本回归脚本依赖测试设备 root 读取 `/proc`，不属于应用运行时依赖。
 
+## 2026-09-14 - 单次打开键盘闪现联合诊断
+
+- 留存远控交接文档并校验 SHA256；只读核对两轮日志与 KBoard/远控源码，现象为一次点击后出现、消失、自动再次出现。
+- 确认服务销毁重建早于远控 fallback restartInput，不能将其认定为最初触发源或把 framework_destroy 当崩溃。hidden 状态首次源屏按下不进入既有焦点保护，是待验证候选窗口；尚不能确认 IMMS/窗口策略责任。
+- 分析、置信度、证据限制、最小验证及风险见 diagnostics/keyboard-flash-20260914/analysis.md；105 ms 跨屏绑定来自未落盘的交接观察，不宣称本轮独立验证。
+- 本轮未操作设备或远程会话，未改业务代码、编译安装、发布或改系统配置；仅新增诊断材料和本日志条目。
+
+
+## 2026-09-13 - 后台 CPU 任务生命周期审查
+
+- 本地源码发现：ASR read<=0 缺少退出处理，持续即时错误可形成忙循环；键盘隐藏只向桌面鱼缸转发停止，未取消语音录音和延迟任务。视图保留且漏发触摸取消时存在后台任务残留路径。
+- 长按连发仅检查协程活跃和 enabled，隐藏无统一取消；回调持续超过 50 ms 时缺少挂起点。正常手势和 detach 已有取消，异常条件尚未实机复现。
+- 已审查鱼缸、触摸板、音效、商城检查和原生事件循环，未找到同等明确的持续空转证据；.24 当次隐藏复核为 0%，无 ASR/鱼缸线程。
+- 证据与建议：diagnostics/cpu-20260913/logic-review.md。本轮仅源码审查和设备只读复核，未修代码或安装；本地源码未与安装的 1.4.1 APK 逐项比对，不能当作现场根因已确认。
+
+
+## 2026-09-13 - .24 设备 KBoard CPU 现场诊断
+
+- 设备：172.21.16.24:5555，实际安装 1.4.1 / versionCode 152，包名 com.newlink.kemi.kboard，PID 6000，system UID。
+- 验证：top 连续采样隐藏、显示空闲、24 轮字母/退格及收起后状态。隐藏 0–0.4%；显示空闲约 60 秒均 0%；快速输入完整 2 秒采样峰值 85%，随后 6.5% 并持续回到 0%；收起后再次回到 0%。单核口径 100%，设备整机上限 800%。
+- 结论：本次未复现持续高 CPU；短时负载与实际输入关联，未采调用栈，不能确定具体热点函数。未修改源码或安装 APK；测试对话框取消未保存，恢复原前台应用。
+- 证据：diagnostics/cpu-20260913/report.md 及原始 top、设备信息、截图和日志。hidden-top.txt 尾部包含打开设置的操作，报告已明确区分。
+- 风险：未覆盖语音、动态主题、桌面模式、副屏及长时运行，不据此排除其它场景问题。
+
+
+## 2026-09-12 - 按版本建立发布归档并新增商城自动检查
+
+- 修改：新增 `release/README.md` 台账和 `release/1.4.2/` 的 build/tests/approval/market/h730 分类，最终源码 commit、APK 哈希与发布审批尚待实际产生，不预填发布成功。
+- 功能：新增 `MarketUpdatePolicy.kt`、`MarketUpdateController.kt`，在 MainActivity 前台异步检查真实 APK versionCode；高版本提示后跳转指定 KEMI 商城详情，由用户手动升级。增加中英文资源和 12 项策略测试，不提供手动检查入口，不下载或安装 APK。
+- 约束：固定 HTTPS 接口、包名与商城协议；失败静默并有界退避，忽略同版本后不重复提示；不在输入法服务抢焦点。用户仅使用键盘而未打开设置 APP 时，当前接入点不会触发检查。
+- 验证：Release/Debug Kotlin 编译通过；全量 JVM 47 项中 46 通过、1 项旧主题迁移测试失败，新增 12 项全部通过。主题格式已为 2.1，但旧 2.0 测试仍要求无迁移；保留失败，未修改主题行为或跳过测试。
+- 证据：`release/1.4.2/tests/source-validation/` 保存 XML、HTML 和结果说明，build 下保留成功/失败日志。公开更新接口与 .24 设备仅做只读预检。
+- 未完成：最终源码定版、正式候选 APK、真实主动提示/商城跳转及升级验收；本次没有部署、发布、服务器替换或提交推送，记录仍按用户要求保留本地。
+
+## 2026-09-12 - 确认测试授权与正式候选验收基线
+
+- 主题：用户确认 .24 覆盖安装及压力测试规则；默认不清数据、不卸载、不恢复出厂、不刷机，必要时逐次说明影响并申请授权。
+- 修改：更新 `docs/kboard-release-workflow.md`，将 300 次自动生命周期、20 次模式往返、30 次跨屏往返、底行每键 20 次和功能完整一轮设为每个正式候选包基线。
+- 分工：干净系统镜像上的首次启动、麦克风默认授权及默认双屏能力由 H730 系统团队验证；缺少与候选 APK 对应的报告不得通过正式发布门禁。
+- 验证：核对现有测试脚本仅覆盖安装且无自动卸载/清数据回退；现有验收门禁要求 fresh_image_permissions 为 PASS 并提供证据链接。本次仅落实规则，不代表测试已经执行或通过。
+- 待办：收集系统团队报告联系人、证据存放位置及设备 fingerprint；本次不提交或推送仓库。
+
 ## 2026-09-12 - 测试与正式版本统一使用 system UID
 
 - 主题：用户确认将 android.uid.system 从实验配置转为后续测试版和正式版的统一身份。
@@ -70,6 +169,37 @@
 - 签名：交付到 H730 的测试包与正式包均须使用对应平台证书；普通 Android Debug 证书不能替代平台签名。
 - 验证：主清单 XML 与变体覆盖检查；本次不重新编译或部署，不声称已完成设备升级验证。
 - 风险：历史普通 UID 包不能假定可无损覆盖为 system UID；迁移需单独验证，不自动卸载或清数据。麦克风默认授权仍须独立验收。
+
+## 2026-09-12 - 更新检查交互最终澄清
+
+- 主题：用户明确只需启动后自动检查并主动提示，取消手动检查入口和独立后台弹窗开关。
+- 过程：核对原接入标准中的异步检查、版本比较、静默失败与同版本去重策略；普通提示不以 force_update 为前提。
+- 修改：同步项目商城发布 skill、Android 接口参考和发布工作流验收项；保留点击提示跳转商城、由用户手动升级，不增加键盘下载/安装路径。
+- 验证：skill 结构校验与文档差异检查；本轮没有实现或编译 Android 功能，没有设备部署、商城发布或提交推送。
+- 待办：后续实现自动检查、生命周期安全提示及商城跳转，并完成真机验证。前一条记录中的手动检查需求及独立弹窗字段阻断项由本条取代。
+
+## 2026-09-12 - Android 商城发布 skill 提取与升级职责确认
+
+- 主题：从用户提供的商城发布 skill 提取 Android 部分，排除其它平台，原文件不修改。
+- 过程：使用 skill-creator 整理项目专用 skill；只读核对官方 Android 自检文档，确认商城包名 com.newlink.featuredapps 及 kemiappstore://app/{app_id} 详情链接。
+- 修改：新增 `.agents/skills/kboard-market-publish/`；更新发布工作流文档，记录后台控制主动提示、APP 内手动检查均跳转商城，由用户手动升级；不采用键盘下载或安装的回退路径。
+- 验证：skill 结构校验通过（Windows Python 使用 UTF-8 模式）；本轮未修改 Android 源码、安装设备或发布商城。
+- 待办：官方文档未给出独立主动弹窗字段，需核实后台配置/源码，不能将 force_update 混用为弹窗开关；确认后再实现客户端及真机验证。
+
+## 2026-09-12 - 正式发布工作流基础与 1.4.2 版本准备
+
+- 用户确认使用当前电脑 WSL 环境、172.21.16.24 专用测试机，审批人为 wangruiqing995-blip，交付目标为商城和 H730 系统预置；版本改为 1.4.2，arm64 versionCode 为 162。
+- 新增 `scripts/release/` 构建入口、APK/JUnit/压力测试/人工验收门禁及本地测试、导出脚本；发布使用同一系统签名 Release APK，证据绑定 commit、run_id 和 SHA256。缺失/失败/跳过测试不算通过。
+- 新增门禁脚本 CI 自测，原根目录 Debug CI 加入 PR 触发、真实 JVM 执行及结果校验；不会向 GitHub 提供平台私钥或内网设备访问。
+- `docs/kboard-release-workflow.md` 记录执行命令、验收矩阵、双渠道交付约定和待确认资料；商城 API、系统构建/刷机规则、UID 决策及可认证审批尚待接通。
+- 验证：门禁正反例自测、bash 语法检查，以及已有 1.4.1 系统签名 Release APK 的实际元数据/签名校验；不代表 1.4.2 已构建或通过真机验收。未安装 PAD、未上传商城、未替换服务器 APK、未提交推送仓库。
+- 保留本地已有 system UID 实验 Manifest 及其它未提交改动；正式 UID 方案必须确认后才能放行构建。JVM 执行器既有问题和实际 lint/设备适配仍需首轮运行验证。
+
+## 2026-09-12 - system UID 实验测试包
+
+- 按用户指定的验证方案，在应用 Manifest 根节点增加 `android:sharedUserId="android.uid.system"`。
+- 此改动仅用于生成独立测试 APK，验证 H730 系统 UID 安装行为；它不替代 `default-permissions` 的麦克风运行时权限预授权。
+- 由于已有同包应用采用普通 UID，测试包不能假定可通过 `adb install -r` 原位升级；未获得明确授权前不卸载设备现有正式包。
 
 > 记录范围：只包含 /Users/newlink/kemi/kboard 与 fcitx5-android 输入法项目。
 > 记录起点：从“移植输入法”开始。
@@ -2089,39 +2219,6 @@ KEMI 设置页品牌化与动态名称中文化。
 - `adb input keycombination` 绕过 KBoard；两个并发 `adb input` 进程在设备上也没有形成稳定的同一多触点手势，实测只得到小写 `a`。这些方法不能作为 Shift/Ctrl/Alt/Meta 按住再点 A 的通过证据。
 - 多指组合键的可靠验收方式仍是真人同时按住修饰键和字符键，结合 KBoard/KEMI 的 DOWN、主键、UP 日志及远端可见结果；若要自动化，需要新增能向同一个 IME View 注入单个多指 `MotionEvent` 序列的专用 Android instrumentation 测试入口。
 - 本机构建时系统数据卷仅剩约 116MiB。已清理未被使用、可再生成的 Gradle 8.13 缓存约 4.8GiB，并将构建临时目录转移到 ORICO；APFS 系统更新快照使 `df` 未立即回收对应物理空间。没有删除源码、正式制品、签名材料、测试报告或用户文件。
-
----
-
-## V1.66 - 2026-09-13
-
-### 主题
-用真实多指自动化复现并修复中文拼音桌面键盘 Command+Space 丢失主键的问题。
-
-### 过程
-- 设备 75 恢复 ADB 后，安装独立多点触控注入器与独立 InputConnection 接收器；注入器用单条 MotionEvent 流发送多指 DOWN/POINTER_DOWN/POINTER_UP/UP，接收器只记录键边沿和 metaState。
-- 回装旧正式包 `805cf30e...` 作为已知失败对照。中文模式 Command+Space 得到完整 Command DOWN/UP，但没有 Space，门禁准确判 FAIL。
-- 第一版仅让 SymAction(space) 进入组合键映射，英文通过，中文仍因空格点击发生在触摸抬起阶段而存在修饰键时序窗口。最终将带快捷修饰键的桌面空格在触摸按下时直发，并消费后续点击；组合键长按不再触发空格自己的长按动作。
-- 同步云端 main 后发现新加入的 `android:sharedUserId="android.uid.system"` 会让现有普通 UID 正式包无法覆盖升级；75 真机返回 `INSTALL_FAILED_SHARED_USER_INCOMPATIBLE`。没有卸载、清数据或重新授权，而是撤销该身份迁移，保持历史升级链兼容。
-- 普通中文空格仍走 Fcitx，Ctrl+Space 仍切换中英文；未修改普通键盘、候选、语音、鼠标、远控或水族背景逻辑。
-
-### 修改
-- `DesktopKeyboard.kt`：增加桌面空格组合键的 touch-down 直发和组合状态下长按抑制；组合键动作继续使用标准成对 Android KeyEvent。
-- `DesktopKeyPolicy.kt`：组合动作解析覆盖桌面 Space 的 SymAction。
-- `DesktopKeyPolicyTest.kt`：增加 Space 动作映射及组合直发策略回归。
-- `AndroidManifest.xml`：移除未经迁移验证的 system UID，恢复与已安装正式版相同的应用身份，保证覆盖安装。
-- 全局 `app-release-stability-gate` Android 真机规范增加：设备采样窗口与长按阈值校准、完整产品失败和残缺注入证据分流、组合空格 touch-down 时序和长按覆盖。
-
-### 验证
-- 最终签名 Release 完整构建成功，287 个任务通过，包含 Kotlin、R8、Lint Vital、arm64 原生组件、签名与打包；未构建或安装 Debug APK。
-- 正式 APK 为 `fcitx5-android/build/kboard.apk`，包名 `com.newlink.kemi.kboard`、版本 `1.4.1+152`、SHA-256 `b957eba045b98beeb4b06b7e7a5198c5f71ee5aefa41008e1580a59f6d93ad95`；v1/v2 签名有效，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
-- 覆盖安装到 Android 12 设备 75 后，设备回拉 APK 与本地产物哈希完全一致；`WRITE_SECURE_SETTINGS` 和 `INJECT_EVENTS` 继续为 granted，没有清除数据或重新授权。
-- 中文 Command+Space 80ms 与 500ms 均得到精确 `META_DOWN, SPACE_DOWN(meta), SPACE_UP(meta), META_UP`；80ms 连续 20/20 通过。
-- 英文单 K、Command+C、Command+Space、Command+Shift+3、Command+Ctrl+Alt+K 全通过；Command+Space 连续 20/20 通过。
-- KBoard PSS 116473 KB 到 121041 KB，进程持续运行；11:00 后 FATAL、ANR、OOM、输入超时和 Window token 异常匹配均为 0。
-- Gradle 测试源码和应用代码编译成功；本机 Gradle 9.4.1 测试执行器仍因缺失 GradleWorkerMain 未启动 JUnit，因此没有把该项写成单测 PASS。真实签名包的已知失败对照和真机多指回归为本次行为验收依据。
-
-### 待办
-- 本次 PASS 限定于 KBoard 组合键修复范围；KEMI 四端冻结候选、文件传输、Linux 真机和 60 分钟统一耐久仍按各自发布门禁单独验收。
 
 ---
 

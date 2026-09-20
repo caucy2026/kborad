@@ -362,4 +362,12 @@
     <string name="desktop_system_home">HOME</string>
     <string name="desktop_system_back">BACK</string>
     <string name="edit_text_playground">EditText Playground</string>
+    <string name="market_update_latest">You are using the latest version</string>
+    <string name="market_update_checking">Checking for updates…</string>
+    <string name="market_update_failed">Unable to check for updates. Please try again later.</string>
+    <string name="market_update_title">KBoard update available</string>
+    <string name="market_update_message">Version %1$s is available. Open KEMI Store to update manually.</string>
+    <string name="market_update_later">Later</string>
+    <string name="market_update_open_store">Open KEMI Store</string>
+    <string name="market_update_store_unavailable">KEMI Store is unavailable or does not support this link. Please check the installed store app.</string>
 </resources>

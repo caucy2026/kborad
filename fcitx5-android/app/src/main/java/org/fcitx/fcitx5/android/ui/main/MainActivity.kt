@@ -30,6 +30,7 @@ import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.databinding.ActivityMainBinding
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.ui.setup.SetupActivity
+import org.fcitx.fcitx5.android.update.MarketUpdateController
 import org.fcitx.fcitx5.android.utils.Const
 import org.fcitx.fcitx5.android.utils.item
 import org.fcitx.fcitx5.android.utils.navigateWithAnim
@@ -40,6 +41,8 @@ import splitties.resources.styledColor
 import splitties.views.topPadding
 
 class MainActivity : AppCompatActivity() {
+
+    val marketUpdates by lazy { MarketUpdateController(this) }
 
     private val viewModel: MainViewModel by viewModels()
 
@@ -94,6 +97,7 @@ class MainActivity : AppCompatActivity() {
         }
         processIntent(intent)
         checkNotificationPermission()
+        marketUpdates.start()
     }
 
     override fun onNewIntent(intent: Intent) {
