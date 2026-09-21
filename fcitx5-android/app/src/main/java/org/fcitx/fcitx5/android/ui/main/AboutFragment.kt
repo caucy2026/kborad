@@ -7,6 +7,11 @@ package org.fcitx.fcitx5.android.ui.main
 import android.os.Bundle
 import android.text.InputType
 import android.widget.EditText
+import android.view.View
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 import androidx.appcompat.app.AlertDialog
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.ui.common.PaddingPreferenceFragment
@@ -18,6 +23,8 @@ import org.fcitx.fcitx5.android.utils.navigateWithAnim
 import org.fcitx.fcitx5.android.utils.toast
 
 class AboutFragment : PaddingPreferenceFragment() {
+
+    private lateinit var versionPreference: VersionPreference
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         preferenceScreen = preferenceManager.createPreferenceScreen(requireContext()).apply {
@@ -32,16 +39,36 @@ class AboutFragment : PaddingPreferenceFragment() {
             }
             addCategory(R.string.version) {
                 isIconSpaceReserved = false
-                addPreference(R.string.current_version, Const.versionName) {
-                    if (EngineeringAccessSession.gate.isUnlocked) {
-                        navigateWithAnim(SettingsRoute.Engineering)
-                    } else if (EngineeringAccessSession.gate.onVersionTapped()) {
-                        showEngineeringPasswordDialog()
+                versionPreference = VersionPreference(requireContext()) {
+                    showEngineeringPasswordDialog()
+                }.apply {
+                    key = "kboard_version"
+                    isIconSpaceReserved = false
+                    showVersion(Const.versionName, false)
+                    setOnPreferenceClickListener {
+                        (requireActivity() as MainActivity).marketUpdates.onVersionClicked(viewLifecycleOwner)
+                        true
                     }
-                    true
+                }
+                addPreference(versionPreference)
+            }
+        }
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                (requireActivity() as MainActivity).marketUpdates.state.collect {
+                    versionPreference.showVersion(Const.versionName, it.showBadge)
                 }
             }
         }
+    }
+
+    override fun onPause() {
+        versionPreference.cancelHold()
+        super.onPause()
     }
 
     private fun showEngineeringPasswordDialog() {
