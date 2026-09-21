@@ -1,5 +1,11 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-09-21 - 远程切屏焦点修复与候选验证
+
+- 修复远程代理输入框被外层容器抢焦点、切屏期间重复恢复的问题；保留远端物理 Overlay/Host rehome 兼容路径，并增加新代理私有输入连接协商。
+- KBoard 1.4.3/172 与远程桌面 1.4.126/263 已用平台证书保留数据安装到16.24；基本输入、普通/全键盘、本地代理双向切屏冒烟通过。真实远程切屏待人工确认。
+- 未提交工作流、发布脚本、APK、日志、截图、签名文件；完整远程JVM仍有既有商城提示语言断言失败。
+
 ## 2026-09-20 - 隐藏键修复误吞PAD物理右键（候选，未发布）
 
 - 75真实HL mouse BTN_RIGHT双边沿产生SOURCE_MOUSE/KEYCODE_BACK及BUTTON_BACK事件；IME已隐藏仍进入新增onKeyDown BACK分支，客户端没有收到PhysicalMouse，Windows无菜单。原失败证据保留于287-nav75-20260920/deadzone-fix/mouse-right-failure。

@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit
 /** Settings-foreground only: never starts an Activity or steals focus while another app is typing. */
 class MarketUpdateController(private val activity: AppCompatActivity) {
     private val prefs = activity.getSharedPreferences("kemi_market_update", Context.MODE_PRIVATE)
-    private val current = MutableStateFlow<MarketVersionState>(restore())
+    private val current = MutableStateFlow<MarketVersionState>(MarketVersionState.Unknown)
     val state = current.asStateFlow()
     private var promptedCode: Long? = null
 
@@ -46,9 +46,7 @@ class MarketUpdateController(private val activity: AppCompatActivity) {
     }.getOrDefault(MarketVersionState.Unknown)
 
     fun onVersionClicked(owner: LifecycleOwner) {
-        when (val value = current.value) {
-            is MarketVersionState.Available -> openStore(value.update)
-            MarketVersionState.Latest -> message(R.string.market_update_latest)
+        when (current.value) {
             MarketVersionState.Checking -> message(R.string.market_update_checking)
             else -> owner.lifecycleScope.launch {
                 message(R.string.market_update_checking)
@@ -109,10 +107,30 @@ class MarketUpdateController(private val activity: AppCompatActivity) {
 
     private suspend fun check(localCode: Long, force: Boolean = false) {
         if (current.value == MarketVersionState.Checking) return
+        current.value = MarketVersionState.Checking
+        val userId = try {
+            MarketAccount.activeUserId(activity)
+        } catch (cancelled: CancellationException) {
+            current.value = MarketVersionState.Unknown
+            throw cancelled
+        }
+        // Scope cached results to the current account, including logout. Never reuse a review
+        // result for another user; only a one-way identifier fingerprint is stored locally.
+        val accountKey = userId?.toString()?.let { value ->
+            java.security.MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+        } ?: "anonymous"
+        val sameAccount = prefs.getString("checked_account", null) == accountKey
         val now = System.currentTimeMillis()
         val next = prefs.getLong("next_check", 0)
-        if (!force && next > now && next - now <= MarketUpdatePolicy.SUCCESS_INTERVAL_MS) return
-        current.value = MarketVersionState.Checking
+        if (!force && sameAccount && next > now && next - now <= MarketUpdatePolicy.SUCCESS_INTERVAL_MS) {
+            current.value = restore()
+            return
+        }
+        if (!sameAccount) {
+            promptedCode = null
+            prefs.edit().remove("checked_body").remove("checked_at").remove("ignored_code").apply()
+        }
         try {
         val failures = prefs.getInt("failures", 0).coerceIn(0, 5)
         // Persist a bounded backoff before the call, including interrupted requests/process restarts.
@@ -122,7 +140,8 @@ class MarketUpdateController(private val activity: AppCompatActivity) {
             val url = "https://kemi.newlinksz.com/kd-api/api/store/update/check".toHttpUrl().newBuilder()
                 .addQueryParameter("package_name", activity.packageName)
                 .addQueryParameter("version_code", localCode.toString())
-                .addQueryParameter("os", "android").build()
+                .addQueryParameter("os", "android")
+                .apply { userId?.let { addQueryParameter("uc_user_id", it.toString()) } }.build()
             client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
                 require(response.isSuccessful) { "http_error" }
                 val body = response.body ?: error("empty_body")
@@ -137,6 +156,7 @@ class MarketUpdateController(private val activity: AppCompatActivity) {
         prefs.edit().putLong("next_check", System.currentTimeMillis() + MarketUpdatePolicy.SUCCESS_INTERVAL_MS)
             .putInt("failures", 0).putLong("checked_at", System.currentTimeMillis())
             .putLong("checked_local_code", localCode).putString("checked_body", bodyText).apply()
+        prefs.edit().putString("checked_account", accountKey).apply()
         current.value = update?.let { MarketVersionState.Available(it) } ?: MarketVersionState.Latest
         Timber.i("KBoard update check completed: available=%s", update != null)
         } catch (cancelled: CancellationException) {

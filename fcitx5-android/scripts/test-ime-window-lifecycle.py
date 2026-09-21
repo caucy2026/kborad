@@ -17,7 +17,7 @@ p.add_argument('--cycles', type=int, default=20)
 p.add_argument('--interval', type=float, default=3.0, help='Minimum seconds between UI actions')
 p.add_argument('--output', type=Path, required=True)
 a = p.parse_args()
-a.output.mkdir(parents=True, exist_ok=True)
+a.output.mkdir(parents=True, exist_ok=False)
 adb = ['adb', '-s', a.serial]
 last_action = 0.0
 
@@ -33,7 +33,7 @@ relay = a.package + '/org.fcitx.fcitx5.android.input.DisplaySwitchInputMethodSer
 
 
 def run(*args):
-    return subprocess.check_output(adb + list(args), text=True, timeout=30)
+    return subprocess.check_output(adb + list(args), timeout=30).decode('utf-8', errors='replace')
 
 
 def visible(expected, label):
@@ -119,8 +119,8 @@ finally:
     log.terminate()
     log.wait(timeout=10)
     log_file.close()
-    text = (a.output / 'logcat.txt').read_text(errors='replace')
-    failures = re.findall(r'^.*(?:FATAL EXCEPTION|ANR in |am_anr|Window token is not set yet|Input dispatching timed out).*$', text, re.M)
+    text = (a.output / 'logcat.txt').read_text(encoding='utf-8', errors='replace')
+    failures = re.findall(r'^.*(?:FATAL EXCEPTION|KBoardCrash.*Uncaught exception|Fatal signal \d+|ANR in |am_anr|Window token is not set yet|Input dispatching timed out).*$', text, re.M)
     summary = dict(start=start, end=run('shell', 'date', '+%Y-%m-%dT%H:%M:%S%z').strip(),
                    completed=len(rows), error=error, fatal_anr_lines=failures)
     (a.output / 'summary.json').write_text(json.dumps(summary, indent=2))

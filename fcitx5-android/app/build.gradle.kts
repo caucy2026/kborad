@@ -18,6 +18,10 @@ android {
         applicationId = providers.gradleProperty("kboardApplicationId")
             .getOrElse("com.newlink.kemi.kboard")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Lint 9.2 still reads this legacy model field for translation coverage.
+        // Match the packaged locales; do not suppress MissingTranslation globally.
+        @Suppress("DEPRECATION")
+        resourceConfigurations += listOf("en", "zh-rCN")
 
         @Suppress("UnstableApiUsage")
         externalNativeBuild {
@@ -63,7 +67,19 @@ android {
 
     androidResources {
         @Suppress("UnstableApiUsage")
-        generateLocaleConfig = true
+        // Explicit XML keeps Android 13's language picker aligned with lint's locale scope.
+        generateLocaleConfig = false
+        // resourceConfigurations above filters both packaging and lint in AGP 9.2.
+        // Do not combine it with localeFilters: AGP rejects simultaneous locale filters.
+    }
+}
+
+// Lint reads generated assets too. Declare their producer so combined lint/build invocations
+// cannot inspect a stale descriptor or fail Gradle's implicit-dependency validation.
+tasks.configureEach {
+    if (name.startsWith("lintAnalyze") || name.startsWith("lintVitalAnalyze") ||
+        (name.startsWith("generate") && name.contains("Lint") && name.endsWith("Model"))) {
+        dependsOn("generateDataDescriptor")
     }
 }
 

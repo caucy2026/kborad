@@ -414,7 +414,7 @@ class InputView(
     private val desktopKeyboardHeightPx: Int
         get() {
             val configuration = resources.configuration
-            val currentDisplay = display ?: service.display
+            val currentDisplay = display ?: service.currentImeDisplay
             val displayMode = currentDisplay?.mode
             val physicalDisplayHeight = if (displayMode == null) {
                 resources.displayMetrics.heightPixels
