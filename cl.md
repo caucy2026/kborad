@@ -1,5 +1,40 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-09-20 - 隐藏键修复误吞PAD物理右键（候选，未发布）
+
+- 75真实HL mouse BTN_RIGHT双边沿产生SOURCE_MOUSE/KEYCODE_BACK及BUTTON_BACK事件；IME已隐藏仍进入新增onKeyDown BACK分支，客户端没有收到PhysicalMouse，Windows无菜单。原失败证据保留于287-nav75-20260920/deadzone-fix/mouse-right-failure。
+- 根因：导航隐藏拦截未区分输入来源，错误消费鼠标生成的BACK。这属于本轮隐藏修复引入的关联回归。
+- 最小修复：FcitxInputMethodService.onKeyDown/onKeyUp仅对鼠标SOURCE_MOUSE/SOURCE_MOUSE_RELATIVE来源BACK返回false，成对交回前台应用；系统导航隐藏仍走原分支。未改键盘布局、字符/语音协议、视频层和普通按键。
+- 正式Release签名与安装校验通过，75候选SHA256 feab4546407872aa28a6ec91f3a19355f585a2ef2797c331b5572df187241e2a。原失败动作首次复测已在Windows看到上下文菜单及客户端down/up；正在逐变体10次验收。隐藏/HOME计数必须随新候选重测，整体仍BLOCK。
+
+## 2026-09-20 - 输入后首次隐藏被SystemUI防误触吞掉（候选，继续验收）
+
+- 根因证据：75 的 SystemUI `DeadZone` 在输入后短按隐藏按钮中心时记录 `consuming errant click: (86.0,46.0)`；导航栏 y=1184..1280，中心 y=1230 落在最大64px防误触区。该次无 BACK 到达IME，稍后点击或按钮下沿可到达，不能靠修改测试坐标判通过。
+- 最小修复：仅 Android12/API31、hi3781v730、system UID、IME在D0时复用既有非聚焦隐藏命中层；普通同屏仍不启用跨屏HOME观察器，不改输入、布局和视频。隐藏/切走移除命中层。
+- 正式候选SHA256 `092ac309f9e0601f444d985b04f0ee0b71fa9cec930072b96d7f926708bc8bf9`，1.4.1+182，平台证书一致，75覆盖安装并回读哈希一致。
+- 主屏普通便签+同屏浮动模式，真实qwe空格→原中心隐藏→重开→4次删除→隐藏→空文本，10/10通过；每轮XML证明输入和删除。其他模式、HOME、跨屏继续执行，整体未通过不得发布。
+- 证据：既有287-nav75-20260920下 `deadzone-fix/main-floating`；旧包失败与DeadZone日志保留。
+
+## 2026-09-20 - 75导航验收迭代记录（未发布，整体BLOCK）
+
+- 用户最新要求每项及适用变体各10次，每项独立报告；失败保留原证据，修复后新包重新计数。
+- 再次显示隐藏失效：onWindowShown重建D2编辑器→D0键盘的隐藏桥接；普通同屏不得启用跨屏分支。
+- HOME上滑第4轮失败：系统接管时最后MOVE仅5.36px；观察器之前忽略CANCEL携带的最终位置。CrossDisplayNavigationObserver改用最终触点并保留系统原事件返回值。新候选普通隐藏/上滑各10次通过，后续包仍需复测。
+- 覆盖安装首开隐藏失效：桥接路由原为进程内变量。改为依据当前编辑器包唯一任务显示屏恢复；同一包多屏任务无法确定时不猜测，保留显式切屏状态，该变体尚待验证。
+- 全局键盘本地HOME无效：此前只向InputConnection发送HOME，普通编辑框不能执行系统导航。仅非远程编辑器按下时记录目标屏，抬起时发指定显示屏系统导航双边沿；KEMI和物理Overlay保留原输出路径。SystemMouseInjector复用既有平台INJECT_EVENTS能力，无新权限；未改变键盘布局。
+- 当前候选KBoard1.4.1+182 SHA-256 `8a5fa8e91ba2108897bca1abee1f4e7b597dd61b38c3b5cecb769bb262daf690`，正式平台证书c8a2e9bc…92ab8，75覆盖安装成功。
+- 本地全局HOME在副屏便签→主屏键盘下10/10：每轮确认SecondaryDisplayLauncher恢复、mInputShown=false，系统记录display=2、key=3完整双边沿。仅此子项已完成，不能说全量通过。
+- 同包远程输入、普通/浮动/全局完整模式矩阵、HDMI、扩展、鼠标、语音和资源仍在执行；禁止发布。
+- 证据：`/Volumes/ORICO/kemi-build-cache/app-release-gate/kemi/android/287-nav75-20260920/`，各失败目录保留。逐项报告在RustDesk/client/kemi-docs/keyboard-quality/DELIVERY-RESULTS-20260920.md。
+
+## 2026-09-20 - 跨屏键盘再次显示时恢复隐藏入口（候选，未交付）
+
+- 用户前提必须保持：普通便签在副屏获得输入焦点，键盘通过切屏按钮移至主屏。编辑器 D2 / IME D0 是合法跨屏状态，不应通过恢复同屏来冒充修复。
+- 复现：63 的 +182 候选在该状态点击主屏左下角隐藏后 `mInputShown=true`，窗口树中没有 `KBoard navigation hide bridge`。
+- 代码缺口：桥接只在切屏时建立，窗口隐藏后移除；下次 `onWindowShown` 只确认已存在的桥接，没有重建。修改 `DesktopNavigationHideBridge.kt` 保存进程内明确切屏方向，每次窗口显示时在 D0 跨屏路由重建并确认，反向切屏立即清理；`FcitxInputMethodService.kt` 接入。未修改键盘布局、按键、语音和远程输出协议。
+- 验证：`:app:compileDebugKotlin --offline` 成功。正式签名因自动审批拒绝私密口令访问尚未执行；随后 63 ADB 返回 Host is down。候选未安装，不得称隐藏或 HOME 已修复。
+- 最短待验：副屏焦点→切主屏→隐藏→再次弹出→再次隐藏；保持同样前提验证 HOME 上滑；切回副屏及主屏普通输入验证原行为。HOME 原因仍待现场闭环，不按推测增加手势拦截。
+
 ## 2026-09-20 - 副屏编辑器切主屏后左下角隐藏键候选（远程桌面回归，禁止发布）
 
 - 现场与根因：在 Display 2 的便签输入框唤起 KBoard，再把键盘切到 Display 0 后，IME 窗口和 token 已位于主屏，但输入连接仍属于 Display 2。V900 Android 12 的主屏导航栏会把左下角 BACK 事件发送给主屏前台应用，而不是 D2 所属的输入法会话，因此按钮可见但无法隐藏键盘；单纯调用 `requestHideSelf()`、设置 BACK disposition 或改变 IME 焦点属性均不能可靠解决，后者还会破坏跨屏窗口稳定性，未保留这些实验方案。
@@ -2241,3 +2276,43 @@ KEMI 设置页品牌化与动态名称中文化。
 - 100 轮从 2026-09-18 18:22:58 至 18:29:32（Asia/Shanghai）连续运行。每轮强制重跑上述 8 个测试类，100/100 轮通过，合计 800 个测试类轮次；100 份 Gradle 日志均包含 `BUILD SUCCESSFUL`，没有 `BUILD FAILED` 或失败标记。
 - 测试期间源码指纹始终为 `6b4b933e7be19e3362a76d0036fcb49bb28c679e5c1a23f0aaddae761c9f911f`。汇总、逐轮时间和日志保存在 `/Volumes/ORICO/kemi-build-cache/app-release-gate/kboard/20260918-change-regression-100/`。
 - 本轮证明纯策略、生命周期防护和按键路由的 JVM 稳定性；当前没有在线 ADB 设备，因此不把它计作扩展键盘真实宿主迁移、双屏窗口、截图、HDMI 视频连续性、CPU/GPU/PSS 或 100 轮真机耐久通过。
+
+
+## 2026-09-21 - 剪贴板候选发送后清除（候选，待实机闭环）
+
+- 用户报告全局键盘发送剪贴板后候选持续存在。现有点击只清当前视图的 isClipboardFresh；进入全局模式从 Room 重载最新记录时，又将同一条设为新候选。
+- ClipboardManager 以记录 id + 复制时间保存候选已消费状态，通知各键盘视图同步清除；保留系统剪贴板和完整历史。新复制事件时间变化，仍可重新显示同一段文本。
+- KawaiiBarComponent 从实际显示的记录发送，避免 Room 恢复候选与进程 lastEntry 不一致；点击立即清除文字、超时任务和候选状态，重开时过滤已消费条目。未改输入路由、键盘布局、语音、导航和视频层。
+- 待验收：可见候选发送并清除、隐藏重开不回填、跨屏后不回填、新复制可显示并发送、历史保留；未经真机验证不标记通过。
+- 首次正式构建 Kotlin/R8 已执行，但 lint 在未修改的 KBoardOverlayService.kt 中遇到 Unexpected owner function 内部异常；保留日志 /private/tmp/kboard-clipboard-consumed-build.log，使用 --no-daemon 重跑相同门禁，不跳过静态检查。
+
+### 本次候选实际结果
+
+- 独立构建重试通过：BUILD SUCCESSFUL，287 tasks，含 lintVital；APK 1.4.1+182，SHA256 `15b6d693e55a6b5e85bf1f3078f60fe59e2182fed594175a67a65478a0713ced`，v1/v2签名与原平台证书一致。63 install -r 返回 Success。
+- 63 主屏便签搜索框 + 全局键盘：发送可见候选后候选消失，收起键盘后搜索框确有接收文本；重开全局键盘后候选保持空白。各 1 次真实验证，不能冒充 10 次。
+- 证据：/private/tmp/clipboard-installed-keyboard.png、clipboard-sent.png、clipboard-target-after.png、clipboard-reopened-settled.png。
+- 后续新复制测试期间设备切换到远程桌面，场景不再是便签，此轮无效；新复制、跨屏反复与服务重启仍待验收，不计为通过。未更改或删除系统剪贴板及历史数据。
+
+
+## 2026-09-21 两项目云端备份汇总（源码快照，非发布）
+
+- 对应远程办公详细清单：rust-desk 的 kemi-docs/SOURCE-BACKUP-20260921.md。KBoard 继续使用既有 main，不创建备份分支，不强推。
+- 本轮包含：跨屏后本地隐藏/HOME、鼠标 BACK 来源隔离、本地系统导航成对注入、全局剪贴板最新条目恢复/可见配色/已消费过滤、当前全局 Overlay 高度修正及对应策略测试。
+- 全局高度修正目前出现在工作树中，不能据此前剪贴板候选的单次实测认定它通过。合并云端商场更新入口和版本变更后，重新冻结双 APK 并执行每适用变体十次验收。
+- 上游 libime 与 Chinese addons 本地差异保存在 patches/source-backup-20260921/*.patch，子模块指针保持不变。应用前必须 git apply --check；未将 .DS_Store、prebuilt 缓存或旧 bin 文件删除纳入提交。
+- 最新已实测剪贴板候选 1.4.1+182 SHA256 15b6d693e55a6b5e85bf1f3078f60fe59e2182fed594175a67a65478a0713ced；已证实本地发送清除与重开不回填各1次。十次矩阵未完成，整体仍 BLOCK。
+
+### 本次备份文件清单
+
+- `cl.md`
+- `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/data/clipboard/ClipboardManager.kt`
+- `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/data/clipboard/db/ClipboardDao.kt`
+- `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/CrossDisplayNavigationObserver.kt`
+- `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/DesktopNavigationHideBridge.kt`
+- `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/FcitxInputMethodService.kt`
+- `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/SystemMouseInjector.kt`
+- `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/bar/KawaiiBarComponent.kt`
+- `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/bar/ui/idle/ClipboardSuggestionUi.kt`
+- `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/overlay/KBoardOverlayService.kt`
+- `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/overlay/PhysicalOverlayWindowPolicy.kt`
+- `fcitx5-android/app/src/test/java/org/fcitx/fcitx5/android/input/overlay/PhysicalOverlayWindowPolicyTest.kt`

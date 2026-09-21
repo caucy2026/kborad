@@ -29,6 +29,7 @@ import android.text.style.BackgroundColorSpan
 import android.util.Log
 import android.util.LruCache
 import android.util.Size
+import android.view.InputDevice
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.View
@@ -128,6 +129,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     /** Mouse button DOWN events accepted by the current remote InputConnection. */
     private val pressedDesktopMouseButtons = linkedSetOf<String>()
     /** HOME/BACK DOWN events sent to the remote editor, paired with their original connection. */
+    private val pressedDesktopLocalNavigationKeys = linkedMapOf<Int, Int>()
     private val pressedDesktopRemoteNavigationKeys =
         linkedMapOf<Int, Pair<InputConnection, Long>>()
 
@@ -954,6 +956,22 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             )
             return
         }
+        val editorPackage = currentInputEditorInfo?.packageName
+        if (!editorPackage.isNullOrEmpty() && editorPackage !in CROSS_DISPLAY_EDITOR_PACKAGES) {
+            // Keep remote navigation on its original transport. Local editor connections
+            // cannot execute system HOME; dispatch a balanced pair on the local button release.
+            if (down) {
+                DesktopNavigationHideBridge.editorDisplayId(applicationContext, editorPackage)
+                    ?.let { pressedDesktopLocalNavigationKeys[keyCode] = it }
+            } else {
+                val editorDisplay = pressedDesktopLocalNavigationKeys.remove(keyCode) ?: return
+                if (systemMouseInjector.navigationKeyPress(editorDisplay, keyCode) &&
+                    keyCode == KeyEvent.KEYCODE_HOME) {
+                    hideFromNavigationBridge()
+                }
+            }
+            return
+        }
         if (down) {
             if (keyCode in pressedDesktopRemoteNavigationKeys) return
             val connection = currentInputConnection ?: return
@@ -968,6 +986,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     private fun releaseDesktopSystemKeys() {
+        pressedDesktopLocalNavigationKeys.clear()
         pressedDesktopRemoteNavigationKeys.keys.toList().asReversed().forEach { keyCode ->
             sendDesktopSystemKeyState(keyCode, down = false)
         }
@@ -1128,9 +1147,20 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onWindowShown() {
         super.onWindowShown()
-        DesktopNavigationHideBridge.confirm(
-            display?.displayId ?: android.view.Display.DEFAULT_DISPLAY
+        DesktopNavigationHideBridge.onImeWindowShown(
+            applicationContext,
+            display?.displayId ?: android.view.Display.DEFAULT_DISPLAY,
+            currentInputEditorInfo?.packageName
         )
+        window.window?.let { imeWindow ->
+            if (imeWindow.callback !is CrossDisplayNavigationObserver) {
+                imeWindow.callback = CrossDisplayNavigationObserver(
+                    imeWindow.callback, imeWindow.decorView,
+                    { DesktopNavigationHideBridge.isCrossDisplayWindowShown },
+                    { hideFromNavigationBridge() }
+                )
+            }
+        }
         inputView?.onImeWindowShown()
         inputView?.requestCurrentDisplayInsets("window_shown")
         try {
@@ -1142,6 +1172,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onWindowHidden() {
+        Log.i("KBoardNavTrace", "window hidden display=${display?.displayId}")
         cancelPendingTouchHideRequest()
         releaseDesktopInputStates()
         DesktopNavigationHideBridge.onImeWindowHidden()
@@ -1321,6 +1352,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         @Suppress("DEPRECATION")
         val currentDisplayId = display?.displayId ?: android.view.Display.DEFAULT_DISPLAY
         val moveToSecondary = currentDisplayId != SECONDARY_IME_DISPLAY_ID
+        DesktopNavigationHideBridge.setCrossDisplayRoute(!moveToSecondary)
         if (moveToSecondary) {
             DesktopNavigationHideBridge.disarm()
         } else {
@@ -1377,6 +1409,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        // PAD firmware represents the physical mouse right button as BACK.
+        // Leave both edges to the focused application, including when IME is hidden.
+        if (keyCode == KeyEvent.KEYCODE_BACK && isMouseBackEvent(event)) return false
         // The navigation bar's bottom-left hide affordance is delivered to the active IME as
         // KEYCODE_BACK on this Android 12 build. Never forward that system navigation event into
         // Fcitx/the editor. The framework's default handler does not dismiss our desktop/fullscreen
@@ -1384,6 +1419,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         // DesktopKeyboard's explicit remote BACK button uses sendDesktopSystemKeyState() and is
         // therefore intentionally unaffected.
         if (keyCode == KeyEvent.KEYCODE_BACK) {
+            Log.i("KBoardNavTrace", "BACK down repeat=${event.repeatCount} display=${display?.displayId}")
             if (event.repeatCount == 0) {
                 // After D2 -> D0 migration the editor and IME window intentionally live on
                 // different displays. requestHideSelf() is routed through IMMS using the editor
@@ -1422,6 +1458,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        // PAD firmware represents the physical mouse right button as BACK.
+        // Leave both edges to the focused application, including when IME is hidden.
+        if (keyCode == KeyEvent.KEYCODE_BACK && isMouseBackEvent(event)) return false
         if (keyCode == KeyEvent.KEYCODE_BACK) {
             return true
         }
@@ -1436,6 +1475,11 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
         return forwardKeyEvent(event) || super.onKeyUp(keyCode, event)
     }
+
+    private fun isMouseBackEvent(event: KeyEvent): Boolean =
+        event.isFromSource(InputDevice.SOURCE_MOUSE) ||
+            (android.os.Build.VERSION.SDK_INT >= 26 &&
+                event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE))
 
     private fun isPhysicalHardwareKey(event: KeyEvent): Boolean =
         event.deviceId != KeyCharacterMap.VIRTUAL_KEYBOARD &&

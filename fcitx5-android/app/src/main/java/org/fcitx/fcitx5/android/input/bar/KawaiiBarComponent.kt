@@ -129,6 +129,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private var voiceNetworkCallbackRegistered = false
     private var disposed = false
 
+    private var displayedClipboardEntry: ClipboardEntry? = null
     private var isClipboardFresh: Boolean = false
     private var isInlineSuggestionPresent: Boolean = false
     private var isCapabilityFlagsPassword: Boolean = false
@@ -192,9 +193,14 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         ClipboardManager.OnClipboardUpdateListener {
             if (!clipboardSuggestion.getValue()) return@OnClipboardUpdateListener
             service.lifecycleScope.launch {
-                if (it.text.isEmpty()) {
+                if (it.text.isEmpty() || ClipboardManager.isSuggestionConsumed(it)) {
+                    displayedClipboardEntry = null
+                    idleUi.clipboardUi.text.text = ""
+                    clipboardTimeoutJob?.cancel()
+                    clipboardTimeoutJob = null
                     isClipboardFresh = false
                 } else {
+                    displayedClipboardEntry = it
                     idleUi.clipboardUi.text.text = if (it.sensitive && clipboardMaskSensitive) {
                         ClipboardEntry.BULLET.repeat(min(42, it.text.length))
                     } else {
@@ -320,6 +326,18 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         // the override so ordinary keyboards keep their configured theme unchanged.
         horizontalCandidate.setDesktopKeyboardMode(enabled)
         idleUi.setDesktopQuietMode(enabled)
+        idleUi.clipboardUi.setDesktopKeyboardMode(enabled)
+        if (enabled) {
+            // The ordinary keyboard opens ClipboardWindow, which reads Room directly. Desktop
+            // mode instead uses the compact clipboard suggestion. Do not depend exclusively on
+            // the process-local lastEntry: the IME service/overlay can be recreated after a copy,
+            // leaving history in Room while lastEntry is empty and the global keyboard blank.
+            service.lifecycleScope.launch {
+                if (!disposed && desktopKeyboardMode) {
+                    ClipboardManager.latestEntry()?.let(onClipboardUpdateListener::onUpdate)
+                }
+            }
+        }
         if (enabled) {
             // Build the ASR client while global mode is entering, not on the first voice DOWN.
             // This keeps Handler/OkHttp initialization out of the first interaction frame.
@@ -745,16 +763,19 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             }
             clipboardUi.suggestionView.apply {
                 setOnClickListener {
-                    ClipboardManager.lastEntry?.let {
+                    displayedClipboardEntry?.let {
                         service.commitTextFrom(inputView.overlayRequestId, it.text)
+                        ClipboardManager.consumeSuggestion(it)
                     }
+                    displayedClipboardEntry = null
+                    idleUi.clipboardUi.text.text = ""
                     clipboardTimeoutJob?.cancel()
                     clipboardTimeoutJob = null
                     isClipboardFresh = false
                     evalIdleUiState()
                 }
                 setOnLongClickListener {
-                    ClipboardManager.lastEntry?.let {
+                    displayedClipboardEntry?.let {
                         AppUtil.launchClipboardEdit(context, it.id, true)
                     }
                     true

@@ -13,6 +13,7 @@ import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.InputDevice
+import android.view.KeyEvent
 import android.view.InputEvent
 import android.view.MotionEvent
 
@@ -48,6 +49,25 @@ internal class SystemMouseInjector(private val context: Context) {
 
     private val setActionButton by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         MotionEvent::class.java.getMethod("setActionButton", Int::class.javaPrimitiveType)
+    }
+
+    /** Local HOME/BACK must pass through system policy, not an editor InputConnection. */
+    fun navigationKeyPress(displayId: Int, keyCode: Int): Boolean {
+        if (keyCode != KeyEvent.KEYCODE_HOME && keyCode != KeyEvent.KEYCODE_BACK) return false
+        if (!isAvailable() || displayManager?.getDisplay(displayId)?.isValid != true) return false
+        val now = SystemClock.uptimeMillis()
+        return runCatching {
+            fun edge(action: Int): Boolean {
+                val event = KeyEvent(now, SystemClock.uptimeMillis(), action, keyCode, 0, 0,
+                    -1, 0, KeyEvent.FLAG_FROM_SYSTEM, InputDevice.SOURCE_KEYBOARD)
+                setDisplayId.invoke(event, displayId)
+                return inject(event)
+            }
+            val down = edge(KeyEvent.ACTION_DOWN)
+            val up = edge(KeyEvent.ACTION_UP)
+            Log.i(TAG, "local navigation display=$displayId key=$keyCode down=$down up=$up")
+            down && up
+        }.onFailure { Log.w(TAG, "Local navigation injection failed", it) }.getOrDefault(false)
     }
 
     @Synchronized

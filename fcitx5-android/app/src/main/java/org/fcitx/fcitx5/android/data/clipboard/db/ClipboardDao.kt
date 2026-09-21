@@ -41,6 +41,9 @@ interface ClipboardDao {
     @Query("SELECT * FROM ${ClipboardEntry.TABLE_NAME} WHERE deleted=0 ORDER BY pinned DESC, timestamp DESC")
     fun allEntries(): PagingSource<Int, ClipboardEntry>
 
+    @Query("SELECT * FROM ${ClipboardEntry.TABLE_NAME} WHERE deleted=0 ORDER BY timestamp DESC LIMIT 1")
+    suspend fun latest(): ClipboardEntry?
+
     @Query("SELECT * FROM ${ClipboardEntry.TABLE_NAME} WHERE text=:text AND sensitive=:sensitive AND deleted=0 LIMIT 1")
     suspend fun find(text: String, sensitive: Boolean = false): ClipboardEntry?
 

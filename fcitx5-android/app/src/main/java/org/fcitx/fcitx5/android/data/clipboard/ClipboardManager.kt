@@ -79,6 +79,23 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
 
     var lastEntry: ClipboardEntry? = null
 
+    private val suggestionState by lazy {
+        appContext.getSharedPreferences("clipboard-suggestion-state", Context.MODE_PRIVATE)
+    }
+
+    fun isSuggestionConsumed(entry: ClipboardEntry): Boolean =
+        suggestionState.getInt("consumed-id", -1) == entry.id &&
+            suggestionState.getLong("consumed-time", -1L) == entry.timestamp
+
+    fun consumeSuggestion(entry: ClipboardEntry) {
+        // Dismiss the suggestion across keyboard views, retaining clipboard history.
+        suggestionState.edit()
+            .putInt("consumed-id", entry.id)
+            .putLong("consumed-time", entry.timestamp)
+            .apply()
+        onUpdateListeners.forEach { it.onUpdate(entry) }
+    }
+
     private fun updateLastEntry(entry: ClipboardEntry) {
         lastEntry = entry
         onUpdateListeners.forEach { it.onUpdate(entry) }
@@ -103,6 +120,8 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
     suspend fun haveUnpinned() = clbDao.haveUnpinned()
 
     fun allEntries() = clbDao.allEntries()
+
+    suspend fun latestEntry() = clbDao.latest()
 
     suspend fun pin(id: Int) = clbDao.updatePinStatus(id, true)
 

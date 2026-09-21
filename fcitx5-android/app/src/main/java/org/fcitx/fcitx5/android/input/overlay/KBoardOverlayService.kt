@@ -106,6 +106,7 @@ class KBoardOverlayService : Service() {
     private data class Owner(
         val requestId: Long, val sessionId: String, val sourceDisplayId: Int,
         val targetDisplayId: Int, val peerDisplayId: Int, val windowWidth: Int,
+        val requestedHeight: Int,
         val callback: IKBoardOverlayCallback,
         val death: IBinder.DeathRecipient, val windowManager: WindowManager,
         val inputMethodService: FcitxInputMethodService, val inputView: InputView,
@@ -301,11 +302,15 @@ class KBoardOverlayService : Service() {
             inputView = ime.createPhysicalOverlayInputView(displayContext, requestId, callerUid = callerUid)
             val createdView = inputView
             createdView.setViewTreeLifecycleOwner(ime)
+            val layoutName = createdView.physicalOverlayLayoutName()
+            val windowHeight = PhysicalOverlayWindowPolicy.resolveHeight(
+                layoutName, height, target.mode.physicalHeight
+            )
             owner = Owner(requestId, sessionId, sourceDisplayId, target.displayId,
-                sourceDisplayId, width, callback,
+                sourceDisplayId, width, height, callback,
                 death, windowManager, ime, createdView, listener, callerUid)
             val layoutParams = WindowManager.LayoutParams(
-                width, WindowManager.LayoutParams.WRAP_CONTENT,
+                width, windowHeight,
                 PhysicalOverlayWindowPolicy.type,
                 PhysicalOverlayWindowPolicy.flags, PhysicalOverlayWindowPolicy.format
             ).apply {
@@ -393,9 +398,13 @@ class KBoardOverlayService : Service() {
         }
         nextView.setViewTreeLifecycleOwner(previous.inputMethodService)
         val width = nextDisplay.mode.physicalWidth
-        val height = nextDisplay.mode.physicalHeight
+        val height = PhysicalOverlayWindowPolicy.resolveHeight(
+            nextView.physicalOverlayLayoutName(),
+            previous.requestedHeight,
+            nextDisplay.mode.physicalHeight
+        )
         val layoutParams = WindowManager.LayoutParams(
-            width, WindowManager.LayoutParams.WRAP_CONTENT,
+            width, height,
             PhysicalOverlayWindowPolicy.type,
             PhysicalOverlayWindowPolicy.flags, PhysicalOverlayWindowPolicy.format
         ).apply {
@@ -467,7 +476,12 @@ class KBoardOverlayService : Service() {
         replacement.setViewTreeLifecycleOwner(currentIme)
         val layoutParams = WindowManager.LayoutParams(
             previous.windowWidth,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            PhysicalOverlayWindowPolicy.resolveHeight(
+                layoutName,
+                previous.requestedHeight,
+                previous.inputView.display?.mode?.physicalHeight
+                    ?: previous.inputView.resources.displayMetrics.heightPixels
+            ),
             PhysicalOverlayWindowPolicy.type,
             PhysicalOverlayWindowPolicy.flags,
             PhysicalOverlayWindowPolicy.format

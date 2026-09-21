@@ -5,6 +5,7 @@
 package org.fcitx.fcitx5.android.input.bar.ui.idle
 
 import android.content.Context
+import android.graphics.Color
 import android.text.TextUtils
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.theme.Theme
@@ -63,6 +64,12 @@ class ClipboardSuggestionUi(override val ctx: Context, private val theme: Theme)
     val suggestionView = CustomGestureView(ctx).apply {
         add(layout, lParams(wrapContent, matchParent))
         background = rippleDrawable(theme.keyPressHighlightColor)
+    }
+
+    fun setDesktopKeyboardMode(enabled: Boolean) {
+        val foreground = if (enabled) Color.WHITE else theme.altKeyTextColor
+        icon.imageDrawable?.setTint(foreground)
+        text.setTextColor(foreground)
     }
 
     override val root = constraintLayout {

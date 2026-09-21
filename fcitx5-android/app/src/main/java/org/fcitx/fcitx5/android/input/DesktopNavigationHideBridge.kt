@@ -5,9 +5,12 @@
 
 package org.fcitx.fcitx5.android.input
 
+import android.app.ActivityManager
 import android.content.Context
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
+import android.os.Build
+import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
@@ -21,7 +24,8 @@ import android.view.WindowManager
  * dispatch D0 BACK to the launcher because the served editor remains on D2. A transparent,
  * system-UID-only hit target above the existing bottom-left navigation button preserves the
  * system artwork while forwarding only that button to KBoard. It exists only during a confirmed
- * D2 -> D0 IME route and is removed on hide or the reverse route.
+ * D2 -> D0 IME route, or the verified V900 Android 12 navigation dead-zone workaround,
+ * and is removed on hide or the reverse route. System HOME gesture observation remains cross-only.
  */
 internal object DesktopNavigationHideBridge {
     private const val TAG = "KBoardNavHideBridge"
@@ -36,6 +40,49 @@ internal object DesktopNavigationHideBridge {
     private var hitTarget: View? = null
     private var relayGraceUntil = 0L
     private var confirmed = false
+    private var routedToDefault = false
+
+    val isCrossDisplayWindowShown: Boolean
+        get() = routedToDefault && confirmed
+
+    fun setCrossDisplayRoute(enabled: Boolean) {
+        routedToDefault = enabled
+        if (!enabled) disarm()
+    }
+
+    fun onImeWindowShown(context: Context, displayId: Int, editorPackage: String?) {
+        // Recover from service/process replacement using the actual editor task, rather than
+        // assuming that an IME on D0 always belongs to an editor on D0.
+        editorDisplayId(context, editorPackage)?.let { editorDisplay ->
+            routedToDefault = displayId == DEFAULT_DISPLAY && editorDisplay != DEFAULT_DISPLAY
+            Log.i(TAG, "editorDisplay=$editorDisplay imeDisplay=$displayId cross=$routedToDefault")
+        }
+        // On the verified V900 Android 12 firmware SystemUI DeadZone consumes the center
+        // of the visible hide button immediately after typing (local y=46, dead zone=64).
+        // Reuse only the existing non-focusable hide-button hit target; do not enable the
+        // cross-display HOME observer for an ordinary same-display editor.
+        val localNavigationDeadZone = Build.VERSION.SDK_INT == 31 &&
+                Build.DEVICE == "hi3781v730" && Process.myUid() == Process.SYSTEM_UID
+        if (displayId == DEFAULT_DISPLAY && (routedToDefault || localNavigationDeadZone)) {
+            if (hitTarget == null) arm(context)
+            confirm(displayId)
+        } else {
+            disarm()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    fun editorDisplayId(context: Context, editorPackage: String?): Int? {
+        if (editorPackage.isNullOrEmpty()) return null
+        return runCatching {
+            val tasks = context.getSystemService(ActivityManager::class.java).getRunningTasks(100)
+                .filter { it.topActivity?.packageName == editorPackage }
+            // Multiple instances on different displays are ambiguous; retain an explicit route
+            // rather than guessing which editor owns the InputConnection.
+            tasks.map { it.javaClass.getField("displayId").getInt(it) }
+                .distinct().singleOrNull()
+        }.onFailure { Log.w(TAG, "editor display unavailable", it) }.getOrNull()
+    }
 
     fun arm(context: Context) {
         relayGraceUntil = SystemClock.uptimeMillis() + RELAY_GRACE_MS

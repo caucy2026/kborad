@@ -23,4 +23,18 @@ class PhysicalOverlayWindowPolicyTest {
         assertTrue(PhysicalOverlayWindowPolicy.preserveSystemNavigationGestures)
         assertTrue(PhysicalOverlayWindowPolicy.showSystemNavigationBars)
     }
+
+    @Test
+    fun desktopWindowUsesFullPhysicalHeightInsteadOfInsetReducedRequest() {
+        assertEquals(
+            1280,
+            PhysicalOverlayWindowPolicy.resolveHeight("Desktop", 1204, 1280)
+        )
+    }
+
+    @Test
+    fun nonDesktopWindowKeepsRequestedHeightWithinPhysicalBounds() {
+        assertEquals(720, PhysicalOverlayWindowPolicy.resolveHeight("QWERTY", 720, 1280))
+        assertEquals(1280, PhysicalOverlayWindowPolicy.resolveHeight("QWERTY", 1400, 1280))
+    }
 }
