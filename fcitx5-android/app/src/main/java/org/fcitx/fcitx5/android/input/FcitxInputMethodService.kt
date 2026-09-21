@@ -1316,7 +1316,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             val extras = currentInputEditorInfo?.extras
             val requestId = extras?.getLong("com.newlink.kemi.kboard.DISPLAY_SWITCH_REQUEST", -1L) ?: -1L
             val supported = extras?.getInt("com.newlink.kemi.kboard.DISPLAY_SWITCH_VERSION", 0) == 1
-            val current = currentImeDisplay?.displayId ?: android.view.Display.DEFAULT_DISPLAY
+            val current = display?.displayId ?: android.view.Display.DEFAULT_DISPLAY
             val handled = supported && requestId > 0 && runCatching {
                 currentInputConnection?.performPrivateCommand(
                     "com.newlink.kemi.kboard.SWITCH_PROXY_DISPLAY",
