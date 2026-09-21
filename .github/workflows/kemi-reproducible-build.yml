@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -84,6 +87,26 @@ jobs:
           KEMI_GRADLE_COMMAND: ./gradlew
           KEMI_GRADLE_EXTRA_ARGS: --stacktrace
           KEMI_SUBMODULES_READY: "1"
+
+      - name: Run real JVM tests and require results
+        working-directory: fcitx5-android
+        run: |
+          set -euo pipefail
+          deps="$(bash scripts/setup-local-native-deps.sh)"
+          eval "$(printf '%s\n' "$deps" | sed 's/^/export /')"
+          export PATH="$GETTEXT_BIN_DIR:$PATH" BUILD_ABI=arm64-v8a
+          ./gradlew :app:testDebugUnitTest --rerun-tasks --stacktrace
+          python3 ../scripts/release/gate.py junit app/build/test-results/testDebugUnitTest
+
+      - name: Upload JVM test evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: kemi-junit-${{ github.sha }}
+          path: |
+            fcitx5-android/app/build/test-results/testDebugUnitTest/
+            fcitx5-android/app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v6
