@@ -1,5 +1,33 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-09-22 - 新增可拖动极简键盘（候选，未发布）
+
+- 14:37–14:38 极简语音“无效果”现场：按钮DOWN/UP正常收到，多次按住1.2–1.9秒后UP仍为Starting，既有分支取消鉴权/连接并清空提示；普通模式随后成功final length=10，极简稍后也成功final length=8。因此已证实至少存在“连接未就绪被松手静默取消”，不是所有极简点击都无监听，也不能凭final长度认定远端实际收字。
+- 语音提示修复候选构建成功，4项VoiceOutputRoutePolicyTest通过（不代表新增状态/网络端到端验收）；正式平台证书v1/v2验签通过。候选 `bin/KBoard-1.4.2-202-voice-feedback-release.apk`，SHA256 `e13e1d74799e89fc05c8ecc5cab43f2ada9cbce31f39d775639c0660ecfe254a`。尚未覆盖63，现场由远程任务协调用户测试窗口；默认输入法及现场配置未动。真机Starting释放/Listening释放/取消/失败重试和目标端收字仍BLOCK。
+- 本轮最小候选：`KawaiiBarComponent` 将Starting与Listening提示区分，按下先提示“正在连接语音，请按住稍候”，实际Listening才提示“正在听”；Starting松手仍取消，不允许松手后暗中开麦，但增加明确重试提示。`IflytekAsrClient.finish()` 对空文本发受generation保护的错误回调，清理校准UI并提示没有识别到语音，避免永远校准且无结果。权限、160ms阈值、24px移动取消、WebSocket started后开麦和600ms最终预览不变；未变更键盘几何/远程协议。构建和实机验收尚在进行，此项仅修状态提示与静默失败，不声称解决全部启动延迟/远端传递问题。
+- 极简退出布局修正：`InputView.setMinimalKeyboardMode()` 在退出时同步清零拖动位移、取消轮廓/矩形裁切、清除悬浮阴影、恢复全宽，再应用普通或桌面约束；`updateFloatingKeyboardLayout()` 的延迟定位回调增加极简/桌面模式和浮动偏好一致性检查，避免旧回调覆盖新模式。只修复极简尺寸/位移残留，不修改普通和全局键帽高度比例。
+- 最终透明度按最新要求为15%透明（极简alpha=0.85），退出恢复1.0。新候选 `bin/KBoard-1.4.2-202-minimal-alpha85-release.apk` SHA-256 `09714735f8f9bda843fc385c186cc6d9642b9d9a5937b234eb973a30562a4b98`，正式平台证书v1/v2通过；63覆盖安装成功，设备base.apk回读哈希相同。远程客户端未修改、未安装，本轮实装为1.4.126+290，hash `b7f74de268266fb59ef1503541171484ea7fcb2927cc328a7668f5a2444493c5`。
+- 新候选63实际远程物理Overlay执行10轮“极简拖动→普通”，每操作间隔3秒，模式键按压120ms。10次日志均恢复panel=1920x741、content=1920x549、offset=0,0、clip=false、alpha=1；完整普通键盘显示正常。初次工具图片预览仅显示黑色上半区，随后读取原图并逐像素核对发现10张PNG的键盘区域(0,539)-(1920,1280)完全一致，区域SHA256均为 `7723bda5db002ba3a54c74be6e90556e7ff76457c7b09ab4cd28ba895305c2e7`，不是设备黑屏。该狭义拖动返回专项10/10通过，不代表全量PASS。底部隐藏操作已执行；语音、剪贴板精确输出及全矩阵验收未完成。证据 `/Volumes/ORICO/kemi-build-cache/app-release-gate/kboard/android/202-minimal-acceptance-20260922/layout/`。
+- 语音路由复核：最终回调延迟600ms后经 `commitTextFrom(overlayRequestId,text)`，物理请求ID有会话归属校验，组件销毁取消语音提交任务；尚无同一远端编辑焦点epoch校验，不能声称焦点切换期间异步语音绝不误投。用户后续明确要求扩展屏VSCode隔离文件语音测试，已交远程任务接管63继续验证，不录未知环境音。完整门禁仍BLOCK。
+- 统一样式/剪贴板修正候选：四键采用 Normal 主题键帽；删除与 Enter 保留原行为和反馈，仅使用极简独立 View ID，避免普通回车 ID 触发圆形/Enter文字特殊渲染。剪贴板遵循原版 suggestion 开关、时间有效期及 consumed 状态；空/过期/已消费建议隐藏，点击输入后调用 consumeSuggestion，保留历史记录。语音过程中不触发剪贴板输入。
+- 极简麦克风在离线时不再直接禁用，以便原共享语音处理器显示明确错误提示；完整ASR链路仍复用既有实现。不能据此断言已解决用户报告的全部语音无响应。
+- 候选 `bin/KBoard-1.4.2-202-minimal-uniform-release.apk`，SHA256 `b4ec8bbf07214895b94b0ad9f0ae9b25da8a905b7c4e6598d9f5411e501e4334`，正式证书验签、构建及4项VoiceOutputRoutePolicyTest通过，63覆盖安装成功。截图确认四键同色背景、纯图标回车及空剪贴板隐藏。剪贴板实际消费完整闭环尚未确认；真实录音至讯飞的操作被安全审批拒绝，已询问用户明确授权，未绕过执行。因此整体验收仍BLOCK，不称全部修复。
+- 极简单排功能键迭代：面板限制 320dp 宽；上排为剪贴板摘要和拖动柄，下排返回普通键盘/语音/删除/Enter 四等分，复用普通键帽。极简语音取消桌面专属深色物理键背景，静态图标统一使用主题文字色。新增独立极简入口与返回键盘矢量图标。返回明确恢复普通字母键盘并关闭悬浮模式，不再按历史模式返回全局。剪贴板点击通过既有 `commitTextFrom(overlayRequestId, text)` 输入当前预览对应原文，空剪贴板和语音过程不触发粘贴，不打开列表。
+- 单排候选正式构建/验签及63覆盖安装成功，截图核对四键排列，实际点击返回按钮恢复普通键盘。`bin/KBoard-1.4.2-202-minimal-row-release.apk` SHA-256 `3a09d15b51194d24f2c7ffed5c8216ef3c1eb26d432f5543f30a029339c3410e`。完整语音与远程粘贴链路尚未验收，不能称全量通过。
+- 极简视觉复核：63 截图确认原面板约 1190px 宽，删除大矩形与回车小圆形失衡。仅极简模式改为 40% 屏宽、320–384dp 范围、112dp 内容高度；导航栏 Insets 另计，避免压缩键帽命中高度。移除极简自定义键帽尺寸参数，继承当前普通键盘主题；回车沿用原行为/图标/ID/反馈，仅改成与删除协调的矩形键帽，摘要文字缩至 14sp。普通和全局按键布局不变。
+- 紧凑版 Release 构建/正式证书验签通过，63 覆盖安装成功；副屏截图确认 768px 宽、删除和 Enter 等宽矩形，按钮位于导航栏上方。包为 `bin/KBoard-1.4.2-202-minimal-compact-release.apk`，SHA-256 `89d97d534bd5ce687d5ee0086fda24336e4edf4c214ffb9d0e43d252c79f8569`。本轮为布局与启动验证，不代表完整语音/跨屏回归通过。
+- 63 后续连接恢复：12:29 正式签名候选 `install --no-incremental -r` 成功，设备端 APK SHA-256 回读与 `328c60f0…42058813` 一致，默认输入法不变，未卸载或清数据。副屏便签启动后 IME 显示于 D2，读取到 75px 导航栏 Insets。用户随后要求优先调查异常提示，极简交互验收尚未完成。
+- 警告线索：保留日志中 09-21 20:24:04 出现 `Ignoring showSoftInput` 和 `reportStartInput/setInputMethod ... invalid token`，同段存在双屏配置变化；09-22 12:28:27 出现 `Unable to send config for IME proc ... no app thread`。这些仅为会话/配置切换异常线索，尚未对应到用户所见提示，不能判定根因或已修复。此次安装前后退出记录为 `installPackageLI`，不应计为崩溃。原始证据位于 `/Volumes/ORICO/kemi-build-cache/app-release-gate/kboard/android/202-63-minimal-20260922/`。
+- 在普通、悬浮、全局之外新增独立 `Minimal` 显示模式；普通工具栏增加“极简键盘”入口，进入前同时保存显示模式和实际布局，返回键可准确恢复普通字母、数字、悬浮或全局键盘，进程重建后也不会递归返回极简模式。
+- 极简界面仅保留剪贴板摘要/入口、语音实时状态、返回上一键盘、按住语音、删除和确定。删除与确定复用既有 `BackspaceKey`/`ReturnKey` 输入及反馈链路；剪贴板复用 `ClipboardWindow` 和弱引用更新监听；语音复用既有权限、网络、partial、松手校准、final 提交及清理流程，没有新增第二套 ASR 客户端。
+- 极简键盘使用独立 62% 自适应宽度（360–720dp）和 160dp 高度，拖动柄可在当前宿主窗口范围内自由移动并做边界钳制；不读取或改写普通悬浮键盘的宽高、停靠和位置偏好。物理 Overlay 仍保持紧凑窗口高度，避免为了拖动把透明窗口扩大到全屏并截获下层触摸。
+- 生命周期保护：布局分离时注销剪贴板监听，InputView 销毁沿用统一 `dispose()`；切换/旋转后的延迟定位带模式校验，极简拖动不会触发输入、按键音、悬浮停靠或全局水族响应。
+- 复核补充：切换极简模式时取消进行中的语音启动/提交任务并解绑旧语音按钮；候选栏状态变化不再重新显示隐藏工具栏。打开完整剪贴板时恢复其返回栏，剪贴板数据库读取和更新监听随键盘分离取消，避免挂起任务持有旧 View。全局模式长按退出按钮进入极简模式。
+- 拖动命中：`FcitxInputMethodService.onComputeInsets()` 仅在极简模式按实际面板位置设置触摸区域，拖动请求重新计算，透明区域不作为键盘命中区；保留原普通/全局分支。此行为仍需真机验证。
+- 自动验证：Release 构建及新增/相关 `KeyboardPresentationModeTest`、`PhysicalOverlayWindowPolicyTest`、`VoiceOutputRoutePolicyTest` 共 13 项通过。此前全量 JVM 98 项中 97 项通过，唯一失败为既有 `ThemeSerializationTest.version2` 的“v2 不应迁移”夹具断言，失败栈不涉及本次输入、布局、语音或剪贴板文件。
+- 63 真机门禁阻断：2026-09-22，`adb connect 192.168.3.63:5555` 及两次 TCP 5555 检查均超时。未覆盖安装、未清除数据、未进行交互和截图验收，不能宣称真机通过；未用其他设备替代指定的 63。
+- 交付候选：`bin/KBoard-1.4.2-202-minimal-candidate-release.apk`，包名 `com.newlink.kemi.kboard`，1.4.2 / 202，arm64-v8a。最终源码重新构建 Release 成功，13 项相关单元测试通过；v1/v2 验签通过，平台证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。APK SHA-256 `328c60f0437a8f6b7b9e5b349c28b7494b66ca20e34cfbc9861cb3fa42058813`。构建日志 `/Volumes/ORICO/kemi-build-cache/kboard-minimal/release-final.log`。按发布稳定性门禁保留为待真机候选，不视为正式验收发布。
+
 ## 2026-09-20 - 隐藏键修复误吞PAD物理右键（候选，未发布）
 
 - 75真实HL mouse BTN_RIGHT双边沿产生SOURCE_MOUSE/KEYCODE_BACK及BUTTON_BACK事件；IME已隐藏仍进入新增onKeyDown BACK分支，客户端没有收到PhysicalMouse，Windows无菜单。原失败证据保留于287-nav75-20260920/deadzone-fix/mouse-right-failure。

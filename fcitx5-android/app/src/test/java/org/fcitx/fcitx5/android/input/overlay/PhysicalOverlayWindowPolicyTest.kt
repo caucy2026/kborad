@@ -37,4 +37,9 @@ class PhysicalOverlayWindowPolicyTest {
         assertEquals(720, PhysicalOverlayWindowPolicy.resolveHeight("QWERTY", 720, 1280))
         assertEquals(1280, PhysicalOverlayWindowPolicy.resolveHeight("QWERTY", 1400, 1280))
     }
+
+    @Test
+    fun minimalWindowStaysCompactInsteadOfInterceptingTheFullDisplay() {
+        assertEquals(320, PhysicalOverlayWindowPolicy.resolveHeight("Minimal", 320, 1280))
+    }
 }

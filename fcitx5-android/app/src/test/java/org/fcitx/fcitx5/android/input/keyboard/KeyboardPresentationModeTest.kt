@@ -14,6 +14,7 @@ class KeyboardPresentationModeTest {
         listOf(
             KeyboardPresentationMode.Normal,
             KeyboardPresentationMode.Floating,
+            KeyboardPresentationMode.Minimal,
             KeyboardPresentationMode.Desktop
         ).forEach { mode ->
             assertEquals(mode, KeyboardPresentationMode.decode(mode.persistedValue))
@@ -24,6 +25,19 @@ class KeyboardPresentationModeTest {
     fun `mode selects the matching first keyboard layout`() {
         assertEquals(TextKeyboard.Name, KeyboardPresentationMode.Normal.layoutName)
         assertEquals(TextKeyboard.FloatingName, KeyboardPresentationMode.Floating.layoutName)
+        assertEquals(MinimalKeyboard.Name, KeyboardPresentationMode.Minimal.layoutName)
         assertEquals(DesktopKeyboard.Name, KeyboardPresentationMode.Desktop.layoutName)
+    }
+
+    @Test
+    fun `minimal cannot recursively return to itself`() {
+        assertEquals(
+            KeyboardPresentationMode.Normal,
+            KeyboardPresentationMode.decodePrevious(KeyboardPresentationMode.Minimal.persistedValue)
+        )
+        assertEquals(
+            KeyboardPresentationMode.Desktop,
+            KeyboardPresentationMode.decodePrevious(KeyboardPresentationMode.Desktop.persistedValue)
+        )
     }
 }

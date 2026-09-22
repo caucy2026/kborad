@@ -19,6 +19,7 @@ import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
+import org.fcitx.fcitx5.android.input.clipboard.ClipboardWindow
 import org.fcitx.fcitx5.android.input.dependency.fcitx
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
 import org.fcitx.fcitx5.android.input.dependency.inputView
@@ -82,6 +83,18 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
             // The desktop layout is part of the same keyboard surface. Reusing the active
             // theme keeps candidates, toolbar and keys in one coherent palette.
             DesktopKeyboard.Name to DesktopKeyboard(context, theme),
+            MinimalKeyboard.Name to MinimalKeyboard(
+                context,
+                theme,
+                onClipboard = { text -> service.commitTextFrom(inputView.overlayRequestId, text) },
+                onReturnToPrevious = {
+                    floatingMode = false
+                    AppPrefs.getInstance().keyboard.floatingKeyboard.setValue(false)
+                    rememberPresentationMode(KeyboardPresentationMode.Normal)
+                    switchLayout(TextKeyboard.Name, remember = false)
+                },
+                onDrag = inputView::onMinimalKeyboardDrag
+            ),
             NumberKeyboard.Name to NumberKeyboard(context, theme)
         )
     }
@@ -180,13 +193,15 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     }
 
     override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
-        val targetLayout = if (presentationMode == KeyboardPresentationMode.Desktop) {
-            DesktopKeyboard.Name
-        } else {
+        val targetLayout = when (presentationMode) {
+            KeyboardPresentationMode.Desktop -> DesktopKeyboard.Name
+            KeyboardPresentationMode.Minimal -> MinimalKeyboard.Name
+            else -> {
             when (info.inputType and InputType.TYPE_MASK_CLASS) {
                 InputType.TYPE_CLASS_NUMBER -> NumberKeyboard.Name
                 InputType.TYPE_CLASS_PHONE -> NumberKeyboard.Name
                 else -> if (floatingMode) TextKeyboard.FloatingName else TextKeyboard.Name
+            }
             }
         }
         switchLayout(targetLayout, remember = false)
@@ -205,11 +220,45 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         switchLayout(DesktopKeyboard.Name, remember = false)
     }
 
+    fun showMinimalKeyboard() {
+        if (currentKeyboardName == MinimalKeyboard.Name) return
+        AppPrefs.getInstance().internal.previousKeyboardPresentationMode.setValue(
+            presentationMode.persistedValue
+        )
+        AppPrefs.getInstance().internal.previousKeyboardLayoutName.setValue(currentKeyboardName)
+        rememberPresentationMode(KeyboardPresentationMode.Minimal)
+        switchLayout(MinimalKeyboard.Name, remember = false)
+    }
+
+    private fun restorePreviousKeyboard() {
+        val restored = KeyboardPresentationMode.decodePrevious(
+            AppPrefs.getInstance().internal.previousKeyboardPresentationMode.getValue()
+        )
+        floatingMode = restored == KeyboardPresentationMode.Floating
+        when (restored) {
+            KeyboardPresentationMode.Floating ->
+                AppPrefs.getInstance().keyboard.floatingKeyboard.setValue(true)
+            KeyboardPresentationMode.Normal ->
+                AppPrefs.getInstance().keyboard.floatingKeyboard.setValue(false)
+            KeyboardPresentationMode.Minimal,
+            KeyboardPresentationMode.Desktop -> Unit
+        }
+        rememberPresentationMode(restored)
+        val previousLayout = AppPrefs.getInstance().internal.previousKeyboardLayoutName.getValue()
+        val targetLayout = when (restored) {
+            KeyboardPresentationMode.Normal ->
+                if (previousLayout == NumberKeyboard.Name) NumberKeyboard.Name else TextKeyboard.Name
+            else -> restored.layoutName
+        }
+        switchLayout(targetLayout, remember = false)
+    }
+
     internal fun overlayLayoutName(): String = currentKeyboardName
 
     internal fun restoreOverlayLayout(name: String?) {
         val restored = when (name) {
             DesktopKeyboard.Name -> KeyboardPresentationMode.Desktop
+            MinimalKeyboard.Name -> KeyboardPresentationMode.Minimal
             TextKeyboard.FloatingName -> KeyboardPresentationMode.Floating
             TextKeyboard.Name -> KeyboardPresentationMode.Normal
             else -> KeyboardPresentationMode.decode(
@@ -223,6 +272,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
                 AppPrefs.getInstance().keyboard.floatingKeyboard.setValue(true)
             KeyboardPresentationMode.Normal ->
                 AppPrefs.getInstance().keyboard.floatingKeyboard.setValue(false)
+            KeyboardPresentationMode.Minimal,
             KeyboardPresentationMode.Desktop -> Unit
         }
         switchLayout(restored.layoutName, remember = false)
@@ -331,5 +381,14 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
             // mode stayed the same, so mode styling must be synchronized on every attachment.
             inputView.setDesktopKeyboardMode(it)
         }
+        val minimalKeyboard = currentKeyboard as? MinimalKeyboard
+        inputView.setMinimalKeyboardMode(
+            enabled = minimalKeyboard != null,
+            voiceButton = minimalKeyboard?.voiceButton
+        )
+    }
+
+    fun showMinimalVoiceTranscript(text: CharSequence?) {
+        (currentKeyboard as? MinimalKeyboard)?.showVoiceTranscript(text)
     }
 }

@@ -143,6 +143,10 @@
     <string name="return_previous_input_method">Return to previous input method</string>
     <string name="move_floating_keyboard">Move floating keyboard</string>
     <string name="resize_floating_keyboard">Resize floating keyboard</string>
+    <string name="minimal_keyboard">Minimal keyboard</string>
+    <string name="minimal_keyboard_return">Return to previous keyboard</string>
+    <string name="minimal_keyboard_move">Move minimal keyboard</string>
+    <string name="minimal_keyboard_clipboard_empty">Clipboard is empty</string>
     <string name="popup_on_key_press">Popup on key press</string>
     <string name="disable_animation">Disable animation</string>
     <string name="import_from_file">Import from file…</string>
@@ -343,8 +347,10 @@
     <string name="start_voice_input">Start voice input</string>
     <string name="stop_voice_input">Stop voice input</string>
     <string name="voice_input_error">语音识别失败：%1$s</string>
-    <string name="voice_input_connecting">正在连接语音服务…</string>
     <string name="voice_input_listening">正在听，请继续说…</string>
+    <string name="voice_input_connecting">正在连接语音，请按住稍候…</string>
+    <string name="voice_input_released_before_ready">语音连接尚未就绪，请重新按住，看到“正在听”后再说话</string>
+    <string name="voice_input_no_speech">没有识别到语音，请按住重试</string>
     <string name="voice_input_calibrating">正在校准…</string>
     <string name="voice_input_hold_to_talk">请按住麦克风说话，松手结束</string>
     <string name="voice_input_permission_required">需要麦克风权限，请先授权后再试</string>

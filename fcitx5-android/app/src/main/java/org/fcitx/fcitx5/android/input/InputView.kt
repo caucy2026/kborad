@@ -169,6 +169,10 @@ class InputView(
         useFullSizeIcon(DESKTOP_OPERATION_ICON_SIZE_DP)
         setIconTintColor(theme.altKeyTextColor)
         setOnClickListener { keyboardWindow.toggleDesktopKeyboard() }
+        setOnLongClickListener {
+            keyboardWindow.showMinimalKeyboard()
+            true
+        }
     }
 
     private val desktopScreenSwitchButton =
@@ -345,6 +349,8 @@ class InputView(
         get() = desktopKeyboardModeState.enabled
     private var imeWindowVisible = false
     private var pendingDesktopKeyboardMode: Boolean? = null
+    private var minimalKeyboardMode = false
+    private var pendingMinimalKeyboardMode: Pair<Boolean, ToolButton?>? = null
     private var inputViewHierarchyReady = false
     private var desktopHeightConfigurationKey = ""
     private var lockedDesktopKeyboardHeightPx = 0
@@ -369,6 +375,8 @@ class InputView(
     private var floatingResizeDownX = 0f
     private var floatingResizeDownY = 0f
     private var isFloatingResizeMode = false
+    private var minimalSavedX = 0f
+    private var minimalSavedY = 0f
 
     val floatingResizeTouchInset: Int
         get() = if (isFloatingResizeMode) dp(FLOATING_RESIZE_CORNER_OFFSET_DP) else 0
@@ -702,6 +710,10 @@ class InputView(
             pendingDesktopKeyboardMode = null
             setDesktopKeyboardMode(enabled)
         }
+        pendingMinimalKeyboardMode?.let { (enabled, button) ->
+            pendingMinimalKeyboardMode = null
+            setMinimalKeyboardMode(enabled, button)
+        }
     }
 
     fun toggleFloatingKeyboard(): Boolean {
@@ -836,6 +848,131 @@ class InputView(
         updateDesktopCompositionPosition()
     }
 
+    fun setMinimalKeyboardMode(enabled: Boolean, voiceButton: ToolButton?) {
+        if (!inputViewHierarchyReady) {
+            pendingMinimalKeyboardMode = enabled to voiceButton
+            return
+        }
+        val changed = minimalKeyboardMode != enabled
+        minimalKeyboardMode = enabled
+        keyboardView.alpha = if (enabled) 0.85f else 1f
+        kawaiiBar.setMinimalKeyboardMode(
+            enabled,
+            if (enabled) voiceButton else desktopVoiceButton
+        )
+        if (enabled) {
+            kawaiiBar.view.visibility = GONE
+            floatingWindowHandle.visibility = GONE
+            floatingResizeButton.visibility = GONE
+            floatingHideKeyboardButton.visibility = GONE
+            floatingResizeCorners.forEach { it.visibility = GONE }
+            keyboardView.clipToOutline = true
+            keyboardView.elevation = dp(FLOATING_KEYBOARD_ELEVATION_DP).toFloat()
+            keyboardView.updateLayoutParams<LayoutParams> {
+                width = minimalKeyboardWidthPx
+                height = dp(MINIMAL_KEYBOARD_HEIGHT_DP) +
+                    if (overlayRequestId != null) context.navbarFrameHeight()
+                    else lastNavigationBottomInset.coerceAtLeast(0)
+            }
+            updateKeyboardSize()
+            keyboardView.post {
+                if (minimalKeyboardMode) {
+                    updateMinimalKeyboardPosition(minimalSavedX, minimalSavedY)
+                }
+            }
+        } else if (changed) {
+            // Do not let the previous compact panel survive until a posted floating-layout
+            // callback: the physical Overlay clips its children during that intervening frame.
+            resetFloatingKeyboardPosition(0f)
+            keyboardView.clipToOutline = false
+            keyboardView.clipBounds = null
+            keyboardView.elevation = 0f
+            kawaiiBar.view.visibility = VISIBLE
+            keyboardView.updateLayoutParams<LayoutParams> {
+                width = matchParent
+                height = if (desktopKeyboardMode) desktopKeyboardHeightPx else wrapContent
+            }
+            if (desktopKeyboardMode) {
+                updateKeyboardSize()
+            } else {
+                updateFloatingKeyboardLayout()
+            }
+            keyboardView.invalidateOutline()
+        }
+        if (changed) keyboardView.post {
+            Log.i("KBoardLayout", "minimal=$minimalKeyboardMode desktop=$desktopKeyboardMode " +
+                "overlay=${overlayRequestId != null} panel=${keyboardView.width}x${keyboardView.height} " +
+                "offset=${keyboardView.translationX},${keyboardView.translationY} " +
+                "content=${windowManager.view.width}x${windowManager.view.height} " +
+                "clip=${keyboardView.clipToOutline} alpha=${keyboardView.alpha}")
+        }
+    }
+
+    fun showMinimalVoiceTranscript(text: CharSequence?) {
+        keyboardWindow.showMinimalVoiceTranscript(text)
+    }
+
+    fun minimalTouchableBounds(): android.graphics.Rect? {
+        if (!minimalKeyboardMode) return null
+        val location = IntArray(2)
+        keyboardView.getLocationInWindow(location)
+        return android.graphics.Rect(
+            location[0], location[1],
+            location[0] + keyboardView.width, location[1] + keyboardView.height
+        )
+    }
+
+    fun onMinimalKeyboardDrag(view: View, event: MotionEvent): Boolean {
+        if (!minimalKeyboardMode) return false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                floatingHandleDownX = event.rawX
+                floatingHandleDownY = event.rawY
+                floatingStartX = keyboardView.translationX
+                floatingStartY = keyboardView.translationY
+                view.parent.requestDisallowInterceptTouchEvent(true)
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                updateMinimalKeyboardPosition(
+                    floatingStartX + event.rawX - floatingHandleDownX,
+                    floatingStartY + event.rawY - floatingHandleDownY
+                )
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                view.parent.requestDisallowInterceptTouchEvent(false)
+                minimalSavedX = keyboardView.translationX
+                minimalSavedY = keyboardView.translationY
+                return true
+            }
+        }
+        return false
+    }
+
+    private val minimalKeyboardWidthPx: Int
+        get() {
+            val screenWidth = resources.displayMetrics.widthPixels
+            return (screenWidth * MINIMAL_KEYBOARD_WIDTH_PERCENT / 100)
+                .coerceAtMost(dp(MINIMAL_KEYBOARD_MAX_WIDTH_DP))
+                .coerceAtLeast(dp(MINIMAL_KEYBOARD_MIN_WIDTH_DP).coerceAtMost(screenWidth))
+        }
+
+    private fun updateMinimalKeyboardPosition(x: Float, y: Float) {
+        if (!minimalKeyboardMode) return
+        val centeredLeft = (width - keyboardView.width) / 2f
+        val minX = -centeredLeft
+        val maxX = width - centeredLeft - keyboardView.width
+        val minY = -(height - keyboardView.height).toFloat()
+        val maxY = 0f
+        keyboardView.translationX = clampToLayoutRange(x, minX, maxX)
+        keyboardView.translationY = clampToLayoutRange(y, minY, maxY)
+        preedit.ui.root.translationX = keyboardView.translationX
+        preedit.ui.root.translationY = keyboardView.translationY
+        // Refresh the IME touchable region after dragging; transparent space stays usable.
+        requestLayout()
+    }
+
     private fun updateOverlayNavigationBackground(desktopMode: Boolean) {
         if (overlayRequestId == null) return
         bottomPaddingSpace.setBackgroundColor(
@@ -853,6 +990,14 @@ class InputView(
     }
 
     private fun updateFloatingKeyboardLayout() {
+        if (minimalKeyboardMode) {
+            floatingWindowHandle.visibility = GONE
+            floatingResizeButton.visibility = GONE
+            floatingHideKeyboardButton.visibility = GONE
+            floatingResizeCorners.forEach { it.visibility = GONE }
+            updateKeyboardSize()
+            return
+        }
         // Desktop mode owns the full physical panel even when the user previously enabled the
         // floating keyboard. Keep that preference intact so it can be restored after desktop
         // mode ends, but never let it shrink or translate the desktop surface.
@@ -885,10 +1030,12 @@ class InputView(
         keyboardView.elevation = if (isFloating) dp(FLOATING_KEYBOARD_ELEVATION_DP).toFloat() else 0f
         updateKeyboardSize()
         keyboardView.post {
+            if (minimalKeyboardMode || desktopKeyboardMode) return@post
+            if (isFloating != floatingKeyboard.getValue()) return@post
             // The mode may change again before this posted layout callback runs (for example
             // floating -> docked -> desktop in the same IME transition). Never apply floating
             // bounds to the new full-screen geometry.
-            if (isFloating && floatingKeyboard.getValue() && !desktopKeyboardMode) {
+            if (isFloating) {
                 restoreFloatingKeyboardPosition()
             } else {
                 resetFloatingKeyboardPosition(translationY)
@@ -1078,7 +1225,7 @@ class InputView(
 
     private fun updateKeyboardSize() {
         windowManager.view.updateLayoutParams {
-            height = if (desktopKeyboardMode) {
+            height = if (desktopKeyboardMode || minimalKeyboardMode) {
                 0
             } else if (floatingKeyboard.getValue()) {
                 keyboardHeightPx * floatingKeyboardHeightPercent.getValue()
@@ -1090,7 +1237,7 @@ class InputView(
         bottomPaddingSpace.updateLayoutParams {
             height = if (overlayRequestId != null) {
                 context.navbarFrameHeight()
-            } else if (desktopKeyboardMode || floatingKeyboard.getValue()) {
+            } else if (desktopKeyboardMode || minimalKeyboardMode || floatingKeyboard.getValue()) {
                 0
             } else {
                 keyboardBottomPaddingPx
@@ -1107,6 +1254,11 @@ class InputView(
                 // The aquarium is owned by DesktopKeyboard. Let that single surface continue
                 // behind the operation buttons so koi can swim through the complete pond. The
                 // desktop keyboard reserves this button height internally for its key rows.
+                above(bottomPaddingSpace)
+            } else if (minimalKeyboardMode) {
+                topToBottom = unset
+                topOfParent()
+                bottomToTop = unset
                 above(bottomPaddingSpace)
             } else if (floatingKeyboard.getValue()) {
                 topToTop = unset
@@ -1134,7 +1286,7 @@ class InputView(
                 }
             }
         }
-        val sidePadding = if (desktopKeyboardMode) {
+        val sidePadding = if (desktopKeyboardMode || minimalKeyboardMode) {
             dp(DESKTOP_SIDE_PADDING_DP)
         } else {
             keyboardSidePaddingPx
@@ -1188,6 +1340,11 @@ class InputView(
             )
             lastInsetsDisplayId = displayId
             lastNavigationBottomInset = appliedBottomInset
+            if (minimalKeyboardMode && overlayRequestId == null) {
+                keyboardView.updateLayoutParams<LayoutParams> {
+                    height = dp(MINIMAL_KEYBOARD_HEIGHT_DP) + appliedBottomInset
+                }
+            }
             if (desktopKeyboardMode) {
                 // Preserve key/button height. Only the intentionally oversized desktop touchpad
                 // yields the pixels occupied by this Display's system navigation bar.
@@ -1358,6 +1515,10 @@ class InputView(
         const val FLOATING_RESIZE_CORNER_PADDING_DP = 8
         const val FLOATING_RESIZE_CORNER_OFFSET_DP = 24
         const val FLOATING_KEYBOARD_DOCK_THRESHOLD_DP = 28
+        const val MINIMAL_KEYBOARD_WIDTH_PERCENT = 40
+        const val MINIMAL_KEYBOARD_MIN_WIDTH_DP = 320
+        const val MINIMAL_KEYBOARD_MAX_WIDTH_DP = 320
+        const val MINIMAL_KEYBOARD_HEIGHT_DP = 112
 
     }
 

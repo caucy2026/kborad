@@ -126,6 +126,10 @@
     <string name="expand_toolbar_by_default">預設展開工具列</string>
     <string name="desktop_keyboard">全鍵盤</string>
     <string name="exit_desktop_keyboard">退出全鍵盤</string>
+    <string name="minimal_keyboard">極簡鍵盤</string>
+    <string name="minimal_keyboard_return">返回上一個鍵盤</string>
+    <string name="minimal_keyboard_move">移動極簡鍵盤</string>
+    <string name="minimal_keyboard_clipboard_empty">剪貼簿為空</string>
     <string name="desktop_enter">Enter</string>
     <string name="return_previous_input_method">返回上一輸入法</string>
     <string name="popup_on_key_press">按鍵時彈出顯示字元</string>

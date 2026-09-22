@@ -292,6 +292,12 @@ class IflytekAsrClient(
             mainHandler.post {
                 if (generation == callbackGeneration) onFinal(text)
             }
+        } else {
+            // Idle alone deliberately leaves the final preview visible. An empty result must
+            // also terminate that UI; otherwise the user sees an endless calibration state.
+            mainHandler.post {
+                if (generation == callbackGeneration) onError("no speech detected")
+            }
         }
     }
 

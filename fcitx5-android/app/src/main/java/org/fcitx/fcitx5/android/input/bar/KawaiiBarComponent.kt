@@ -137,6 +137,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private var isToolbarManuallyToggled: Boolean = false
     private var shouldShowVoiceInput: Boolean = false
     private var desktopKeyboardMode: Boolean = false
+    private var minimalKeyboardMode: Boolean = false
     private var desktopVoiceButton: ToolButton? = null
 
     private val useDirectVoiceCommit: Boolean
@@ -319,6 +320,32 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         updateHideKeyboardButton()
     }
 
+    fun setMinimalKeyboardMode(enabled: Boolean, button: ToolButton?) {
+        if (minimalKeyboardMode != enabled) {
+            voiceStartJob?.cancel()
+            voiceCommitJob?.cancel()
+            voiceStartJob = null
+            voiceCommitJob = null
+            if (asrClientDelegate.isInitialized()) {
+                cancelVoiceEditorPreview()
+                asrClient.cancel()
+            }
+            voicePressActive = false
+            hideVoiceFeedback()
+        }
+        if (desktopVoiceButton !== button) {
+            desktopVoiceButton?.apply {
+                visibility = View.GONE
+                onGestureListener = null
+                setOnTouchListener(null)
+            }
+        }
+        minimalKeyboardMode = enabled
+        desktopVoiceButton = button
+        if (enabled) asrClient.state
+        updateHideKeyboardButton()
+    }
+
     fun setDesktopKeyboardMode(enabled: Boolean) {
         desktopKeyboardMode = enabled
         // Global mode uses a fixed dark aquarium surface independent of the selected theme.
@@ -358,8 +385,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
 
     private fun updateDesktopVoiceButton(useVoiceInput: Boolean) {
         desktopVoiceButton?.apply {
-            visibility = if (desktopKeyboardMode && useVoiceInput) View.VISIBLE else View.GONE
-            if (!desktopKeyboardMode || !useVoiceInput) {
+            val externalVoiceMode = desktopKeyboardMode || minimalKeyboardMode
+            visibility = if (externalVoiceMode && useVoiceInput) View.VISIBLE else View.GONE
+            if (!externalVoiceMode || !useVoiceInput) {
                 setPhysicalKeyStyle(
                     false,
                     theme.altKeyBackgroundColor,
@@ -383,11 +411,14 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             physicalPressVisualEnabled = false
             gestureHapticEnabled = false
             contentDescription = context.getString(R.string.start_voice_input)
-            isEnabled = isNetworkAvailableForVoice()
+            // Minimal mode must still dispatch DOWN when offline so the shared voice handler
+            // can explain the failure instead of presenting an apparently dead microphone.
+            isEnabled = minimalKeyboardMode || isNetworkAvailableForVoice()
             isClickable = true
             alpha = if (isEnabled) 1f else 0.38f
             setIconTintColor(
-                if (isEnabled) Color.WHITE else DESKTOP_VOICE_DISABLED_COLOR
+                if (minimalKeyboardMode) theme.altKeyTextColor
+                else if (isEnabled) Color.WHITE else DESKTOP_VOICE_DISABLED_COLOR
             )
             swipeEnabled = true
             setOnTouchListener(null)
@@ -401,7 +432,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                         view.parent.requestDisallowInterceptTouchEvent(false)
                         setIconTintColor(
                             if (asrClient.state != IflytekAsrClient.State.Idle)
-                                DESKTOP_VOICE_ACTIVE_ICON_COLOR else Color.WHITE
+                                DESKTOP_VOICE_ACTIVE_ICON_COLOR
+                            else if (minimalKeyboardMode) theme.altKeyTextColor else Color.WHITE
                         )
                     }
                     CustomGestureView.GestureType.Move -> {}
@@ -493,10 +525,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     if (voicePressActive) {
                         button.setIconTintColor(
                             if (state != IflytekAsrClient.State.Idle) DESKTOP_VOICE_ACTIVE_ICON_COLOR
-                            else Color.WHITE
+                            else if (minimalKeyboardMode) theme.altKeyTextColor else Color.WHITE
                         )
                     } else {
-                        button.setIconTintColor(Color.WHITE)
+                        button.setIconTintColor(if (minimalKeyboardMode) theme.altKeyTextColor else Color.WHITE)
                     }
                     button.contentDescription = context.getString(
                         if (state != IflytekAsrClient.State.Idle) R.string.stop_voice_input
@@ -504,7 +536,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     )
                 }
                 when (state) {
-                    IflytekAsrClient.State.Starting,
+                    IflytekAsrClient.State.Starting ->
+                        showVoiceFeedback(context.getString(R.string.voice_input_connecting))
                     IflytekAsrClient.State.Listening ->
                         showVoiceFeedback(context.getString(R.string.voice_input_listening))
                     IflytekAsrClient.State.Finishing ->
@@ -556,7 +589,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     }
 
     private fun showVoiceFeedback(text: CharSequence) {
-        if (desktopKeyboardMode) {
+        if (minimalKeyboardMode) {
+            inputView.showMinimalVoiceTranscript(text)
+        } else if (desktopKeyboardMode) {
             desktopVoiceTranscript.text = text
             // The opaque overlay is already measured above the candidate animator. Alpha is a
             // draw property only and therefore cannot start a layout/insets animation.
@@ -567,6 +602,14 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     }
 
     private fun ToolButton.restoreDesktopVoiceRestStyle() {
+        if (minimalKeyboardMode) {
+            setPhysicalKeyStyle(false, theme.altKeyBackgroundColor, theme.keyPressHighlightColor)
+            setIconTintColor(theme.altKeyTextColor)
+            keyDownSoundEnabled = false
+            physicalReleaseSoundEnabled = false
+            gestureHapticEnabled = false
+            return
+        }
         physicalPressVisualEnabled = false
         setPhysicalKeyStyle(
             true,
@@ -580,7 +623,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     }
 
     private fun hideVoiceFeedback() {
-        if (desktopKeyboardMode) {
+        if (minimalKeyboardMode) {
+            inputView.showMinimalVoiceTranscript(null)
+        } else if (desktopKeyboardMode) {
             desktopVoiceTranscript.text = ""
             desktopVoiceTranscript.alpha = 0f
         } else {
@@ -632,7 +677,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     // but does not disturb the editor until the hold threshold is actually met.
                     cancelVoiceEditorPreview()
                     showVoiceFeedback(
-                        context.getString(R.string.voice_input_listening)
+                        context.getString(R.string.voice_input_connecting)
                     )
                     voicePressActive = true
                     voiceStartJob = service.lifecycleScope.launch {
@@ -663,6 +708,11 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                             asrClient.cancel()
                             cancelVoiceEditorPreview()
                             hideVoiceFeedback()
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.voice_input_released_before_ready),
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                         IflytekAsrClient.State.Listening,
                         IflytekAsrClient.State.Finishing -> {
@@ -692,6 +742,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private fun localizeVoiceError(message: String): String {
         val lower = message.lowercase()
         return when {
+            lower == "no speech detected" ->
+                context.getString(R.string.voice_input_no_speech)
             lower.contains("cleartext") || lower.contains("network security policy") ->
                 context.getString(R.string.voice_input_error_network_policy)
             lower.contains("eai_nodata") || lower.contains("failed to connect") ||
@@ -755,6 +807,12 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     windowManager.attachWindow(KeyboardWindow)
                     (windowManager.getEssentialWindow(KeyboardWindow) as KeyboardWindow)
                         .toggleDesktopKeyboard()
+                }
+                minimalKeyboardButton.setOnClickListener {
+                    Timber.d("Minimal keyboard button clicked")
+                    windowManager.attachWindow(KeyboardWindow)
+                    (windowManager.getEssentialWindow(KeyboardWindow) as KeyboardWindow)
+                        .showMinimalKeyboard()
                 }
                 updateFloatingKeyboardState(prefs.keyboard.floatingKeyboard.getValue())
                 moreButton.setOnClickListener {
@@ -853,7 +911,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     }
 
     private fun switchUiByState(state: KawaiiBarStateMachine.State) {
-        view.visibility = View.VISIBLE
+        view.visibility = if (minimalKeyboardMode) View.GONE else View.VISIBLE
         val index = state.ordinal
         if (barAnimator.displayedChild == index) return
         val new = barAnimator.getChildAt(index)
