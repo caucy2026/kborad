@@ -144,6 +144,10 @@
     <string name="return_previous_input_method">Return to previous input method</string>
     <string name="move_floating_keyboard">Move floating keyboard</string>
     <string name="resize_floating_keyboard">Resize floating keyboard</string>
+    <string name="minimal_keyboard">Minimal keyboard</string>
+    <string name="minimal_keyboard_return">Return to previous keyboard</string>
+    <string name="minimal_keyboard_move">Move minimal keyboard</string>
+    <string name="minimal_keyboard_clipboard_empty">Clipboard is empty</string>
     <string name="popup_on_key_press">Popup on key press</string>
     <string name="disable_animation">Disable animation</string>
     <string name="import_from_file">Import from file…</string>
@@ -343,8 +347,10 @@
     <string name="preferred_voice_input">Preferred voice input</string>
     <string name="start_voice_input">Start voice input</string>
     <string name="stop_voice_input">Stop voice input</string>
+    <string name="voice_input_released_before_ready">Speech connection is not ready. Hold again and wait for Listening before speaking.</string>
+    <string name="voice_input_no_speech">No speech recognized. Hold to try again.</string>
     <string name="voice_input_error">Speech recognition failed: %1$s</string>
-    <string name="voice_input_connecting">Connecting to speech service…</string>
+    <string name="voice_input_connecting">Connecting to speech service, please keep holding…</string>
     <string name="voice_input_listening">Listening, please continue…</string>
     <string name="voice_input_calibrating">Calibrating…</string>
     <string name="voice_input_hold_to_talk">Hold the microphone to speak; release to finish</string>

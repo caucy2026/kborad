@@ -144,6 +144,10 @@
     <string name="return_previous_input_method">返回上一输入法</string>
     <string name="move_floating_keyboard">移动悬浮键盘</string>
     <string name="resize_floating_keyboard">调整悬浮键盘大小</string>
+    <string name="minimal_keyboard">极简键盘</string>
+    <string name="minimal_keyboard_return">返回上一个键盘</string>
+    <string name="minimal_keyboard_move">移动极简键盘</string>
+    <string name="minimal_keyboard_clipboard_empty">剪贴板为空</string>
     <string name="popup_on_key_press">按键时弹出显示字符</string>
     <string name="disable_animation">禁用动画</string>
     <string name="import_from_file">导入文件…</string>

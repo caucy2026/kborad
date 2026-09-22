@@ -35,6 +35,14 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             "last_keyboard_presentation_mode",
             KeyboardPresentationMode.Normal.persistedValue
         )
+        val previousKeyboardPresentationMode = string(
+            "previous_keyboard_presentation_mode",
+            KeyboardPresentationMode.Normal.persistedValue
+        )
+        val previousKeyboardLayoutName = string(
+            "previous_keyboard_layout_name",
+            KeyboardPresentationMode.Normal.layoutName
+        )
         val lastPickerType = string("last_picker_type", PickerWindow.Key.Emoji.name)
         val verboseLog = bool("verbose_log", false)
         val pid = int("pid", 0)

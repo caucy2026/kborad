@@ -1283,6 +1283,13 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private var inputViewLocation = intArrayOf(0, 0)
 
     override fun onComputeInsets(outInsets: Insets) {
+        inputView?.minimalTouchableBounds()?.let { bounds ->
+            outInsets.contentTopInsets = decorView.height
+            outInsets.visibleTopInsets = decorView.height
+            outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
+            outInsets.touchableRegion.set(bounds)
+            return
+        }
         if (inputDeviceMgr.isVirtualKeyboard) {
             inputView?.keyboardView?.getLocationInWindow(inputViewLocation)
             val touchableTop = inputViewLocation[1] - (inputView?.floatingResizeTouchInset ?: 0)
