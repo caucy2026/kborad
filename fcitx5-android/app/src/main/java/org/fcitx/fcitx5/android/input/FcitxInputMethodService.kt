@@ -100,6 +100,9 @@ import timber.log.Timber
 import java.lang.ref.WeakReference
 import kotlin.math.max
 
+/** System BACK belongs to the focused application, never to the IME window. */
+internal fun shouldConsumeImeNavigationBack(flags: Int, source: Int): Boolean = false
+
 class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onSystemImeAttached() {
@@ -1432,23 +1435,11 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         // PAD firmware represents the physical mouse right button as BACK.
         // Leave both edges to the focused application, including when IME is hidden.
         if (keyCode == KeyEvent.KEYCODE_BACK && isMouseBackEvent(event)) return false
-        // The navigation bar's bottom-left hide affordance is delivered to the active IME as
-        // KEYCODE_BACK on this Android 12 build. Never forward that system navigation event into
-        // Fcitx/the editor. The framework's default handler does not dismiss our desktop/fullscreen
-        // input view, so explicitly hide the IME on the first down event and consume the pair.
-        // DesktopKeyboard's explicit remote BACK button uses sendDesktopSystemKeyState() and is
-        // therefore intentionally unaffected.
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            Log.i("KBoardNavTrace", "BACK down repeat=${event.repeatCount} display=${display?.displayId}")
-            if (event.repeatCount == 0) {
-                // After D2 -> D0 migration the editor and IME window intentionally live on
-                // different displays. requestHideSelf() is routed through IMMS using the editor
-                // client and can leave the current D0 SoftInputWindow visible. Close the window
-                // owned by this service generation as well, then let IMMS converge its state.
-                releaseDesktopInputStates()
-                hideWindow()
-                requestHideSelf(0)
-            }
+        // Never consume system BACK from the IME. Android 12 gesture navigation can mark an
+        // edge-back event as FLAG_VIRTUAL_HARD_KEY, so filtering on that flag also swallows the
+        // focused application's normal right-edge back gesture. The desktop keyboard's explicit
+        // BACK button uses sendDesktopSystemKeyState() and remains unaffected.
+        if (keyCode == KeyEvent.KEYCODE_BACK && shouldConsumeImeNavigationBack(event.flags, event.source)) {
             return true
         }
         if (isPhysicalHardwareKey(event) && hardwareKeyAnomalyFilter.shouldDropDown(
@@ -1481,7 +1472,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         // PAD firmware represents the physical mouse right button as BACK.
         // Leave both edges to the focused application, including when IME is hidden.
         if (keyCode == KeyEvent.KEYCODE_BACK && isMouseBackEvent(event)) return false
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
+        // System BACK must reach the focused application; see onKeyDown above.
+        if (keyCode == KeyEvent.KEYCODE_BACK && shouldConsumeImeNavigationBack(event.flags, event.source)) {
             return true
         }
         if (isPhysicalHardwareKey(event) && hardwareKeyAnomalyFilter.shouldDropUp(
