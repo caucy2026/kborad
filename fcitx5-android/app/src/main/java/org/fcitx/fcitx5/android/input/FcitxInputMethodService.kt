@@ -1317,6 +1317,26 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     fun toggleFloatingKeyboard(): Boolean = inputView?.toggleFloatingKeyboard() ?: false
 
     fun toggleImeDisplay() {
+        // Newer remote proxies migrate their editor Activity together with the IME.
+        // Keep the older overlay/host-rehome handshake below for older deployments.
+        if (currentInputEditorInfo?.packageName in CROSS_DISPLAY_EDITOR_PACKAGES) {
+            val extras = currentInputEditorInfo?.extras
+            val requestId = extras?.getLong("com.newlink.kemi.kboard.DISPLAY_SWITCH_REQUEST", -1L) ?: -1L
+            val supported = extras?.getInt("com.newlink.kemi.kboard.DISPLAY_SWITCH_VERSION", 0) == 1
+            val current = display?.displayId ?: android.view.Display.DEFAULT_DISPLAY
+            val handled = supported && requestId > 0 && runCatching {
+                currentInputConnection?.performPrivateCommand(
+                    "com.newlink.kemi.kboard.SWITCH_PROXY_DISPLAY",
+                    android.os.Bundle().apply {
+                        putLong("request_id", requestId)
+                        putInt("target_display_id", if (current == SECONDARY_IME_DISPLAY_ID) 0 else SECONDARY_IME_DISPLAY_ID)
+                    }
+                ) == true
+            }.getOrDefault(false)
+            Timber.i("KBoard remote display switch delegated=%s supported=%s", handled, supported)
+            if (!handled) Toast.makeText(this, R.string.remote_screen_switch_unavailable, Toast.LENGTH_SHORT).show()
+            return
+        }
         if (ExpandedKeyboardSwitchPolicy.shouldRequestHostRehome(
                 currentInputEditorInfo?.privateImeOptions
             )

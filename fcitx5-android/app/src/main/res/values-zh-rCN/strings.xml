@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="remote_screen_switch_unavailable">当前暂时无法切屏，请重新打开远程桌面键盘后重试</string>
     <string name="kboard_settings">KBoard 设置</string>
     <string name="input_languages">输入语言</string>
     <string name="keyboard_settings">键盘设置</string>
@@ -79,7 +80,7 @@
     <string name="source_code">源代码</string>
     <string name="privacy_policy">隐私政策</string>
     <string name="commercial_privacy_policy_title">隐私策略</string>
-    <string name="commercial_privacy_policy_body">KEMI Kboard不要求联网权限，也不搜集任何个人信息。</string>
+    <string name="commercial_privacy_policy_body">KEMI语音输入法使用麦克风和网络提供语音识别，并通过KEMI商城检查更新。\n\n语音输入：启用语音功能时，应用通过讯飞服务进行鉴权并发送录音以获取识别结果。鉴权使用系统提供的设备及服务参数。请勿朗读密码或其他敏感信息。\n\n更新检查：打开输入法APP或点击关于页版本号时，应用向KEMI商城发送应用包名、版本和平台信息；本机商城已登录且允许共享账号时，还会携带账号标识，用于判断可用更新。升级由用户前往KEMI商城完成。\n\n剪贴板：可在隐私页面关闭剪贴板历史记录，并设置隐藏敏感信息。系统麦克风权限可在Android应用权限设置中管理。</string>
     <string name="license">许可</string>
     <string name="open_source_licenses">开源软件许可</string>
     <string name="licenses_of_third_party_libraries">第三方库许可证</string>
@@ -360,4 +361,18 @@
     <string name="market_update_later">稍后</string>
     <string name="market_update_open_store">前往 KEMI 商城</string>
     <string name="market_update_store_unavailable">KEMI 商城不可用或不支持此链接，请检查设备上的商城应用。</string>
+    <string name="start_voice_input">开始语音输入</string>
+    <string name="stop_voice_input">停止语音输入</string>
+    <string name="voice_input_error">语音识别失败：%1$s</string>
+    <string name="voice_input_connecting">正在连接语音服务…</string>
+    <string name="voice_input_listening">正在听，请继续说…</string>
+    <string name="voice_input_calibrating">正在校准…</string>
+    <string name="voice_input_hold_to_talk">请按住麦克风说话，松手结束</string>
+    <string name="voice_input_permission_required">需要麦克风权限，请先授权后再试</string>
+    <string name="voice_input_error_network_policy">语音网络被系统安全策略拦截，请检查网络配置</string>
+    <string name="voice_input_network_unavailable">当前未联网，语音功能暂不可用</string>
+    <string name="voice_input_error_internet_permission">语音网络权限异常，请检查应用网络权限</string>
+    <string name="voice_input_error_missing_params">语音参数缺失，请联系维护人员检查 iflytek_params</string>
+    <string name="voice_input_error_microphone">麦克风不可用，请检查录音权限或设备占用</string>
+    <string name="edit_text_playground">输入测试区</string>
 </resources>

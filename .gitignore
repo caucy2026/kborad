@@ -1,1 +1,5 @@
 .DS_Store
+/release-output/
+/release.local.env
+/release.local.json
+/scripts/release/__pycache__/
