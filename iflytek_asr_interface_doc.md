@@ -476,4 +476,19 @@ adb logcat -d | grep -iE \
 
 ---
 
-*文档版本：2026-08，按讯飞 ASR 协议与通用 Android 集成经验整理，面向跨项目复用。*
+### 10.9 启动可靠性修复候选（2026-09-23，待真机验收）
+
+- 16.24 现场记录过按下约 5.2 秒才完成 HTTP 鉴权，亦有按住数秒后松手仍处于 Starting 的记录。卡点在鉴权完成之前；现有证据不能区分 DNS、TCP、连接复用或服务端响应延迟，也不能断言是最近提交引入。
+- 参考 H730 桌面语音助手的 `XunfeiCredentialProvider` / `IflytekASRClient`：每个会话仍先鉴权；HTTP 在后台执行，响应完整读取并关闭后才建立独立 WebSocket。不能缓存“鉴权成功”代替下次鉴权。
+- 候选的 HTTP 单次完整调用期限为 2500ms，网络传输故障或 HTTP 502/503/504 最多重试一次；业务拒绝鉴权不重试、不绕过。Starting 设置 8000ms 主线程超时保护，涵盖鉴权和 WebSocket 未返回 `started`。它不是实时调度保证：主线程阻塞时超时任务会延后，仍需补绝对期限边界验证。这些数值是候选策略，不代表实测启动耗时承诺。
+- 取消、网络回调、`started` 开麦和异常结束必须在同一会话锁下判断 generation 并更新状态。迟到的成功或失败均不得影响下一轮；Starting 松手仍取消，不允许延后开麦。已通过鉴权且收到 `started` 后才尝试启动 AudioRecord。
+- 记录不含凭证的阶段耗时：`auth_dns_start/end`、`auth_connect_start`、`auth_request_start`、`auth_response_start`（开始等响应）、`auth_response_headers`（已收到响应头）、`auth_body_end`、`websocket_open/started`、`microphone_started`。不得记录请求体、签名 URL、识别文本或原始服务端响应。
+- 验收应覆盖冷启动、连续按住、Starting 松手后立即重试、闲置后再次使用、断网恢复、服务端拒绝与关闭连接。单元测试的本机模拟网络通过不等于讯飞真实服务或 H730 录音验收通过；现场开麦仍需授权。
+
+### 10.10 16.24 间歇性鉴权停顿的进一步定位（2026-09-23）
+
+- 16.24 的已安装候选出现多次 `auth_request_start` 后 2500ms 内没有响应，也没有 DNS/TCP 建连事件；重试建立新 TCP 连接后，多数在约 50ms 收到 HTTP 200、约 100ms 收到 WS `started`。这直接指向首次请求复用一条闲置的旧 HTTP 连接。另一次新建连接也等满 2500ms，说明真实网络/服务端偶发无响应仍需超时重试。
+- 在本机模拟服务保持上一条 HTTP socket 打开、但不回应下一条请求时，默认 OkHttp 连接池的新会话确实被拖住；`AsrAuthRequestTest.nextAuthorizationDoesNotWaitOnPreviousIdleSocket` 在原配置下失败。此项测试不使用设备凭证，也不录音。
+- 修复候选将鉴权 HTTP 客户端的闲置连接数设为 0，每次完整鉴权请求建立新 TCP 连接。仍逐次鉴权，鉴权失败仍不得连接 WebSocket 或开启麦克风。设备上对启动耗时与识别功能的效果待新候选安装后验证。
+
+*文档版本：2026-09，按讯飞 ASR 协议与通用 Android 集成经验整理，面向跨项目复用。*

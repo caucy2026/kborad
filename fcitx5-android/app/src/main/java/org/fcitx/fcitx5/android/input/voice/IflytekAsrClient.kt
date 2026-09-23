@@ -11,10 +11,11 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Base64
 import okhttp3.Call
-import okhttp3.Callback
+import okhttp3.EventListener
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -25,8 +26,10 @@ import okhttp3.WebSocketListener
 import okio.ByteString.Companion.toByteString
 import org.json.JSONObject
 import timber.log.Timber
-import java.io.IOException
 import java.net.URLEncoder
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Proxy
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
@@ -52,11 +55,6 @@ class IflytekAsrClient(
     )
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
-        .build()
 
     @Volatile
     var state = State.Idle
@@ -64,7 +62,9 @@ class IflytekAsrClient(
 
     @Volatile
     private var generation = 0
-    private var authCall: Call? = null
+    private var authCall: AsrAuthRequest? = null
+    private var startupTimeout: Runnable? = null
+    @Volatile private var startedAt = 0L
     private var webSocket: WebSocket? = null
     private var audioRecord: AudioRecord? = null
     private var audioThread: Thread? = null
@@ -75,14 +75,22 @@ class IflytekAsrClient(
     fun start() {
         if (state != State.Idle) return
         val params = runCatching { readParams() }.getOrElse {
-            fail(it.message ?: "missing iflytek_params")
+            fail("missing or invalid iflytek_params")
             return
         }
         generation += 1
         val session = generation
         confirmedText = ""
         latestText = ""
+        startedAt = SystemClock.elapsedRealtime()
         updateState(State.Starting)
+        startupTimeout = Runnable {
+            synchronized(this) {
+                if (isCurrent(session) && state == State.Starting) {
+                    fail("speech startup timeout")
+                }
+            }
+        }.also { mainHandler.postDelayed(it, STARTUP_TIMEOUT_MS) }
         authenticate(params, session)
     }
 
@@ -96,8 +104,10 @@ class IflytekAsrClient(
                 webSocket?.send(END_FLAG)
                 val session = generation
                 mainHandler.postDelayed({
-                    if (generation == session && state == State.Finishing) {
-                        finish(combineText(confirmedText, latestText))
+                    synchronized(this) {
+                        if (generation == session && state == State.Finishing) {
+                            finish(combineText(confirmedText, latestText))
+                        }
                     }
                 }, FINAL_TIMEOUT_MS)
             }
@@ -108,6 +118,7 @@ class IflytekAsrClient(
     @Synchronized
     fun cancel() {
         generation += 1
+        clearStartupTimeout()
         authCall?.cancel()
         authCall = null
         stopAudio()
@@ -136,48 +147,53 @@ class IflytekAsrClient(
     }
 
     private fun authenticate(params: Params, session: Int) {
-        val body = JSONObject()
-            .put("xiriSn", params.wifiMac)
-            .put("license", params.token)
-            .put("channel", "NEWLINK01")
-            .put("devicewifiMac", params.wifiMac)
-            .put("deviceMac", params.wifiMac)
-            .put("sn", params.sn)
-            .put("clientVersion", params.systemVersion)
-            .put("timestamp", System.currentTimeMillis().toString())
-            .toString()
-            .toRequestBody(JSON_MEDIA_TYPE)
-        val request = Request.Builder().url(AUTH_URL).post(body).build()
-        authCall = httpClient.newCall(request).also { call ->
-            call.enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    if (isCurrent(session)) fail(e.message ?: "authentication failed")
-                }
-
-                override fun onResponse(call: Call, response: Response) {
-                    response.use {
-                        if (!isCurrent(session)) return
-                        val json = runCatching { JSONObject(response.body?.string().orEmpty()) }
-                            .getOrElse {
-                                fail("invalid authentication response")
-                                return
+        authCall = AsrAuthRequest(AUTH_CLIENT, request = {
+            val body = JSONObject()
+                .put("xiriSn", params.wifiMac)
+                .put("license", params.token)
+                .put("channel", "NEWLINK01")
+                .put("devicewifiMac", params.wifiMac)
+                .put("deviceMac", params.wifiMac)
+                .put("sn", params.sn)
+                .put("clientVersion", params.systemVersion)
+                .put("timestamp", System.currentTimeMillis().toString())
+                .toString()
+                .toRequestBody(JSON_MEDIA_TYPE)
+            Request.Builder().url(AUTH_URL).post(body)
+                .tag(NetworkTrace::class.java, NetworkTrace { trace(session, it) }).build()
+        }, complete = { result ->
+            synchronized(this) {
+                if (isCurrent(session) && state == State.Starting) {
+                    authCall = null
+                    result.fold(onSuccess = { response ->
+                        val json = runCatching { JSONObject(response.body) }.getOrNull()
+                        when {
+                            response.code !in 200..299 -> fail("authentication HTTP ${response.code}")
+                            json == null -> fail("invalid authentication response")
+                            json.optString("code") != "00000" ||
+                                json.optJSONObject("data")?.optInt("status", -1) != 0 ->
+                                fail("authentication rejected")
+                            else -> {
+                                trace(session, "authentication_succeeded")
+                                connectWebSocket(params, session)
                             }
-                        if (json.optString("code") != "00000" ||
-                            json.optJSONObject("data")?.optInt("status", -1) != 0
-                        ) {
-                            fail(json.optJSONObject("data")?.optString("msg")
-                                ?.takeIf(String::isNotBlank) ?: "authentication rejected")
-                            return
                         }
-                        Timber.i("iFlytek ASR authentication succeeded")
-                        connectWebSocket(params, session)
-                    }
+                    }, onFailure = {
+                        // Do not log exception messages/URLs: they can contain credentials.
+                        fail(when (it) {
+                            is java.net.UnknownServiceException -> "network security policy"
+                            is SecurityException -> "INTERNET permission denied"
+                            else -> "authentication network timeout or connection failure"
+                        })
+                    })
                 }
-            })
-        }
+            }
+        }, trace = { trace(session, it) }).also { it.start() }
     }
 
+    @Synchronized
     private fun connectWebSocket(params: Params, session: Int) {
+        if (!isCurrent(session) || state != State.Starting) return
         val curTime = (System.currentTimeMillis() / 1000).toString()
         val param = JSONObject()
             .put("result_level", "plain")
@@ -197,47 +213,81 @@ class IflytekAsrClient(
             .url(url)
             .header("Origin", WS_ORIGIN)
             .build()
-        webSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
+        trace(session, "websocket_connecting")
+        webSocket = WS_CLIENT.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                trace(session, "websocket_open")
+            }
+
             override fun onMessage(webSocket: WebSocket, text: String) {
-                if (!isCurrent(session)) return
-                val json = runCatching { JSONObject(text) }.getOrElse {
-                    fail("invalid recognition response")
-                    return
-                }
-                if (json.optInt("code", 0) != 0) {
-                    fail(json.optString("desc").ifBlank { "recognition error ${json.optInt("code")}" })
-                    return
-                }
-                when (json.optString("action")) {
-                    "started" -> {
-                        Timber.i("iFlytek ASR WebSocket started")
-                        startAudio(webSocket, session)
+                synchronized(this@IflytekAsrClient) {
+                    if (!isCurrent(session)) return
+                    val json = runCatching { JSONObject(text) }.getOrElse {
+                        fail("invalid recognition response")
+                        return
                     }
-                    "result" -> {
-                        val data = json.optJSONObject("data") ?: return
-                        data.optString("text").takeIf(String::isNotBlank)?.let { latestText = it }
-                        val segmentFinished = data.optBoolean("is_finish")
-                        val streamFinished = data.optBoolean("is_last")
-                        if (state == State.Listening && (segmentFinished || streamFinished)) {
-                            confirmedText = combineText(confirmedText, latestText)
-                            latestText = ""
-                            publishPartial(confirmedText)
-                        } else if (state == State.Finishing && (segmentFinished || streamFinished)) {
-                            finish(combineText(confirmedText, latestText))
-                        } else {
-                            publishPartial(combineText(confirmedText, latestText))
+                    if (json.optInt("code", 0) != 0) {
+                        fail("recognition error ${json.optInt("code")}")
+                        return
+                    }
+                    when (json.optString("action")) {
+                        "started" -> {
+                            trace(session, "websocket_started")
+                            startAudio(webSocket, session)
+                        }
+                        "result" -> {
+                            val data = json.optJSONObject("data") ?: return
+                            data.optString("text").takeIf(String::isNotBlank)?.let { latestText = it }
+                            val segmentFinished = data.optBoolean("is_finish")
+                            val streamFinished = data.optBoolean("is_last")
+                            if (state == State.Listening && (segmentFinished || streamFinished)) {
+                                confirmedText = combineText(confirmedText, latestText)
+                                latestText = ""
+                                publishPartial(confirmedText)
+                            } else if (state == State.Finishing && (segmentFinished || streamFinished)) {
+                                finish(combineText(confirmedText, latestText))
+                            } else {
+                                publishPartial(combineText(confirmedText, latestText))
+                            }
                         }
                     }
                 }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                if (isCurrent(session)) fail(t.message ?: "WebSocket failed")
+                synchronized(this@IflytekAsrClient) {
+                    if (isCurrent(session)) {
+                        trace(session, "websocket_failure=${t.javaClass.simpleName}")
+                        fail(when (t) {
+                            is java.net.UnknownServiceException -> "network security policy"
+                            is SecurityException -> "INTERNET permission denied"
+                            else -> "failed to connect WebSocket"
+                        })
+                    }
+                }
+            }
+
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                synchronized(this@IflytekAsrClient) {
+                    if (!isCurrent(session)) return
+                    webSocket.close(code, null)
+                    if (state == State.Finishing) finish(combineText(confirmedText, latestText))
+                    else fail("WebSocket closed before recognition completed")
+                }
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                synchronized(this@IflytekAsrClient) {
+                    if (!isCurrent(session)) return
+                    if (state == State.Finishing) finish(combineText(confirmedText, latestText))
+                    else fail("WebSocket closed before recognition completed")
+                }
             }
         })
     }
 
     @SuppressLint("MissingPermission")
+    @Synchronized
     private fun startAudio(socket: WebSocket, session: Int) {
         if (!isCurrent(session) || state != State.Starting) return
         val minBuffer = AudioRecord.getMinBufferSize(
@@ -255,7 +305,7 @@ class IflytekAsrClient(
                 bufferSize
             )
         } catch (error: RuntimeException) {
-            fail(error.message ?: "microphone unavailable")
+            fail("microphone unavailable")
             return
         }
         if (recorder.state != AudioRecord.STATE_INITIALIZED) {
@@ -264,13 +314,26 @@ class IflytekAsrClient(
             return
         }
         audioRecord = recorder
-        recorder.startRecording()
+        try {
+            recorder.startRecording()
+            check(recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING)
+        } catch (error: RuntimeException) {
+            fail("microphone start failed")
+            return
+        }
+        clearStartupTimeout()
+        trace(session, "microphone_started")
         updateState(State.Listening)
         audioThread = Thread({
             val buffer = ByteArray(AUDIO_CHUNK_BYTES)
             while (isCurrent(session) && state == State.Listening) {
-                val count = recorder.read(buffer, 0, buffer.size)
-                if (count > 0 && !socket.send(buffer.toByteString(0, count))) break
+                val count = runCatching { recorder.read(buffer, 0, buffer.size) }.getOrDefault(-1)
+                if (count < 0 || (count > 0 && !socket.send(buffer.toByteString(0, count)))) {
+                    synchronized(this) {
+                        if (isCurrent(session) && state == State.Listening) fail("audio stream failed")
+                    }
+                    break
+                }
             }
         }, "iflytek-asr-audio").apply { start() }
     }
@@ -280,6 +343,7 @@ class IflytekAsrClient(
         if (state == State.Idle) return
         generation += 1
         val callbackGeneration = generation
+        clearStartupTimeout()
         stopAudio()
         webSocket?.close(1000, null)
         webSocket = null
@@ -306,6 +370,7 @@ class IflytekAsrClient(
         Timber.w("iFlytek ASR: $message")
         generation += 1
         val callbackGeneration = generation
+        clearStartupTimeout()
         authCall?.cancel()
         authCall = null
         stopAudio()
@@ -323,12 +388,25 @@ class IflytekAsrClient(
         val recorder = audioRecord
         audioRecord = null
         runCatching { recorder?.stop() }
-        recorder?.release()
+        runCatching { recorder?.release() }
         audioThread = null
     }
 
     @Synchronized
     private fun isCurrent(session: Int) = session == generation && state != State.Idle
+
+    private fun clearStartupTimeout() {
+        startupTimeout?.let { mainHandler.removeCallbacks(it) }
+        startupTimeout = null
+    }
+
+    private fun trace(session: Int, stage: String) {
+        // Network EventListener callbacks must not wait for the session lock: cancel()
+        // holds it while cancelling the underlying socket. Timing logs are observational.
+        if (session == generation && state != State.Idle) {
+            Timber.i("iFlytek ASR session=$session stage=$stage elapsedMs=${SystemClock.elapsedRealtime() - startedAt}")
+        }
+    }
 
     private fun updateState(newState: State) {
         state = newState
@@ -370,7 +448,37 @@ class IflytekAsrClient(
         // v1 latency tune: 1600B @16k/16bit/mono ~= 50ms per packet.
         const val AUDIO_CHUNK_BYTES = 1600
         const val FINAL_TIMEOUT_MS = 5000L
+        const val STARTUP_TIMEOUT_MS = 8000L
         const val END_FLAG = "--end--"
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+        // Reusable but independent transports, as in the desktop assistant. A short,
+        // whole-call deadline covers response-body stalls as well as connection stalls.
+        val AUTH_CLIENT = newAsrAuthHttpClient(2500)
+            .newBuilder()
+            .eventListenerFactory { call -> AuthEvents(call.request().tag(NetworkTrace::class.java)) }
+            .build()
+        val WS_CLIENT = OkHttpClient.Builder()
+            .connectTimeout(3, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .build()
+    }
+
+    private class NetworkTrace(val report: (String) -> Unit)
+
+    private class AuthEvents(private val trace: NetworkTrace?) : EventListener() {
+        override fun dnsStart(call: Call, domainName: String) { trace?.report?.invoke("auth_dns_start") }
+        override fun dnsEnd(call: Call, domainName: String, inetAddressList: List<InetAddress>) {
+            trace?.report?.invoke("auth_dns_end")
+        }
+        override fun connectStart(call: Call, inetSocketAddress: InetSocketAddress, proxy: Proxy) {
+            trace?.report?.invoke("auth_connect_start")
+        }
+        override fun requestHeadersStart(call: Call) { trace?.report?.invoke("auth_request_start") }
+        override fun responseHeadersStart(call: Call) { trace?.report?.invoke("auth_response_start") }
+        override fun responseHeadersEnd(call: Call, response: Response) {
+            trace?.report?.invoke("auth_response_headers=${response.code}")
+        }
+        override fun responseBodyEnd(call: Call, byteCount: Long) { trace?.report?.invoke("auth_body_end") }
     }
 }
