@@ -1012,9 +1012,17 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
      * editor on the opposite display, so route the physical mouse back to the source display that
      * requested the keyboard.
      */
+    private fun currentImeDisplayId(): Int {
+        val currentDisplay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            display
+        } else {
+            window.window?.decorView?.display
+        }
+        return currentDisplay?.displayId ?: android.view.Display.DEFAULT_DISPLAY
+    }
+
     private fun desktopMouseTargetDisplayId(): Int {
-        @Suppress("DEPRECATION")
-        val imeDisplayId = display?.displayId ?: android.view.Display.DEFAULT_DISPLAY
+        val imeDisplayId = currentImeDisplayId()
         if (currentInputEditorInfo.packageName !in CROSS_DISPLAY_EDITOR_PACKAGES) {
             return imeDisplayId
         }
@@ -1152,7 +1160,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         super.onWindowShown()
         DesktopNavigationHideBridge.onImeWindowShown(
             applicationContext,
-            display?.displayId ?: android.view.Display.DEFAULT_DISPLAY,
+            currentImeDisplayId(),
             currentInputEditorInfo?.packageName
         )
         window.window?.let { imeWindow ->
@@ -1175,7 +1183,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onWindowHidden() {
-        Log.i("KBoardNavTrace", "window hidden display=${display?.displayId}")
+        Log.i("KBoardNavTrace", "window hidden display=${currentImeDisplayId()}")
         cancelPendingTouchHideRequest()
         releaseDesktopInputStates()
         DesktopNavigationHideBridge.onImeWindowHidden()
@@ -1326,7 +1334,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             val extras = currentInputEditorInfo?.extras
             val requestId = extras?.getLong("com.newlink.kemi.kboard.DISPLAY_SWITCH_REQUEST", -1L) ?: -1L
             val supported = extras?.getInt("com.newlink.kemi.kboard.DISPLAY_SWITCH_VERSION", 0) == 1
-            val current = display?.displayId ?: android.view.Display.DEFAULT_DISPLAY
+            val current = currentImeDisplayId()
             val handled = supported && requestId > 0 && runCatching {
                 currentInputConnection?.performPrivateCommand(
                     "com.newlink.kemi.kboard.SWITCH_PROXY_DISPLAY",
@@ -1379,8 +1387,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             return
         }
 
-        @Suppress("DEPRECATION")
-        val currentDisplayId = display?.displayId ?: android.view.Display.DEFAULT_DISPLAY
+        val currentDisplayId = currentImeDisplayId()
         val moveToSecondary = currentDisplayId != SECONDARY_IME_DISPLAY_ID
         DesktopNavigationHideBridge.setCrossDisplayRoute(!moveToSecondary)
         if (moveToSecondary) {

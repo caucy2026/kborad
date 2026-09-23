@@ -422,7 +422,11 @@ class InputView(
     private val desktopKeyboardHeightPx: Int
         get() {
             val configuration = resources.configuration
-            val currentDisplay = display ?: service.display
+            val currentDisplay = display ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                service.display
+            } else {
+                null
+            }
             val displayMode = currentDisplay?.mode
             val physicalDisplayHeight = if (displayMode == null) {
                 resources.displayMetrics.heightPixels
@@ -959,8 +963,14 @@ class InputView(
                 .coerceAtLeast(dp(MINIMAL_KEYBOARD_MIN_WIDTH_DP).coerceAtMost(screenWidth))
         }
 
-    private fun minimalPositionKey(axis: String): String =
-        "${context.display?.displayId ?: 0}_${resources.configuration.orientation}_$axis"
+    private fun minimalPositionKey(axis: String): String {
+        val displayId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            context.display?.displayId
+        } else {
+            display?.displayId
+        }
+        return "${displayId ?: 0}_${resources.configuration.orientation}_$axis"
+    }
 
     private fun saveMinimalKeyboardPosition() {
         val centeredLeft = (width - keyboardView.width) / 2f

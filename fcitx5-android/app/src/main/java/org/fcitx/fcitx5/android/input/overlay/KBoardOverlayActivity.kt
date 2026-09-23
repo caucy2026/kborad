@@ -2,6 +2,7 @@ package org.fcitx.fcitx5.android.input.overlay
 
 import android.app.Activity
 import android.graphics.drawable.ColorDrawable
+import android.os.Build
 import android.os.Bundle
 import android.text.InputType
 import android.view.KeyEvent
@@ -11,8 +12,8 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputConnectionWrapper
 import android.view.inputmethod.InputMethodManager
-import android.widget.EditText
 import android.widget.FrameLayout
+import androidx.appcompat.widget.AppCompatEditText
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
 import timber.log.Timber
 
@@ -92,8 +93,14 @@ class KBoardOverlayActivity : Activity() {
         val inputMethodManager = getSystemService(InputMethodManager::class.java)
         when (imeStartGate.nextAction()) {
             OverlayImeStartGate.Action.WAIT -> Unit
-            OverlayImeStartGate.Action.EXHAUSTED ->
-                Timber.e("Overlay editor never became a served IME view on display=${display?.displayId}")
+            OverlayImeStartGate.Action.EXHAUSTED -> {
+                val displayId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    display?.displayId
+                } else {
+                    window.decorView.display?.displayId
+                }
+                Timber.e("Overlay editor never became a served IME view on display=$displayId")
+            }
             OverlayImeStartGate.Action.RESTART_INPUT -> {
                 editor.requestFocus()
                 inputMethodManager.restartInput(editor)
@@ -125,7 +132,7 @@ class KBoardOverlayActivity : Activity() {
     private class RelayEditor(
         activity: Activity,
         private val onInputConnectionReady: () -> Unit
-    ) : EditText(activity) {
+    ) : AppCompatEditText(activity) {
         override fun onCreateInputConnection(info: EditorInfo): InputConnection {
             val delegate = super.onCreateInputConnection(info)
             post(onInputConnectionReady)

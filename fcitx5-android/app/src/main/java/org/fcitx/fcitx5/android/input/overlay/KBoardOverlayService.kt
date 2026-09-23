@@ -19,8 +19,10 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import android.view.Display
+import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import org.fcitx.fcitx5.android.common.ipc.IKBoardOverlayCallback
 import org.fcitx.fcitx5.android.common.ipc.IKBoardOverlayService
@@ -161,7 +163,12 @@ class KBoardOverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         currentService = WeakReference(this)
-        registerReceiver(systemNavigationReceiver, IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+        ContextCompat.registerReceiver(
+            this,
+            systemNavigationReceiver,
+            IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS),
+            ContextCompat.RECEIVER_EXPORTED
+        )
         runCatching {
             ActivityTaskManager.getInstance().registerTaskStackListener(taskStackProbe)
             taskStackProbeRegistered = true
@@ -189,6 +196,7 @@ class KBoardOverlayService : Service() {
         task: ActivityManager.RunningTaskInfo,
         suffix: String = ""
     ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         val eventOwner = owner
         val eventPending = pendingStart
         val requestId = eventOwner?.requestId ?: eventPending?.requestId ?: return
@@ -323,7 +331,7 @@ class KBoardOverlayService : Service() {
             windowManager.addView(createdView, layoutParams)
             createdView.post {
                 if (owner?.requestId != requestId) return@post
-                createdView.windowInsetsController?.show(WindowInsets.Type.navigationBars())
+                showNavigationBars(createdView)
                 Log.i(TAG, "ready request=$requestId physicalDisplay=${target.displayId} size=${createdView.width}x${createdView.height}")
                 runCatching { callback.onReady(requestId, sessionId, target.displayId) }
                     .onFailure { close(REASON_OWNER_DIED) }
@@ -431,7 +439,7 @@ class KBoardOverlayService : Service() {
             previous.inputMethodService.disposePhysicalOverlayInputView(previous.inputView)
             nextView.post {
                 if (owner?.inputView !== nextView) return@post
-                nextView.windowInsetsController?.show(WindowInsets.Type.navigationBars())
+                showNavigationBars(nextView)
                 Log.i(
                     TAG,
                     "switch request=${previous.requestId} from=${previous.targetDisplayId} " +
@@ -504,7 +512,7 @@ class KBoardOverlayService : Service() {
             previous.inputMethodService.disposePhysicalOverlayInputView(previous.inputView)
             replacement.post {
                 if (owner?.inputView !== replacement) return@post
-                replacement.windowInsetsController?.show(WindowInsets.Type.navigationBars())
+                showNavigationBars(replacement)
                 Log.i(
                     TAG,
                     "ime-generation migration ready request=${previous.requestId} " +
@@ -524,6 +532,12 @@ class KBoardOverlayService : Service() {
         }
     }
 
+    private fun showNavigationBars(view: View) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            view.windowInsetsController?.show(WindowInsets.Type.navigationBars())
+        }
+    }
+
     private fun enforceOwner() {
         val packages = packageManager.getPackagesForUid(Binder.getCallingUid()).orEmpty()
         if (packages.none { it in KEMI_PACKAGES && hasExpectedSignature(it) }) {
@@ -533,8 +547,16 @@ class KBoardOverlayService : Service() {
 
 
     private fun hasExpectedSignature(packageName: String): Boolean {
-        val info = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
-        return info.signingInfo?.apkContentsSigners?.any { signature ->
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                .signingInfo?.apkContentsSigners
+        } else {
+            @Suppress("DEPRECATION")
+            val info = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+            @Suppress("DEPRECATION")
+            info.signatures
+        }
+        return signatures?.any { signature ->
             MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())
                 .joinToString("") { "%02x".format(it) } in KEMI_SIGNER_SHA256
         } == true

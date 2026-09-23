@@ -1,5 +1,11 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-09-24 - 1.4.5 Release lint 错误修复
+
+- 根因：项目仍声明 minSdk 23，但双屏/系统预置代码直接调用 API 28–30；平台签名专用权限也被普通应用规则误判，另有动态广播标志及自定义输入框基类问题。完整 `:app:lintRelease` 在修复前报 27 个错误、160 条警告。
+- 对显示 ID、任务信息、系统栏和签名读取增加旧系统兼容路径；Android 12/H730 原有读取方式不变。系统导航广播改用带显式导出标志的兼容注册接口；虚拟编辑器继承 AppCompatEditText。四项平台权限只在对应清单声明上注明系统签名用途，不全局关闭 lint。
+- 隔离 WSL 工作区执行 `:app:testDebugUnitTest :app:lintRelease` 成功，完整 lint 为 0 错误、159 条非阻断警告。此处仅确认静态检查和 JVM 单测；设备交互、真实语音及长时间稳定性仍需实机验证。
+
 ## 2026-09-23 - 与 KEMI PAD 63/75 实装组合的备份核对
 
 - 75 实装的 KBoard `1.4.4+212` 从设备 `pm path` 对应 `base.apk` 提取，SHA-256 为 `9f2ef96c9e696746afe779abfd39c7d0a737a476e0920671b1985e9d9f8e750d`；63 原有同版本码 APK 哈希不同，现已使用 75 的确切字节 `adb install -r` 覆盖，63 回读哈希一致。两台均未清数据，63 默认输入法仍为 `com.newlink.kemi.kboard/org.fcitx.fcitx5.android.input.FcitxInputMethodService`。
