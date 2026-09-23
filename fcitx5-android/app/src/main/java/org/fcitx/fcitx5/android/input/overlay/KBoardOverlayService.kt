@@ -526,7 +526,7 @@ class KBoardOverlayService : Service() {
 
     private fun enforceOwner() {
         val packages = packageManager.getPackagesForUid(Binder.getCallingUid()).orEmpty()
-        if (KEMI_PACKAGE !in packages || !hasExpectedSignature(KEMI_PACKAGE)) {
+        if (packages.none { it in KEMI_PACKAGES && hasExpectedSignature(it) }) {
             throw SecurityException("KBoard overlay caller is not the signed KEMI client")
         }
     }
@@ -569,7 +569,10 @@ class KBoardOverlayService : Service() {
             "org.fcitx.fcitx5.android.input.overlay.BOOTSTRAP_IME"
         private const val IME_BOOTSTRAP_MAX_ATTEMPTS = 40
         private const val IME_BOOTSTRAP_RETRY_MS = 50L
-        private const val KEMI_PACKAGE = "com.newlinksz.kemi.remote"
+        private val KEMI_PACKAGES = setOf(
+            "com.newlinksz.kemi.remote",
+            "com.vibekits.vibekits",
+        )
         private val KEMI_SIGNER_SHA256 = setOf(
             "c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8",
             "8546d03e51d09dfa17dbcf432f84bccf74bd2d9fde1cff981ff202f8871871a2"

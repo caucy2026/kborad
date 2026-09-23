@@ -411,9 +411,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             physicalPressVisualEnabled = false
             gestureHapticEnabled = false
             contentDescription = context.getString(R.string.start_voice_input)
-            // Minimal mode must still dispatch DOWN when offline so the shared voice handler
-            // can explain the failure instead of presenting an apparently dead microphone.
-            isEnabled = minimalKeyboardMode || isNetworkAvailableForVoice()
+            isEnabled = isNetworkAvailableForVoice()
             isClickable = true
             alpha = if (isEnabled) 1f else 0.38f
             setIconTintColor(
@@ -422,7 +420,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             )
             swipeEnabled = true
             setOnTouchListener(null)
-            onGestureListener = CustomGestureView.OnGestureListener { view, event ->
+            onGestureListener = if (minimalKeyboardMode) voiceInputGestureCallback
+            else CustomGestureView.OnGestureListener { view, event ->
                 when (event.type) {
                     CustomGestureView.GestureType.Down -> {
                         view.parent.requestDisallowInterceptTouchEvent(true)
@@ -522,14 +521,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 )
                 idleUi.setVoiceInputActive(state != IflytekAsrClient.State.Idle)
                 desktopVoiceButton?.let { button ->
-                    if (voicePressActive) {
-                        button.setIconTintColor(
-                            if (state != IflytekAsrClient.State.Idle) DESKTOP_VOICE_ACTIVE_ICON_COLOR
-                            else if (minimalKeyboardMode) theme.altKeyTextColor else Color.WHITE
-                        )
-                    } else {
-                        button.setIconTintColor(if (minimalKeyboardMode) theme.altKeyTextColor else Color.WHITE)
-                    }
+                    button.setIconTintColor(
+                        if (state != IflytekAsrClient.State.Idle) DESKTOP_VOICE_ACTIVE_ICON_COLOR
+                        else if (minimalKeyboardMode) theme.altKeyTextColor else Color.WHITE
+                    )
                     button.contentDescription = context.getString(
                         if (state != IflytekAsrClient.State.Idle) R.string.stop_voice_input
                         else R.string.start_voice_input
@@ -569,6 +564,11 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 if (disposed) return@IflytekAsrClient
                 cancelVoiceEditorPreview()
                 hideVoiceFeedback()
+                // Silence is a normal way to release the minimal microphone. Keep genuine
+                // network and recording failures visible, but do not show an error toast here.
+                if (minimalKeyboardMode && message.equals("no speech detected", ignoreCase = true)) {
+                    return@IflytekAsrClient
+                }
                 Toast.makeText(
                     context,
                     localizeVoiceError(message),
@@ -684,6 +684,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                         delay(VOICE_HOLD_START_DELAY_MS)
                         if (voicePressActive) {
                             if (!useDirectVoiceCommit) service.beginVoiceComposing()
+                            // All keyboard modes use live streaming; startup replay delays partials.
                             asrClient.start()
                         }
                         voiceStartJob = null
@@ -702,9 +703,6 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                             hideVoiceFeedback()
                         }
                         IflytekAsrClient.State.Starting -> {
-                            // Authentication has not opened the microphone yet, so there is no
-                            // audio to calibrate. End cleanly instead of leaving a permanent
-                            // calibration label after stop() cancels a Starting session.
                             asrClient.cancel()
                             cancelVoiceEditorPreview()
                             hideVoiceFeedback()

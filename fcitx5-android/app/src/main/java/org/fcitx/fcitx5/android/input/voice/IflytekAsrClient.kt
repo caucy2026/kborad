@@ -28,6 +28,7 @@ import timber.log.Timber
 import java.io.IOException
 import java.net.URLEncoder
 import java.security.MessageDigest
+import java.util.ArrayDeque
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
@@ -68,11 +69,18 @@ class IflytekAsrClient(
     private var webSocket: WebSocket? = null
     private var audioRecord: AudioRecord? = null
     private var audioThread: Thread? = null
+    // Minimal mode records only while the key is physically held. Authentication may finish
+    // after release; bounded local audio is then sent before the end marker, never recorded late.
+    private var bufferStartupAudio = false
+    private var releasedWhileStarting = false
+    private var liveSocket: WebSocket? = null
+    private val startupAudio = ArrayDeque<ByteArray>()
+    private var startupAudioBytes = 0
     private var confirmedText = ""
     private var latestText = ""
 
     @Synchronized
-    fun start() {
+    fun start(bufferWhileStarting: Boolean = false) {
         if (state != State.Idle) return
         val params = runCatching { readParams() }.getOrElse {
             fail(it.message ?: "missing iflytek_params")
@@ -82,7 +90,12 @@ class IflytekAsrClient(
         val session = generation
         confirmedText = ""
         latestText = ""
+        clearStartupAudio()
+        bufferStartupAudio = bufferWhileStarting
+        releasedWhileStarting = false
+        liveSocket = null
         updateState(State.Starting)
+        if (bufferWhileStarting && !startBufferedAudio(session)) return
         authenticate(params, session)
     }
 
@@ -101,7 +114,14 @@ class IflytekAsrClient(
                     }
                 }, FINAL_TIMEOUT_MS)
             }
-            State.Starting, State.Finishing -> cancel()
+            State.Starting -> {
+                if (bufferStartupAudio) {
+                    releasedWhileStarting = true
+                    stopAudio()
+                    Timber.i("iFlytek ASR held audio buffered bytes=$startupAudioBytes")
+                } else cancel()
+            }
+            State.Finishing -> cancel()
         }
     }
 
@@ -113,6 +133,8 @@ class IflytekAsrClient(
         stopAudio()
         webSocket?.cancel()
         webSocket = null
+        liveSocket = null
+        clearStartupAudio()
         confirmedText = ""
         latestText = ""
         updateState(State.Idle)
@@ -211,7 +233,8 @@ class IflytekAsrClient(
                 when (json.optString("action")) {
                     "started" -> {
                         Timber.i("iFlytek ASR WebSocket started")
-                        startAudio(webSocket, session)
+                        if (bufferStartupAudio) startBufferedSocket(webSocket, session)
+                        else startAudio(webSocket, session)
                     }
                     "result" -> {
                         val data = json.optJSONObject("data") ?: return
@@ -235,6 +258,103 @@ class IflytekAsrClient(
                 if (isCurrent(session)) fail(t.message ?: "WebSocket failed")
             }
         })
+    }
+
+    private fun clearStartupAudio() {
+        startupAudio.clear()
+        startupAudioBytes = 0
+        releasedWhileStarting = false
+        bufferStartupAudio = false
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startBufferedAudio(session: Int): Boolean {
+        val minBuffer = AudioRecord.getMinBufferSize(
+            SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
+        )
+        val recorder = try {
+            AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
+                max(AUDIO_CHUNK_BYTES, minBuffer))
+        } catch (error: RuntimeException) {
+            fail(error.message ?: "microphone unavailable")
+            return false
+        }
+        if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+            recorder.release()
+            fail("microphone initialization failed")
+            return false
+        }
+        audioRecord = recorder
+        try {
+            recorder.startRecording()
+        } catch (error: RuntimeException) {
+            fail(error.message ?: "microphone unavailable")
+            return false
+        }
+        audioThread = Thread({
+            val chunk = ByteArray(AUDIO_CHUNK_BYTES)
+            while (audioRecord === recorder && isCurrent(session) &&
+                (state == State.Starting || state == State.Listening)) {
+                val count = try { recorder.read(chunk, 0, chunk.size) }
+                    catch (_: RuntimeException) { break }
+                if (count <= 0) continue
+                synchronized(this@IflytekAsrClient) {
+                    if (!isCurrent(session) || audioRecord !== recorder) return@synchronized
+                    if (state == State.Starting) {
+                        val bytes = chunk.copyOf(count)
+                        startupAudio.addLast(bytes)
+                        startupAudioBytes += count
+                        while (startupAudioBytes > MAX_STARTUP_AUDIO_BYTES && startupAudio.isNotEmpty()) {
+                            startupAudioBytes -= startupAudio.removeFirst().size
+                        }
+                    } else if (state == State.Listening) {
+                        liveSocket?.send(chunk.toByteString(0, count))
+                    }
+                }
+            }
+        }, "iflytek-asr-audio").apply { start() }
+        return true
+    }
+
+    @Synchronized
+    private fun startBufferedSocket(socket: WebSocket, session: Int) {
+        if (!isCurrent(session) || state != State.Starting) return
+        sendNextBufferedChunk(socket, session)
+    }
+
+    @Synchronized
+    private fun sendNextBufferedChunk(socket: WebSocket, session: Int) {
+        if (!isCurrent(session) || state != State.Starting) return
+        if (startupAudio.isNotEmpty()) {
+            val bytes = startupAudio.removeFirst()
+            startupAudioBytes -= bytes.size
+            if (!socket.send(bytes.toByteString())) {
+                fail("recognition audio send failed")
+                return
+            }
+            // Replay at the same ~50 ms cadence as live AudioRecord chunks;
+            // sending a stored utterance in one burst can confuse streaming VAD.
+            mainHandler.postDelayed({ sendNextBufferedChunk(socket, session) },
+                AUDIO_CHUNK_INTERVAL_MS)
+            return
+        }
+        if (releasedWhileStarting) {
+            Timber.i("iFlytek ASR buffered audio sent after release")
+            updateState(State.Finishing)
+            if (!socket.send(END_FLAG)) {
+                fail("recognition end send failed")
+                return
+            }
+            mainHandler.postDelayed({
+                if (generation == session && state == State.Finishing) {
+                    finish(combineText(confirmedText, latestText))
+                }
+            }, FINAL_TIMEOUT_MS)
+        } else {
+            liveSocket = socket
+            updateState(State.Listening)
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -283,6 +403,8 @@ class IflytekAsrClient(
         stopAudio()
         webSocket?.close(1000, null)
         webSocket = null
+        liveSocket = null
+        clearStartupAudio()
         authCall = null
         confirmedText = ""
         latestText = ""
@@ -311,6 +433,8 @@ class IflytekAsrClient(
         stopAudio()
         webSocket?.cancel()
         webSocket = null
+        liveSocket = null
+        clearStartupAudio()
         confirmedText = ""
         latestText = ""
         updateState(State.Idle)
@@ -369,6 +493,8 @@ class IflytekAsrClient(
         const val SAMPLE_RATE = 16000
         // v1 latency tune: 1600B @16k/16bit/mono ~= 50ms per packet.
         const val AUDIO_CHUNK_BYTES = 1600
+        const val AUDIO_CHUNK_INTERVAL_MS = 50L
+        const val MAX_STARTUP_AUDIO_BYTES = SAMPLE_RATE * 2 * 10
         const val FINAL_TIMEOUT_MS = 5000L
         const val END_FLAG = "--end--"
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
