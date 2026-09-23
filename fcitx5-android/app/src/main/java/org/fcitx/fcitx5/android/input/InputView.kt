@@ -877,7 +877,7 @@ class InputView(
             updateKeyboardSize()
             keyboardView.post {
                 if (minimalKeyboardMode) {
-                    updateMinimalKeyboardPosition(minimalSavedX, minimalSavedY)
+                    restoreMinimalKeyboardPosition()
                 }
             }
         } else if (changed) {
@@ -944,6 +944,7 @@ class InputView(
                 view.parent.requestDisallowInterceptTouchEvent(false)
                 minimalSavedX = keyboardView.translationX
                 minimalSavedY = keyboardView.translationY
+                saveMinimalKeyboardPosition()
                 return true
             }
         }
@@ -957,6 +958,33 @@ class InputView(
                 .coerceAtMost(dp(MINIMAL_KEYBOARD_MAX_WIDTH_DP))
                 .coerceAtLeast(dp(MINIMAL_KEYBOARD_MIN_WIDTH_DP).coerceAtMost(screenWidth))
         }
+
+    private fun minimalPositionKey(axis: String): String =
+        "${context.display?.displayId ?: 0}_${resources.configuration.orientation}_$axis"
+
+    private fun saveMinimalKeyboardPosition() {
+        val centeredLeft = (width - keyboardView.width) / 2f
+        val minX = -centeredLeft
+        val maxX = width - centeredLeft - keyboardView.width
+        val minY = -(height - keyboardView.height).toFloat()
+        context.getSharedPreferences("minimal_keyboard_position", Context.MODE_PRIVATE).edit()
+            .putInt(minimalPositionKey("x"), normalize(minimalSavedX, minX, maxX))
+            .putInt(minimalPositionKey("y"), normalize(minimalSavedY, minY, 0f))
+            .apply()
+    }
+
+    private fun restoreMinimalKeyboardPosition() {
+        val prefs = context.getSharedPreferences("minimal_keyboard_position", Context.MODE_PRIVATE)
+        val centeredLeft = (width - keyboardView.width) / 2f
+        val minX = -centeredLeft
+        val maxX = width - centeredLeft - keyboardView.width
+        val minY = -(height - keyboardView.height).toFloat()
+        minimalSavedX = lerp(minX, maxX, prefs.getInt(minimalPositionKey("x"),
+            normalize(0f, minX, maxX)) / FLOATING_POSITION_SCALE.toFloat())
+        minimalSavedY = lerp(minY, 0f, prefs.getInt(minimalPositionKey("y"),
+            normalize(0f, minY, 0f)) / FLOATING_POSITION_SCALE.toFloat())
+        updateMinimalKeyboardPosition(minimalSavedX, minimalSavedY)
+    }
 
     private fun updateMinimalKeyboardPosition(x: Float, y: Float) {
         if (!minimalKeyboardMode) return

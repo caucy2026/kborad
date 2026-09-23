@@ -93,6 +93,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
                     rememberPresentationMode(KeyboardPresentationMode.Normal)
                     switchLayout(TextKeyboard.Name, remember = false)
                 },
+                onHide = service::requestHideSelfAfterTouch,
                 onDrag = inputView::onMinimalKeyboardDrag
             ),
             NumberKeyboard.Name to NumberKeyboard(context, theme)

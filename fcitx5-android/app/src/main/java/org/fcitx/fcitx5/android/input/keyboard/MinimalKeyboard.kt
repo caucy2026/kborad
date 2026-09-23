@@ -50,11 +50,12 @@ class MinimalKeyboard private constructor(
         theme: Theme,
         onClipboard: (String) -> Unit,
         onReturnToPrevious: () -> Unit,
+        onHide: (View) -> Unit,
         onDrag: (View, MotionEvent) -> Boolean
     ) : this(
         context,
         theme,
-        createControls(context, theme, onClipboard, onReturnToPrevious, onDrag)
+        createControls(context, theme, onClipboard, onReturnToPrevious, onHide, onDrag)
     )
 
     val voiceButton: ToolButton
@@ -74,8 +75,8 @@ class MinimalKeyboard private constructor(
                 rightToRight = LayoutParams.PARENT_ID
                 topToBottom = controls.root.id
                 bottomToBottom = LayoutParams.PARENT_ID
-                matchConstraintPercentWidth = 0.25f
-                horizontalBias = index / 3f
+                matchConstraintPercentWidth = 0.20f
+                horizontalBias = index / 4f
             })
         }
     }
@@ -162,10 +163,11 @@ class MinimalKeyboard private constructor(
 
         private val Layout: List<List<KeyDef>> = listOf(
             listOf(
-                KeyDef(KeyDef.Appearance.Text("", 14f, percentWidth = 0.25f), emptySet()),
-                KeyDef(KeyDef.Appearance.Text("", 14f, percentWidth = 0.25f), emptySet()),
-                uniformKey(BackspaceKey(0.25f)),
-                uniformKey(ReturnKey(0.25f))
+                KeyDef(KeyDef.Appearance.Text("", 14f, percentWidth = 0.20f), emptySet()),
+                KeyDef(KeyDef.Appearance.Text("", 14f, percentWidth = 0.20f), emptySet()),
+                uniformKey(BackspaceKey(0.20f)),
+                uniformKey(ReturnKey(0.20f)),
+                uniformKey(ScreenSwitchKey(0.20f))
             )
         )
 
@@ -190,6 +192,7 @@ class MinimalKeyboard private constructor(
             theme: Theme,
             onClipboard: (String) -> Unit,
             onReturnToPrevious: () -> Unit,
+            onHide: (View) -> Unit,
             onDrag: (View, MotionEvent) -> Boolean
         ): Controls {
             val root = LinearLayout(context).apply {
@@ -230,7 +233,13 @@ class MinimalKeyboard private constructor(
                 contentDescription = context.getString(R.string.minimal_keyboard_move)
                 setOnTouchListener(onDrag)
             }
+            val hide = ToolButton(context, R.drawable.ic_keyboard_arrow_down_24, theme).apply {
+                useFullSizeIcon()
+                contentDescription = context.getString(R.string.hide_keyboard)
+                setOnClickListener { onHide(it) }
+            }
             root.addView(status, LinearLayout.LayoutParams(0, context.dp(48), 1f))
+            root.addView(hide, LinearLayout.LayoutParams(context.dp(48), context.dp(48)))
             root.addView(drag, LinearLayout.LayoutParams(context.dp(48), context.dp(48)))
             return Controls(root, status, voice, back, onClipboard)
         }

@@ -15,12 +15,44 @@
 - 新测试候选 `bin/KBoard-1.4.4-182-asr-fresh-http-20260923.apk`，SHA-256 `9716ec6d6e2a01cd667a59035da43f021bd2186387bf3f4f73493515a08fbd0b`，平台证书v1/v2/v3验签通过；16.24保留数据覆盖安装成功，设备APK回读哈希一致，版本保持1.4.4/182，默认IME和UID1000不变。
 - 远程麦克风操作被自动安全审查拒绝，理由是会将现场声音发送到讯飞且缺少明确的这一步授权；等待用户选择远程触发或现场按键。新候选的真实语音启动耗时、收字结果及重复性测试尚未完成，不能据此宣布已彻底修复。
 
+### 当日后续：新 TCP 连接也偶发收不到鉴权响应
+
+- 16.24 现场复现时，两次鉴权请求分别建立新 TCP 连接，服务端均已 ACK 请求数据，但 2.5 秒内未返回 HTTP 响应；因此禁止复用闲置连接不是该次失败的充分解决方案。保留超时、一次重试与会话安全修复，实际语音稳定性仍需服务端/网络联合排查和现场验收。
+
+## 2026-09-23 - 云端同步与本次备份范围
+
+- `git fetch origin main` 后核对：本地 `HEAD` 与 `origin/main` 均为 `31b2e77a`，云端没有更新的提交需要合并。本次以该基线和当前工作区改动形成备份，目标仍是根仓库 `main`。
+- 备份本轮极简布局、显示位置、语音统一和静音空结果处理涉及的源码，连同本文件及63实装的正式包 `bin/KBoard-1.4.4-212-voice-quiet-empty-release.apk`。正式包SHA256为 `5351ae8f2deb9934eecfce8f5b7a3ff61514b1ade5c4845b0a5a1e49319917a1`；覆盖安装时设备回读哈希一致，默认输入法未变。
+- 保留工作区其他旧包删除、原生子目录改动、临时图片及历史候选APK原状，不纳入本次备份。极简静音松手实际体验待用户复测，不能由构建和安装成功推断已通过。
+
+## 2026-09-23 - 极简语音无声空结果不弹警告
+
+- 63现场日志16:40:34、16:40:43两次录音均已鉴权并进入Listening，松手后无final text，随即出现KBoard Toast；16:40:39的录音返回8字并无同类空结果。结合`IflytekAsrClient.finish()`的`no speech detected`回调，定位为空结果进入通用`onError` Toast路径。
+- `KawaiiBarComponent.kt`在极简模式收到该空结果时清理语音预览并直接结束，不再弹警告；实际网络、麦克风和鉴权错误仍由原路径提示，普通及全局键盘行为不变。
+- 正式Release `bin/KBoard-1.4.4-212-voice-quiet-empty-release.apk` 构建成功，既有4项语音路由及3项返回单测通过；v1/v2平台签名及证书指纹核对通过。SHA256 `5351ae8f2deb9934eecfce8f5b7a3ff61514b1ade5c4845b0a5a1e49319917a1`。已覆盖安装63，未清数据；等待用户复测静音松手及真实错误提示。
+
+## 2026-09-23 - 极简语音手势完全复用普通入口
+
+- `KawaiiBarComponent.kt`：极简直接使用普通键盘的 `voiceInputGestureCallback`；取消极简80ms/48px专用参数，统一160ms按住启动、24px移动取消、联网可用性、默认ASR启动及状态驱动图标颜色。保持布局、输出路由及权限检查不变。
+- 63现场日志：15:17普通成功样本松手至final约213ms；极简成功样本约175–305ms。另有极简按住1.3–2.2秒仍停留Starting、未见鉴权成功的样本，松手触发重试提示。不能把手势统一等同于偶发鉴权/连接等待已根治，仍需实机复测。
+- 用户要求正常操作不得弹整页信息；不再自动打开整页测试接收器，语音过程保留键盘内局部状态提示。本次仅覆盖安装63，交由用户测试，不以构建或安装成功代替完整语音验收。
+- Release构建成功，7项既有路由/返回单测通过；平台签名v1/v2及证书核对通过。`bin/KBoard-1.4.4-212-voice-unified-release.apk` SHA256 `79a927120126d8e76ecc030948931bfb1e2170e028fe37ce596e4c77b0c01d0c`。63覆盖安装Success，未清数据、未打开测试页面；实际语音连接与识别体验留待用户验证。
+
 ## 2026-09-22 - 系统边缘返回事件误拦截修正
 
 - H730 的边缘返回也可能带 FLAG_VIRTUAL_HARD_KEY，原 IME BACK 隐藏分支在键盘隐藏后仍消费事件，影响前台应用返回。
 - 移除该分支的强制隐藏/消费行为；鼠标 BACK 放行及桌面键盘独立导航发送通道保持原样。修改 FcitxInputMethodService.kt，增加 NavigationBackEventPolicyTest.kt。
 - 1.4.3/172 平台签名候选已在 172.21.16.24 覆盖安装，构建及 JVM 测试通过。设备复测未见旧拦截日志或崩溃，但未取得浏览器退出成功的证据；普通 BACK 仍走既有 Fcitx/父类处理，不能据此宣称整个返回链路已验收。
 - 风险待验：键盘显示/隐藏时系统返回、双屏导航隐藏、远程桌面自身返回按钮。Release 构建不代表商城正式发布或全量设备验收通过。
+
+## 2026-09-23 - 极简语音识别时序对齐（待实机验证）
+
+- 63/75覆盖安装完成：`bin/KBoard-1.4.4-212-voice-live-release.apk`，SHA256 `9f2ef96c9e696746afe779abfd39c7d0a737a476e0920671b1985e9d9f8e750d`，两台设备base.apk哈希回读一致、默认输入法不变，未卸载/清数据。平台证书v1/v2验签通过；同步云端至31b2e77a，保留本地212版本码避免降级，最终Release构建及4项语音路由、3项返回事件单测通过。
+- 两台已打开独立测试接收器，截图确认极简界面可显示。63原跨屏IME在D0、编辑器在D2，随后焦点被其他现场操作切走且键盘隐藏，停止进一步UI操作保护现场；75保持D2测试界面。用户同意配合读固定测试句，尚未获得有效对比语音样本，响应时延与完整录音提交验收仍BLOCK，不得据安装成功宣称语音通过。证据目录：`/Volumes/ORICO/kemi-build-cache/app-release-gate/kboard/android/212-voice-live-20260923/`。
+- 用户要求极简语音出字速度与其他键盘一致。当前工作区曾新增极简启动录音缓存与约实时速率补发；持续采集时积压可能不易追平，不能将此代码推断当成已测延迟结论。
+- `KawaiiBarComponent` 改为所有模式调用默认 `asrClient.start()`，极简不再启用启动缓存补发；Starting统一显示连接中，连接未就绪松手统一取消并提示重试，不在松手后开麦。保留极简80ms按住门槛、48px移动容错、界面、权限、600ms最终预览及普通/全局行为。
+- 仅调整调用路径，保留工作区其他改动及ASR客户端未启用的缓存实现。设备延迟与真实目标收字尚未验证，未安装或发布；不宣称识别耗时已经达标。
+- 验证：`:app:compileReleaseKotlin` 与 `VoiceOutputRoutePolicyTest` 联合执行成功（1m58s），4项路由单测通过；不是音频延迟实测。日志：`/Volumes/ORICO/kemi-build-cache/kboard-minimal/voice-live-alignment-20260923.log`。真机语音时延门禁仍待完成。
 
 ## 2026-09-22 - 新增可拖动极简键盘（候选，未发布）
 
@@ -2479,3 +2511,23 @@ KEMI 设置页品牌化与动态名称中文化。
 - `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/overlay/KBoardOverlayService.kt`
 - `fcitx5-android/app/src/main/java/org/fcitx/fcitx5/android/input/overlay/PhysicalOverlayWindowPolicy.kt`
 - `fcitx5-android/app/src/test/java/org/fcitx/fcitx5/android/input/overlay/PhysicalOverlayWindowPolicyTest.kt`
+
+
+### 2026-09-23 极简键盘拖动位置记忆（待真机验收）
+
+- 根因：`InputView` 的 `minimalSavedX/Y` 只存在于视图实例，键盘隐藏或模式切换后新建视图便恢复(0,0)。
+- 改动：拖动结束时把位置按目标Display和方向归一化存入本地偏好；再次进入极简模式时按当前尺寸恢复并沿用原有屏幕边界限制。仅涉及极简模式，未改变普通/全局/浮动布局。
+- 构建：按 `fcitx5-android/scripts/assemble-debug-local.sh` 成功生成调试APK；尚未安装到63、尚未做拖动重启及跨屏10轮验证，不能判通过或发布。
+
+- 75真机补验：源码版本码由172提高为192以高于设备已装182；按正式脚本构建且平台签名证书不变，APK SHA-256为`76627b484e456508ca9b957878885b850dd39453d0e9159ef2372b20e0c88eed`。`adb install -r`成功，system UID1000及默认IME保留。副屏极简键盘拖动到左上后隐藏/重开10/10保持位置，强停KBoard进程后重开仍保持。首版自动截图因未等异步显示而报告一次证据不足；保留该记录，改为等待可见后完整跑10轮。证据目录：`/Volumes/ORICO/kemi-build-cache/app-release-gate/kboard/android/192-position-75/`。未验证跨屏/方向变化及其他键盘模式，不作总体通过结论。
+## 2026-09-23 极简键盘操作按钮与语音响应（75 真机候选）
+
+- 用户在 75 反馈极简键盘缺少隐藏与跨屏按钮，右下角应直接跨屏，语音按压比其他模式不灵敏。根因分别是极简布局仅有返回普通键盘、语音、退格、回车四格，缺少 `ScreenSwitchAction` 和隐藏入口；语音沿用全尺寸键盘的 160ms 按住启动延迟、24px 移动取消阈值，在小触区更容易被取消。识别、提交和其他键盘模式逻辑未改。
+- `MinimalKeyboard.kt` 保留原四键，增设右下跨屏键，直接复用现有 `ScreenSwitchKey`；顶部加入隐藏键，复用 `requestHideSelfAfterTouch`。`KawaiiBarComponent.kt` 只在极简模式将启动等待改为 80ms、移动取消阈值改为 48px；普通/悬浮/全局沿用原参数。
+- 首次按 `org.fcitx.fcitx5.android` 包名构建并安装成功，但检查 75 实际活动输入法为 `com.newlink.kemi.kboard`，所以首次安装不计验收。随即用已验证脚本和原平台证书重新构建 `com.newlink.kemi.kboard` 1.4.3+202，`BUILD SUCCESSFUL`（含 Kotlin、R8、Lint Vital），SHA-256 `49889626536d669b5f2e5017b1a57571d03e7b0a9700da80553cfd8bd0a46dc6`，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。75 `adb install -r` 返回 Success，活动 IME 包名保留。
+- 75 实机截图 `/private/tmp/kemi-kboard-202-ready.png` 可见顶部隐藏与右下跨屏，退格、回车仍在。点右下跨屏后 `/private/tmp/kemi-kboard-202-switch-main.png` 证明键盘从副屏移到主屏；点顶部隐藏后 `/private/tmp/kemi-kboard-202-hidden.png` 证明键盘收起。语音按压识别与实际文本提交仍待音频真机验证，不计通过；多次跨屏/100 轮稳定性亦未计通过。
+- 极简语音按键的主动 ADB 按住测试被工具自动审批拒绝：这会开启麦克风并可能把环境音频送往外部 ASR 服务，当前没有针对音频内容与去向的明确授权。未绕过该拒绝，语音仅完成代码检查和编译，未声明实测通过。
+- 用户随后明确授权在75做一次语音测试。KBoard 202 上按住约 0.9 秒的日志：10:31:17.184 `Down/Idle`，10:31:18.092 `Up/Starting`；权限已授予、Wi-Fi 已验证，说明松手时讯飞认证/连接还未就绪。旧代码在 `Starting` 松手立即取消且麦克风仅在 WebSocket `started` 后开启，因此这一次按住期间没有采到音频；80ms/48px 的极简触摸参数不能单独解决该问题。
+- 新候选仅极简模式在按住时先开启本地 `AudioRecord`，最多暂存 10 秒 PCM；若松手时仍在连接，立即停麦，连接成功后按原 50ms/1600B 节奏发送这次按住期间的音频并发送结束标记。连接失败/取消/切换布局清理缓冲，松手后绝不重新开麦。普通、悬浮、全局语音继续使用原启动/取消路径。极简 `Starting` 状态的提示改为“正在听”，因为此模式已在本机录音。
+- 正式签名 `com.newlink.kemi.kboard` 1.4.3+212 构建 `BUILD SUCCESSFUL`（含 Kotlin、R8、Lint Vital），SHA-256 `d4d698d847a14d970801ccddfb8717a96369e9e99dd702a2e5c8908f9fb86299`，平台证书未变；75 `install -r` 成功且设备版本码212。此包的真实语音发送/文字回填仍须另做一次授权音频测试，不能沿用旧202包的一次失败证据判通过。
+- 212 非语音回归：75 `/private/tmp/kemi-kboard-212-ui.png` 显示五个键及顶部隐藏/拖动；实际点右下跨屏后，`/private/tmp/kemi-kboard-212-switched.png` 显示键盘移到主屏；随后点隐藏并截图 `/private/tmp/kemi-kboard-212-hidden.png`。这各一次只证明按钮链路，不能证明语音或完整键盘矩阵。
