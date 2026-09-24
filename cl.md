@@ -6,6 +6,16 @@
 - 对显示 ID、任务信息、系统栏和签名读取增加旧系统兼容路径；Android 12/H730 原有读取方式不变。系统导航广播改用带显式导出标志的兼容注册接口；虚拟编辑器继承 AppCompatEditText。四项平台权限只在对应清单声明上注明系统签名用途，不全局关闭 lint。
 - 隔离 WSL 工作区执行 `:app:testDebugUnitTest :app:lintRelease` 成功，完整 lint 为 0 错误、159 条非阻断警告。此处仅确认静态检查和 JVM 单测；设备交互、真实语音及长时间稳定性仍需实机验证。
 
+## 2026-09-24 - 极简键盘主屏顶部拖动避让状态栏
+
+- 根因：`InputView.kt` 的极简拖动、位置保存和恢复都以输入法 View 顶部作为上限，主屏系统状态栏/顶部触摸区并未计入。面板被拖到顶部后，拖动柄可能进入系统接管区域，无法再拖回。
+- `InputView.kt` 统一计算拖动、保存和恢复的安全垂直范围：从当前 Display 的状态栏 Insets 取顶部高度；Android 12 IME 返回零 Insets 时，主屏用系统 `status_bar_height` 资源兜底，并根据 View 的屏幕坐标换算，另留 8dp 可触摸余量。状态栏 Insets 或 Display 变化后重新钳制现有位置；旧的极限位置恢复时也会被限制到安全范围。副屏无状态栏时不强加主屏高度。
+- 构建核对发现 `Versions.kt` 已为 1.4.5/222，但 `gradle.properties` 仍覆盖显示版本为 1.4.4；同步为 1.4.5，避免正式包版本标识与主线记录不符。除此之外未修改键盘排布、输入行为或语音流程。
+- 正式签名 Release 构建成功，包名 `com.newlink.kemi.kboard`，版本 `1.4.5/222`，v1/v2平台证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。`bin/KBoard-1.4.5-222-minimal-statusbar-release.apk` SHA-256 `7e3ada78d2fe270b3de29fc2c0b458d66802a1c433f72da8cf82622020ff97d5`。
+- 75 主屏便签实际弹出极简键盘，从底部拖至屏幕顶部后截图确认面板停在状态栏下方，再从顶部拖动柄成功拖回下方；63 正式包覆盖安装 `Success`，设备 `base.apk` 回读哈希一致，默认 IME 未变，未清数据。63 的主屏拖动及旋转专项留待后续现场验收；本轮不能据 75 结果宣称所有屏幕/旋转组合通过。
+- 备份前同步 `origin/main` 至 `b2a2d4d0`，保留云端新增的 Release lint 修正及其文档；`gradle.properties` 的 1.4.5 与云端相同，`InputView.kt` 拖动修正和云端旧系统兼容判断均保留。上述 APK 是同步前源码构建的已安装候选，本次云端备份只包含源码和变更记录，不把该 APK 声称为合并后源码的产物。
+- 合并后执行 `:app:compileReleaseKotlin` 成功（6秒），日志为 `/Volumes/ORICO/kemi-build-cache/kboard-statusbar-20260924-merged-compile.log`；该检查不替代合并后完整 Release 构建和设备验收。
+
 ## 2026-09-23 - 与 KEMI PAD 63/75 实装组合的备份核对
 
 - 75 实装的 KBoard `1.4.4+212` 从设备 `pm path` 对应 `base.apk` 提取，SHA-256 为 `9f2ef96c9e696746afe779abfd39c7d0a737a476e0920671b1985e9d9f8e750d`；63 原有同版本码 APK 哈希不同，现已使用 75 的确切字节 `adb install -r` 覆盖，63 回读哈希一致。两台均未清数据，63 默认输入法仍为 `com.newlink.kemi.kboard/org.fcitx.fcitx5.android.input.FcitxInputMethodService`。

@@ -356,6 +356,7 @@ class InputView(
     private var lockedDesktopKeyboardHeightPx = 0
     private var lastInsetsDisplayId = android.view.Display.INVALID_DISPLAY
     private var lastNavigationBottomInset = -1
+    private var lastStatusBarTopInset = -1
     private val deferredInsetsRefresh = Runnable {
         if (!disposed && isAttachedToWindow) requestApplyInsets()
     }
@@ -972,14 +973,31 @@ class InputView(
         return "${displayId ?: 0}_${resources.configuration.orientation}_$axis"
     }
 
+    private fun minimalVerticalTranslationRange(): Pair<Float, Float> {
+        val availableTravel = (height - keyboardView.height).coerceAtLeast(0).toFloat()
+        val statusInset = rootWindowInsets
+            ?.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars())?.top ?: 0
+        // On some Android 12 IME windows the status-bar inset is reported as zero even though
+        // the main display still reserves that strip for SystemUI touch handling.
+        val mainDisplayStatusHeight = if (display?.displayId == android.view.Display.DEFAULT_DISPLAY) {
+            val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+            if (resourceId != 0) resources.getDimensionPixelSize(resourceId) else 0
+        } else 0
+        val screenOrigin = IntArray(2)
+        getLocationOnScreen(screenOrigin)
+        val safeTop = (maxOf(statusInset, mainDisplayStatusHeight) - screenOrigin[1] +
+            dp(MINIMAL_STATUS_BAR_CLEARANCE_DP)).coerceIn(0, availableTravel.toInt())
+        return (safeTop - availableTravel) to 0f
+    }
+
     private fun saveMinimalKeyboardPosition() {
         val centeredLeft = (width - keyboardView.width) / 2f
         val minX = -centeredLeft
         val maxX = width - centeredLeft - keyboardView.width
-        val minY = -(height - keyboardView.height).toFloat()
+        val (minY, maxY) = minimalVerticalTranslationRange()
         context.getSharedPreferences("minimal_keyboard_position", Context.MODE_PRIVATE).edit()
             .putInt(minimalPositionKey("x"), normalize(minimalSavedX, minX, maxX))
-            .putInt(minimalPositionKey("y"), normalize(minimalSavedY, minY, 0f))
+            .putInt(minimalPositionKey("y"), normalize(minimalSavedY, minY, maxY))
             .apply()
     }
 
@@ -988,11 +1006,11 @@ class InputView(
         val centeredLeft = (width - keyboardView.width) / 2f
         val minX = -centeredLeft
         val maxX = width - centeredLeft - keyboardView.width
-        val minY = -(height - keyboardView.height).toFloat()
+        val (minY, maxY) = minimalVerticalTranslationRange()
         minimalSavedX = lerp(minX, maxX, prefs.getInt(minimalPositionKey("x"),
             normalize(0f, minX, maxX)) / FLOATING_POSITION_SCALE.toFloat())
-        minimalSavedY = lerp(minY, 0f, prefs.getInt(minimalPositionKey("y"),
-            normalize(0f, minY, 0f)) / FLOATING_POSITION_SCALE.toFloat())
+        minimalSavedY = lerp(minY, maxY, prefs.getInt(minimalPositionKey("y"),
+            normalize(0f, minY, maxY)) / FLOATING_POSITION_SCALE.toFloat())
         updateMinimalKeyboardPosition(minimalSavedX, minimalSavedY)
     }
 
@@ -1001,8 +1019,7 @@ class InputView(
         val centeredLeft = (width - keyboardView.width) / 2f
         val minX = -centeredLeft
         val maxX = width - centeredLeft - keyboardView.width
-        val minY = -(height - keyboardView.height).toFloat()
-        val maxY = 0f
+        val (minY, maxY) = minimalVerticalTranslationRange()
         keyboardView.translationX = clampToLayoutRange(x, minX, maxX)
         keyboardView.translationY = clampToLayoutRange(y, minY, maxY)
         preedit.ui.root.translationX = keyboardView.translationX
@@ -1362,6 +1379,7 @@ class InputView(
     override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
         val displayId = display?.displayId ?: android.view.Display.INVALID_DISPLAY
         val bottomInset = getNavBarBottomInset(insets)
+        val statusTopInset = insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top
         // A physical Overlay is not a system IME window. Its bottom navigation strip is rendered
         // inside bottomPaddingSpace, so applying the WindowManager-reported inset as an additional
         // margin creates a second blank strip after ordinary/desktop mode switches.
@@ -1371,16 +1389,25 @@ class InputView(
             // repeated D0/D2 migration and rotation idempotent.
             bottomMargin = appliedBottomInset
         }
-        if (displayId != lastInsetsDisplayId || appliedBottomInset != lastNavigationBottomInset) {
+        if (displayId != lastInsetsDisplayId || appliedBottomInset != lastNavigationBottomInset ||
+            statusTopInset != lastStatusBarTopInset) {
             Log.i(
                 INSETS_LOG_TAG,
                 "apply display=$displayId navigationBottom=$appliedBottomInset desktop=$desktopKeyboardMode"
             )
             lastInsetsDisplayId = displayId
             lastNavigationBottomInset = appliedBottomInset
+            lastStatusBarTopInset = statusTopInset
             if (minimalKeyboardMode && overlayRequestId == null) {
                 keyboardView.updateLayoutParams<LayoutParams> {
                     height = dp(MINIMAL_KEYBOARD_HEIGHT_DP) + appliedBottomInset
+                }
+            }
+            if (minimalKeyboardMode) keyboardView.post {
+                if (minimalKeyboardMode) {
+                    updateMinimalKeyboardPosition(
+                        keyboardView.translationX, keyboardView.translationY
+                    )
                 }
             }
             if (desktopKeyboardMode) {
@@ -1557,6 +1584,7 @@ class InputView(
         const val MINIMAL_KEYBOARD_MIN_WIDTH_DP = 320
         const val MINIMAL_KEYBOARD_MAX_WIDTH_DP = 320
         const val MINIMAL_KEYBOARD_HEIGHT_DP = 112
+        const val MINIMAL_STATUS_BAR_CLEARANCE_DP = 8
 
     }
 
