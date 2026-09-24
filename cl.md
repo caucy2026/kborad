@@ -2559,3 +2559,11 @@ KEMI 设置页品牌化与动态名称中文化。
 - 新候选仅极简模式在按住时先开启本地 `AudioRecord`，最多暂存 10 秒 PCM；若松手时仍在连接，立即停麦，连接成功后按原 50ms/1600B 节奏发送这次按住期间的音频并发送结束标记。连接失败/取消/切换布局清理缓冲，松手后绝不重新开麦。普通、悬浮、全局语音继续使用原启动/取消路径。极简 `Starting` 状态的提示改为“正在听”，因为此模式已在本机录音。
 - 正式签名 `com.newlink.kemi.kboard` 1.4.3+212 构建 `BUILD SUCCESSFUL`（含 Kotlin、R8、Lint Vital），SHA-256 `d4d698d847a14d970801ccddfb8717a96369e9e99dd702a2e5c8908f9fb86299`，平台证书未变；75 `install -r` 成功且设备版本码212。此包的真实语音发送/文字回填仍须另做一次授权音频测试，不能沿用旧202包的一次失败证据判通过。
 - 212 非语音回归：75 `/private/tmp/kemi-kboard-212-ui.png` 显示五个键及顶部隐藏/拖动；实际点右下跨屏后，`/private/tmp/kemi-kboard-212-switched.png` 显示键盘移到主屏；随后点隐藏并截图 `/private/tmp/kemi-kboard-212-hidden.png`。这各一次只证明按钮链路，不能证明语音或完整键盘矩阵。
+
+## 2026-09-24 75 语音按钮误置灰修复（专项验证）
+
+- 现场：75 已连接 `KEMI-T1` Wi-Fi，当前网络具备 `INTERNET`，但 Android 12 未给出 `VALIDATED`；KBoard 录音权限已授予。普通、全局、极简键盘共用的联网预检同时要求 `VALIDATED`，于是三个语音入口都置灰，按下时也会被同一预检拦截。这只能证明系统联网探测未验证，不能据此断言 ASR 服务实际不可达。
+- 改动：`KawaiiBarComponent.kt` 的 `isNetworkAvailableForVoice()` 不再把 `NET_CAPABILITY_VALIDATED` 当作启用语音的必要条件；仍要求活动网络具有 `INTERNET` 及受支持的传输类型，实际连接失败继续由现有 ASR 错误流程处理。未修改录音权限、识别、提交、按钮布局或其他输入功能。
+- 正式 `com.newlink.kemi.kboard` Release 1.4.6+232 构建成功（Kotlin、R8、Lint Vital）；APK `fcitx5-android/build/kboard.apk` SHA-256 为 `d3104bf48313f7830c9e00d61a43bed7190af4fc012552372aeab5c0cffd3fe5`，v1/v2 签名有效，平台证书指纹 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。75 `adb install -r` 成功，system UID 1000、默认 IME 和用户数据均保留。
+- 真机专项：在网络仍缺少 `VALIDATED` 时，极简、普通、全局模式语音键截图均呈可用状态；每个模式分别做一次 70ms 短按，日志均出现对应 `iFlytek ASR gesture=Down/Up` 且保持 `Idle`，没有被网络预检拦截，也没有启动录音。截图为 `/private/tmp/kboard75-voice-fix-before-input.png`、`/private/tmp/kboard75-voice-fix-normal.png`、`/private/tmp/kboard75-voice-fix-global-late.png`。该窗口未见新 FATAL/ANR。
+- 边界：本次未作实际录音、ASR 服务连接或文字回填，不得把按钮恢复误报为端到端语音识别通过；完整发布稳定性门禁仍为 BLOCK。本次只完成 75 的针对性修复验证，未推送其他设备。

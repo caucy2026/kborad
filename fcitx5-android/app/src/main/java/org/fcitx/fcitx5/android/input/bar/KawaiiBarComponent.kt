@@ -762,8 +762,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             val manager = context.getSystemService(ConnectivityManager::class.java) ?: return false
             val network = manager.activeNetwork ?: return false
             val caps = manager.getNetworkCapabilities(network) ?: return false
+            // Some device networks can reach ASR without Android's VALIDATED probe succeeding.
+            // Let the ASR connection report actual reachability instead of disabling voice UI.
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
                 (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
                     caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
                     caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
