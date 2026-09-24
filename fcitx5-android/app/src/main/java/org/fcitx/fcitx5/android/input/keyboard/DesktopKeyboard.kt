@@ -446,8 +446,9 @@ class DesktopKeyboard private constructor(
         // proxy editor does not always receive a final commitText when these keys first enter
         // Fcitx, which made visible A-Z/number/symbol keys appear dead in a remote session.
         // Chinese keeps the Fcitx path because its lowercase pinyin preedit and candidates are
-        // intentional. Ctrl+Space was handled above and remains the language switch gesture.
-        if (DesktopKeyPolicy.shouldSendPrintableDirectly(isChineseInputMethodActive())) {
+        // intentional; Caps Lock overrides it so uppercase letters bypass Fcitx like a physical
+        // keyboard instead of re-entering pinyin composition. Ctrl+Space stays the shortcut.
+        if (DesktopKeyPolicy.shouldSendPrintableDirectly(isChineseInputMethodActive(), capsLockEnabled)) {
             val physicalSym = when (action) {
                 is KeyAction.FcitxKeyAction -> DesktopKeyPolicy.shortcutKeySym(action.act)
                 is KeyAction.SymAction -> action.sym.takeIf {
@@ -483,8 +484,7 @@ class DesktopKeyboard private constructor(
                     ?: DesktopKeyPolicy.applyLetterCase(
                         action.act,
                         shifted,
-                        capsLockEnabled,
-                        isChineseInputMethodActive()
+                        capsLockEnabled
                     )
                 action.copy(act = label, states = states)
             }

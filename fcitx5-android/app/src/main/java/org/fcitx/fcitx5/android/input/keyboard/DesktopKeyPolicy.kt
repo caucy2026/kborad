@@ -49,10 +49,14 @@ internal object DesktopKeyPolicy {
     /**
      * The desktop English layout represents a physical keyboard. Sending its printable keys
      * through Fcitx can leave text in the local engine without producing commitText for proxy
-     * editors, so bypass Fcitx. Chinese layouts still require the complete preedit pipeline.
+     * editors, so bypass Fcitx. Chinese layouts still require the complete preedit pipeline,
+     * except while Caps Lock is active: a physical Caps Lock press means uppercase letters
+     * must not enter lowercase pinyin composition.
      */
-    fun shouldSendPrintableDirectly(chineseInputMethod: Boolean): Boolean =
-        !chineseInputMethod
+    fun shouldSendPrintableDirectly(
+        chineseInputMethod: Boolean,
+        capsLock: Boolean = false
+    ): Boolean = !chineseInputMethod || capsLock
 
     /** Resolve the physical key represented by a one-character desktop key definition. */
     fun shortcutKeySym(text: String): KeySym? {
@@ -73,12 +77,12 @@ internal object DesktopKeyPolicy {
     fun applyLetterCase(
         text: String,
         shift: Boolean,
-        capsLock: Boolean,
-        chineseInputMethod: Boolean
+        capsLock: Boolean
     ): String {
         val isLetter = text.length == 1 && text[0].isLetter()
         if (!isLetter) return text
-        val capsAffectsText = capsLock && !chineseInputMethod
-        return if (shift.xor(capsAffectsText)) text.uppercase() else text.lowercase()
+        // Caps Lock is a physical-keyboard state: when it is on, letters are uppercase in
+        // every IME. DesktopKeyboard bypasses Fcitx for these keys so they never enter preedit.
+        return if (shift.xor(capsLock)) text.uppercase() else text.lowercase()
     }
 }

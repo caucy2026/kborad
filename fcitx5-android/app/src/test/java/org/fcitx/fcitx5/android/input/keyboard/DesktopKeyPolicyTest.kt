@@ -70,17 +70,11 @@ class DesktopKeyPolicyTest {
     }
 
     @Test
-    fun capsAndShiftUsePhysicalKeyboardXorForEnglishLetters() {
-        assertEquals("a", DesktopKeyPolicy.applyLetterCase("a", false, false, false))
-        assertEquals("A", DesktopKeyPolicy.applyLetterCase("a", false, true, false))
-        assertEquals("A", DesktopKeyPolicy.applyLetterCase("a", true, false, false))
-        assertEquals("a", DesktopKeyPolicy.applyLetterCase("a", true, true, false))
-    }
-
-    @Test
-    fun capsDoesNotBreakLowercaseChinesePinyin() {
-        assertEquals("a", DesktopKeyPolicy.applyLetterCase("a", false, true, true))
-        assertEquals("A", DesktopKeyPolicy.applyLetterCase("a", true, true, true))
+    fun capsAndShiftUsePhysicalKeyboardXorForLetters() {
+        assertEquals("a", DesktopKeyPolicy.applyLetterCase("a", false, false))
+        assertEquals("A", DesktopKeyPolicy.applyLetterCase("a", false, true))
+        assertEquals("A", DesktopKeyPolicy.applyLetterCase("a", true, false))
+        assertEquals("a", DesktopKeyPolicy.applyLetterCase("a", true, true))
     }
 
     @Test
@@ -147,6 +141,12 @@ class DesktopKeyPolicyTest {
     fun desktopEnglishPrintableKeysBypassFcitxButChineseKeepsPreedit() {
         assertTrue(DesktopKeyPolicy.shouldSendPrintableDirectly(chineseInputMethod = false))
         assertFalse(DesktopKeyPolicy.shouldSendPrintableDirectly(chineseInputMethod = true))
+        assertTrue(
+            DesktopKeyPolicy.shouldSendPrintableDirectly(
+                chineseInputMethod = true,
+                capsLock = true
+            )
+        )
     }
 
     @Test

@@ -170,7 +170,10 @@ class DesktopTouchpadView(context: Context) : View(context), Choreographer.Frame
     }
 
     private fun layoutMouseButtons(left: Float, right: Float, top: Float, bottom: Float) {
-        val availableWidth = right - left - gap * 2f
+        // The panel already has its outer inset. Reserve only the gaps between buttons so the
+        // rightmost HOME/BACK or RIGHT button ends flush with the panel's outer border instead
+        // of overflowing past the screen edge or leaving a visible trailing gap.
+        val availableWidth = right - left - gap * (buttonRects.size - 1)
         // HOME/BACK remain large enough for direct touch; primary mouse buttons retain more
         // width than the less frequently used middle button.
         val weights = floatArrayOf(0.17f, 0.17f, 0.28f, 0.14f, 0.24f)
