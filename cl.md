@@ -1,5 +1,26 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-09-26 远程全局键盘候选丢失补丁（1.4.9/262）
+
+- 现象与上次修复的边界：1.4.8/252 在普通 IME 的 `onStartInputView()` 重同步原生候选分页模式，但远程办公的全局键盘由 `createPhysicalOverlayInputView()` 创建，不经过该回调。跨屏、Overlay 重建或 Service 代际切换后，Fcitx 原生 `pagingMode_` 可沿用物理分页值 1；此时拼音预编辑仍更新，原生却发送 `PagedCandidateEvent`，而横向候选栏消费的是 `CandidateListEvent`。这是源码确认的遗漏路径；尚未抓到复现当刻的 native 事件，不能宣称已证明它是唯一现场原因。
+- 事件链与此前为何未修好：`AndroidFrontend::setCandidatePagingMode(1)` 将原生候选输出切到分页事件；普通键盘 `InputDeviceManager.evaluateOnStartInputView()` 在 Java 状态未变化时不会再触发模式切换。1.4.8 因而在 `onStartInputView()` 无条件同步一次，解决的是普通 IME 新代际的漏同步。但物理 Overlay 有自己的 `activate → setCapFlags → focus → currentIme` 启动序列，并且跨屏重建仍走该工厂，所以 1.4.8 的同步根本不会运行于这个入口。它不是词库缺失、字体颜色或网络问题；现有证据仅能证明此代码路径存在缺口，不能排除现场还有其他触发条件。
+- 最小修复：在 `FcitxInputMethodService.kt` 的物理 Overlay 激活并 `focus(true)` 后，明确调用 `setCandidatePagingMode(0)`，让每次新建 Overlay 都恢复全量候选事件。普通 IME 的既有同步保留；未改键盘布局、输入路由、拼音词库、语音、远程办公客户端或 C++。
+- 对照的两个状态入口：普通 IME 在 `onStartInputView()` 按实际 `isVirtualKeyboard` 设置候选模式 `0/1`；远程全局 Overlay 固定显示完整虚拟键盘，在其创建时设置模式 `0`。将同步放在激活之后而非页面绘制或按键回调中，避免每次输入都切模式、重发候选，也覆盖 Overlay 每次重新创建。原生 setter 会在模式变化后立即更新候选事件，横向列表仍沿用既有渲染逻辑。
+- 正式包 1.4.9/262 在本机离线 `assembleRelease` 成功（含 `lintVitalRelease`）；`build/kboard.apk` SHA-256 为 `aa5a76daf8f21254b8ea42738144ac7704d37ff55c858e710976d41b29d350e0`，v1/v2 验签通过，平台证书 SHA-256 为 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 63 设备无损 `adb install -r` 返回 `Success`；实装版本 1.4.9/262，默认 IME 仍为 KBoard。主屏便签搜索框逐键输入 `nihao`，可见“你好”等多项中文候选（截图 `/private/tmp/kboard63-nihao.png`）；近期日志未见 KBoard FATAL/ANR。该搜索框未改动原便签正文。
+- 尚缺专项闭环：63 的远程办公会话当时显示 `Connection reset by peer (os error 104)`；点击其键盘入口未能重建物理 Overlay，因此本次没有拿到远程全局键盘的实际候选、跨屏与长循环验证。发布门禁仍为 **BLOCK**，待远程会话恢复后对该路径进行真机验证；不能用普通键盘冒烟通过替代。
+- 恢复验收要点：在正常远程会话中让全局键盘于 D0、D2 各输入 `nihao`，确认预编辑、候选多项显示、首选提交都正常；执行显示迁移及键盘关闭/重开后复测；核对默认 IME、无 FATAL/ANR 和无空候选。若再次出现预编辑有字而无候选，应同时记录 native 候选事件类型与 `pagingMode_`，区分模式残留和其他候选链故障，再决定是否进一步修复。
+- 补充测试限制：尝试 `:app:testDebugUnitTest --offline`，但当前隔离 Gradle 缓存缺少 `splitties-mainthread-debug.aar`、`splitties-exceptions-debug.aar`，依赖解析阶段即停止；不是测试用例失败，不能据此宣称单测通过。正式 Release 构建及 lintVital 不受此缺失影响。
+
+## 2026-09-26 拼音预编辑有字但候选栏消失：原生分页模式重同步候选
+
+- 63 真机的普通便签正文已复现：KBoard 1.4.6+232 输入 `nihao` 时预编辑可见、横向汉字候选为空且正文未提交；仅强停 KBoard（不清数据）再打开拼音后，候选“你好”出现并能提交。一次远控 Overlay 开关后的 10 次本地短循环未复现，故尚未锁定完整触发序列。
+- 静态根因链：C++ `AndroidFrontend` 的 `pagingMode_` 在物理候选模式为 1 时只发送 `PagedCandidateEvent`，普通键盘的横向候选组件只接收 `CandidateListEvent`。原生 Fcitx 在输入法 Service 代际切换的 2 秒宽限内可能保持运行及 `pagingMode_`，而新 Service 的 `InputDeviceManager` 默认虚拟模式为 true；状态没有变化时原有回调不会把 native 模式从 1 重设为 0。这解释“有拼音预编辑、无横向候选；强停后恢复”，仍需坏现场事件日志与真机复测证明这是现场唯一原因。
+- 仅在 `FcitxInputMethodService.onStartInputView()` 的模式判定后增加一次无条件 native 模式同步，按执行时的实际虚拟/物理状态选择 0/1；native setter 随即重发相应候选。未更改布局、输入路由、语音、拼音词库或 C++。保留工作树里既有的扩展键盘标记优先修复。
+- 为避免与历史失败的 1.4.7+242 候选混淆，本次候选版本为 1.4.8+252。`compileReleaseKotlin --offline` 成功；按既有正式签名脚本完整 `assembleRelease --offline` 成功（含 native、R8、lintVital）。候选 `/Volumes/ORICO/kemi/kboard/fcitx5-android/build/kboard.apk` 为 `com.newlink.kemi.kboard`、arm64-v8a、1.4.8/252、SHA-256 `98fec2818c711b735737a5a68dcaae37d55fd7ac04ddb30813cb26f11367e35b`，v1/v2 验签通过，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- `:app:testDebugUnitTest --offline` 运行 32 个测试集、111 项测试，0 失败、0 错误、0 跳过；此静态/JVM 回归不替代真实 IME 代际切换。构建时尚未做真机专项，发布门禁为 BLOCK；后续还需复现“native 物理模式残留→新普通键盘”并验证候选恢复，再测物理浮动候选、跨屏 Overlay 及语音输入不回归。
+- 后续 63 无损覆盖安装返回 `Success`；实装 1.4.8/252、`userId=1000`、默认 IME 仍为主 `FcitxInputMethodService`，设备 `base.apk` 回读 SHA-256 与正式候选完全一致。普通便签正文真机点按 `nihao` 出现“你好”等汉字候选，选首项可提交；测试字已经删除，便签原正文恢复。截图 `/private/tmp/kboard252-local-nihao.png`、`/private/tmp/kboard252-local-commit.png`、`/private/tmp/kboard252-note-restored.png`。这是安装后的普通输入冒烟通过；旧坏现场经强停后本已恢复，本次没有再现 native 分页模式残留，不能据此宣称那条竞态已闭环。副屏此时显示正在构建的 Windows 终端，远控跨屏候选未操作，仍 BLOCK。
+
 ## 2026-09-24 - 1.4.5 Release lint 错误修复
 
 - 根因：项目仍声明 minSdk 23，但双屏/系统预置代码直接调用 API 28–30；平台签名专用权限也被普通应用规则误判，另有动态广播标志及自定义输入框基类问题。完整 `:app:lintRelease` 在修复前报 27 个错误、160 条警告。
@@ -2559,6 +2580,22 @@ KEMI 设置页品牌化与动态名称中文化。
 - 新候选仅极简模式在按住时先开启本地 `AudioRecord`，最多暂存 10 秒 PCM；若松手时仍在连接，立即停麦，连接成功后按原 50ms/1600B 节奏发送这次按住期间的音频并发送结束标记。连接失败/取消/切换布局清理缓冲，松手后绝不重新开麦。普通、悬浮、全局语音继续使用原启动/取消路径。极简 `Starting` 状态的提示改为“正在听”，因为此模式已在本机录音。
 - 正式签名 `com.newlink.kemi.kboard` 1.4.3+212 构建 `BUILD SUCCESSFUL`（含 Kotlin、R8、Lint Vital），SHA-256 `d4d698d847a14d970801ccddfb8717a96369e9e99dd702a2e5c8908f9fb86299`，平台证书未变；75 `install -r` 成功且设备版本码212。此包的真实语音发送/文字回填仍须另做一次授权音频测试，不能沿用旧202包的一次失败证据判通过。
 - 212 非语音回归：75 `/private/tmp/kemi-kboard-212-ui.png` 显示五个键及顶部隐藏/拖动；实际点右下跨屏后，`/private/tmp/kemi-kboard-212-switched.png` 显示键盘移到主屏；随后点隐藏并截图 `/private/tmp/kemi-kboard-212-hidden.png`。这各一次只证明按钮链路，不能证明语音或完整键盘矩阵。
+
+## 2026-09-24 扩展模式键盘跨屏回归修复候选（发布门禁仍 BLOCK）
+
+- 75 的旧 KBoard +222 在扩展编辑器显示于副屏时，右下跨屏键不生效；日志为 `KBoard remote display switch delegated=false supported=false`。根因是 `toggleImeDisplay()` 先按 KEMI 包名进入旧代理分支并提前返回，扩展编辑器虽带 `com.newlinksz.kemi.remote.EXPANDED_KEYBOARD` 标记，却没有旧代理 request extras。
+- 最小调整：先处理明确带扩展标记的分支，再处理原有包名代理分支；不改变旧代理、普通应用或布局逻辑。版本提高到 1.4.6+232，以避免真机覆盖安装旧码。
+- `ExpandedKeyboardSwitchPolicyTest`、Release Kotlin 编译及正式签名构建通过。候选 APK `/Volumes/ORICO/kemi/kboard/fcitx5-android/build/kboard.apk`，SHA-256 `4bbe29221ef93578e5bb3f4224a39159c2834a0eb0f9e00e45792b8ce70c381d`，平台证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。
+- 75 无损覆盖安装后，扩展模式副屏→主屏→副屏切换 10/10 轮，通过系统 IME display token 与双屏非黑图核对：`/private/tmp/kemi75-kboard232-expanded-switch-10/results.jsonl`。收回扩展后的单屏跨屏极简键盘弹出/隐藏 10/10 轮：`/private/tmp/kemi75-310-kboard232-single-overlay-10/results.jsonl`。63 已覆盖安装相同哈希，默认输入法未变。
+- 上述仅证明跨屏显示生命周期。普通/浮动/全局输入、语音、组合键、HOME、真实 HDMI 视频以及 63 全矩阵尚未通过；不得作为发布通过报告。
+
+## 2026-09-24 本地便签隐藏后单击重开专项（诊断未解决，发布 BLOCK）
+
+- 75 上 KEMI PAD +314、KBoard +232，便签正文输入时点击 KBoard 左下隐藏后，单击同一正文位置偶发不重开，第二次点击可重开；标题栏一次点击可重开。旧脚本第 2 轮复现，去掉每轮 `am start` 的原位脚本首轮也复现。证据 `/private/tmp/kemi75-314-local-hide-10/`、`/private/tmp/kemi75-314-local-hide-reopen-direct-10/`。
+- 假设 2026-09-20 为跨屏窗口加入的额外 `hideWindow()` 在普通编辑器上造成该现象。仅把额外关闭限于 `DesktopNavigationHideBridge.isCrossDisplayWindowShown`，版本临时升为 1.4.7+242，按正式脚本构建，v1/v2 平台签名证书 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`，候选 SHA-256 `bed9cb1263cb394aa104c501016840a794749d097c15cf28323870852f0ad131`。75 无损覆盖后同一脚本首轮仍失败：`/private/tmp/kemi75-kboard242-local-hide-reopen-direct-10/results.jsonl`。**假设被证伪，不发布 +242。**
+- 试验涉及 `FcitxInputMethodService.kt`、`Versions.kt`、`gradle.properties` 的修改已恢复原样。75 已无损降回从恢复后源码构建的 1.4.6+232，默认 IME 仍为 KBoard；重建包 SHA-256 `f00f98d453753f8e9432fd7cb809b1397fcb0172490e052a5693a85a59a183a9`，与先前设备实装 +232 哈希不同，旧验收不得冒充新包通过。63 暂时失联，待其恢复后读回原包或对重建包重跑组合验收。
+- 根因仍未证实。下一步比较便签正文的焦点/`showSoftInput` 请求和本地其他编辑器，再看跨屏宿主是否残留；不得再把本地重开失败归因于额外 `hideWindow()`。
+- 补充反证：75 恢复 +232 重建包后，不在每轮切换 Activity 的便签原位“隐藏→首次单击正文”10/10 轮均使系统 `mShowRequested=true`、`mInputShown=true`，记录 `/private/tmp/kemi75-kboard232-hide-reopen-diagnostic/results.jsonl`。故失败是前置状态相关的间歇问题；先前 1/1 失败和本次 10/10 通过都不能独自代表全场景。后续按 Activity 重入、焦点切换、跨屏返回分别建变体。
 
 ## 2026-09-24 75 语音按钮误置灰修复（专项验证）
 
