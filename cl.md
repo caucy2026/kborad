@@ -1,5 +1,13 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-10-09 - 外接物理键盘快速输入掉字修复测试包
+
+- 16.85 的 HS6209 2.4G Wireless Receiver（deviceId=15）快速输入时，日志记录 5 次小于 12ms 的按键丢弃；用户同时确认输入 `nihaojintiantianqizenmeyang` 出现少字。旧规则将不同字符键的正常快速衔接误判为硬件异常。
+- `FcitxInputMethodService.kt` 移除物理按下/松开事件的时间过滤及其状态重置；删除不再使用的 `HardwareKeyAnomalyFilter.kt` 和断言吞键的旧测试。物理事件沿既有输入引擎路径转发，屏幕键盘触摸、语音手势、组合键及系统返回策略不改。
+- 同步远端 main 至 `41cbe8d4a8bca1b8d1f5e3c47ba75d64328daeea`，保留本地发布记录及无关改动。完整 lint 发现远端 `InputView.kt` 两处状态栏读取共 6 项 NewApi 错误；改用 AndroidX WindowInsetsCompat，保留现有位置计算和状态栏避让逻辑。
+- 基于上述提交加未提交修复，在独立 WSL 目录生成 1.4.9/262 平台签名测试包。最终 `testDebugUnitTest` 107 项通过，`lintRelease` 0 错误、161 条警告，`assembleRelease` 成功；v1/v2 签名验证通过，平台证书指纹符合项目约定。APK：`bin/KBoard-1.4.9-262-hardware-key-test-20261009.apk`，SHA-256 `418a4de8696b40c655a6d053ca94bbe30e990cfe6c9a09194fd0acb1a67b1800`。
+- 172.21.16.85 无损覆盖安装成功，回读 APK 哈希一致，活动版本 1.4.9/262、UID 1000、默认 IME 均已核对；设置页冷启动成功，启动日志快照无匹配的崩溃或旧过滤告警。未清数据、未远程开麦；真实外接键盘快打及软键盘体验留待用户复测，不能以构建/启动成功代替掉字验收。未提交或推送本次修复，未发布商城。证据见 `diagnostics/hardware-keyboard-16.85-20261009/`。
+
 ## 2026-09-26 远程全局键盘候选丢失补丁（1.4.9/262）
 
 - 现象与上次修复的边界：1.4.8/252 在普通 IME 的 `onStartInputView()` 重同步原生候选分页模式，但远程办公的全局键盘由 `createPhysicalOverlayInputView()` 创建，不经过该回调。跨屏、Overlay 重建或 Service 代际切换后，Fcitx 原生 `pagingMode_` 可沿用物理分页值 1；此时拼音预编辑仍更新，原生却发送 `PagedCandidateEvent`，而横向候选栏消费的是 `CandidateListEvent`。这是源码确认的遗漏路径；尚未抓到复现当刻的 native 事件，不能宣称已证明它是唯一现场原因。

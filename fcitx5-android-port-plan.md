@@ -1,5 +1,15 @@
 # fcitx5-android 移植到 V900 平板计划
 
+## 近期构建补充：2026-10-09
+
+- 物理键盘修复测试包的独立 WSL 目录为 `/root/kboard-hardware-key-test-20261009`；基线 main `41cbe8d4a` 加未提交修复，不是干净的正式发布提交。复用 `/opt/android-sdk` 和 JDK 17，签名口令由已有私密文件注入环境，不能输出或归档口令。
+- WSL 原生构建应使用 Linux 工具路径：`PATH="$JAVA_HOME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"`，再前置本项目 gettext 路径。本轮继承 Windows PATH 时，多次观察到 CMake 等待 `p9_client_rpc`；限定路径并复用缓存后，原生配置不再出现此前的长时间等待。不要修改 NDK 头文件或 CMake 查找模块绕过此问题。
+- 根仓库及必要内置引擎用本地 Git 对象准备独立检出；仅克隆主 APK 所需库及其递归子模块。独立语言插件不在本次编译范围；使用 `KEMI_SUBMODULES_READY=1` 前已准备固定版本的内置库，标准 native bootstrap 补丁仍正常应用。共享 Git 对象仍依赖原构建仓库，不能随意删除其对象目录。
+- Windows→WSL 传递补丁时须明确换行转换，核对源码哈希；不能把 Windows CRLF 的整文件重写误认为业务修改。已有目录若 `.git` 是文件，表示 linked worktree，不能直接复制该文件到新目录复用索引。
+- 本轮完整 lint 曾发现远端 InputView 状态栏 API 兼容错误，已修复后重新验证；最终 107 项 JVM 测试通过、完整 lint 0 错误（161 警告）、平台签名及安装回读验证通过。构建脚本与中断/失败/最终日志保存在 `diagnostics/hardware-keyboard-16.85-20261009/`。这是 16.85 用户验收用测试候选，不代表正式发布门禁完成。
+
+---
+
 > 日期: 2026-07-23
 > 目标设备: V900 双屏平板 (192.168.3.46:5555)
 

@@ -118,8 +118,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private val cachedKeyEvents = LruCache<Int, KeyEvent>(78)
     private var cachedKeyEventIndex = 0
 
-    private val hardwareKeyAnomalyFilter = HardwareKeyAnomalyFilter()
-
     /**
      * Saves MetaState produced by hardware keyboard with "sticky" modifier keys, to clear them in order.
      * See also [InputConnection#clearMetaKeyStates(int)](https://developer.android.com/reference/android/view/inputmethod/InputConnection#clearMetaKeyStates(int))
@@ -371,7 +369,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         releaseDesktopInputStates()
         clearPendingDesktopMouseMove()
         desktopMouseMoveSignal.close()
-        hardwareKeyAnomalyFilter.reset()
         cachedKeyEvents.evictAll()
         showingDialog?.dismiss()
         showingDialog = null
@@ -1462,22 +1459,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         if (keyCode == KeyEvent.KEYCODE_BACK && shouldConsumeImeNavigationBack(event.flags, event.source)) {
             return true
         }
-        if (isPhysicalHardwareKey(event) && hardwareKeyAnomalyFilter.shouldDropDown(
-                HardwareKeyAnomalyFilter.Key(event.deviceId, keyCode),
-                event.eventTime,
-                event.isPrintingKey,
-                KeyEvent.isModifierKey(keyCode),
-                event.repeatCount
-            )
-        ) {
-            Timber.w(
-                "Dropped abnormal hardware key down: device=%d keyCode=%d after < %dms",
-                event.deviceId,
-                keyCode,
-                HardwareKeyAnomalyFilter.DEFAULT_MINIMUM_RELEASE_TO_PRESS_MILLIS
-            )
-            return true
-        }
+        // Physical key events must reach the engine even when the previous key was
+        // released less than 12 ms ago. That interval is valid during fast typing.
+        // On-screen touch/voice gesture handling belongs to the keyboard views.
         // request to show floating CandidatesView when pressing physical keyboard
         if (inputDeviceMgr.evaluateOnKeyDown(event, this)) {
             postFcitxJob {
@@ -1496,15 +1480,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         if (keyCode == KeyEvent.KEYCODE_BACK && shouldConsumeImeNavigationBack(event.flags, event.source)) {
             return true
         }
-        if (isPhysicalHardwareKey(event) && hardwareKeyAnomalyFilter.shouldDropUp(
-                HardwareKeyAnomalyFilter.Key(event.deviceId, keyCode),
-                event.eventTime,
-                event.isPrintingKey,
-                KeyEvent.isModifierKey(keyCode)
-            )
-        ) {
-            return true
-        }
         return forwardKeyEvent(event) || super.onKeyUp(keyCode, event)
     }
 
@@ -1512,10 +1487,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         event.isFromSource(InputDevice.SOURCE_MOUSE) ||
             (android.os.Build.VERSION.SDK_INT >= 26 &&
                 event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE))
-
-    private fun isPhysicalHardwareKey(event: KeyEvent): Boolean =
-        event.deviceId != KeyCharacterMap.VIRTUAL_KEYBOARD &&
-            event.flags and KeyEvent.FLAG_VIRTUAL_HARD_KEY == 0
 
     // Added in API level 14, deprecated in 29
     // it's needed because editors still use it even on API 36
@@ -1591,7 +1562,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 KBoardOverlaySession::closeForRegularInput
             )
         }
-        hardwareKeyAnomalyFilter.reset()
         // update selection as soon as possible
         // sometimes when restarting input, onUpdateSelection happens before onStartInput, and
         // initialSel{Start,End} is outdated. but it's the client app's responsibility to send

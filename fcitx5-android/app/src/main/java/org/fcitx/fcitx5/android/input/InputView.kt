@@ -24,6 +24,8 @@ import android.view.inputmethod.InlineSuggestionsResponse
 import android.widget.ImageView
 import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CapabilityFlags
@@ -975,8 +977,8 @@ class InputView(
 
     private fun minimalVerticalTranslationRange(): Pair<Float, Float> {
         val availableTravel = (height - keyboardView.height).coerceAtLeast(0).toFloat()
-        val statusInset = rootWindowInsets
-            ?.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars())?.top ?: 0
+        val statusInset = ViewCompat.getRootWindowInsets(this)
+            ?.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars())?.top ?: 0
         // On some Android 12 IME windows the status-bar inset is reported as zero even though
         // the main display still reserves that strip for SystemUI touch handling.
         val mainDisplayStatusHeight = if (display?.displayId == android.view.Display.DEFAULT_DISPLAY) {
@@ -1379,7 +1381,8 @@ class InputView(
     override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
         val displayId = display?.displayId ?: android.view.Display.INVALID_DISPLAY
         val bottomInset = getNavBarBottomInset(insets)
-        val statusTopInset = insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top
+        val statusTopInset = WindowInsetsCompat.toWindowInsetsCompat(insets, this)
+            .getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars()).top
         // A physical Overlay is not a system IME window. Its bottom navigation strip is rendered
         // inside bottomPaddingSpace, so applying the WindowManager-reported inset as an additional
         // margin creates a second blank strip after ordinary/desktop mode switches.
