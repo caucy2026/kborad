@@ -363,6 +363,8 @@
     <string name="market_update_store_unavailable">KEMI 商城不可用或不支持此链接，请检查设备上的商城应用。</string>
     <string name="start_voice_input">开始语音输入</string>
     <string name="stop_voice_input">停止语音输入</string>
+    <string name="voice_input_released_before_ready">语音连接尚未就绪，请重新按住麦克风，等待提示“正在听”后再说话。</string>
+    <string name="voice_input_no_speech">未识别到语音，请按住麦克风重试。</string>
     <string name="voice_input_error">语音识别失败：%1$s</string>
     <string name="voice_input_connecting">正在连接语音服务…</string>
     <string name="voice_input_listening">正在听，请继续说…</string>
