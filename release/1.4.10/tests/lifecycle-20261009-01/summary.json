@@ -1,0 +1,7 @@
+{
+  "start": "2026-10-09T20:35:24+0800",
+  "end": "2026-10-09T20:49:46+0800",
+  "completed": 126,
+  "error": "home-resume-27-shown: system=False, view=False",
+  "fatal_anr_lines": []
+}

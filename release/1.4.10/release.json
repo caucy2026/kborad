@@ -1,0 +1,28 @@
+{
+  "status": "published",
+  "publishedAt": "2026-10-10T09:14:12+08:00",
+  "package": "com.newlink.kemi.kboard",
+  "os": "android",
+  "versionName": "1.4.10",
+  "versionCode": 272,
+  "previousVersionName": "1.4.5",
+  "previousVersionCode": 222,
+  "sourceCommit": "f0370ed75e502d43e934d31106d625c6e2b4572f",
+  "bytes": 45850226,
+  "sha256": "ad8ee5ae83a50f9b0a39be24f81f52dd6cbe21293d48eded61f3325b2765b24f",
+  "certificateSha256": "c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8",
+  "appId": 20,
+  "historyId": 263,
+  "forceUpdate": false,
+  "downloadUrl": "https://cdn.newlink-sz.com/kemiAppStore/apk/2026/10/1791553053522_f2a6e3f6_kboard.apk",
+  "manualAcceptance": {
+    "source": "user confirmation in release conversation",
+    "date": "2026-10-10",
+    "statement": "人工验收项目已完成，请继续走正式上架流程",
+    "independentlyRetestedByAgent": false
+  },
+  "upgradeTestVersion": "1.4.11",
+  "upgradeTestVersionCode": 282,
+  "upgradeTestDraftWithdrawn": true,
+  "report": "market/formal-publication-20261010.md"
+}
