@@ -10,6 +10,9 @@ import org.fcitx.fcitx5.android.core.KeySym
 
 /** Routing and letter-case rules used only by the full desktop keyboard. */
 internal object DesktopKeyPolicy {
+    /** 单独轻按 Shift 切换中英的最长按住时长；超过视为按住 Shift 做选择等操作。 */
+    const val SHIFT_TAP_MAX_MS = 500L
+
     private val rawControlKeySyms = buildSet {
         add(FcitxKeyMapping.FcitxKey_Escape)
         addAll(FcitxKeyMapping.FcitxKey_F1..FcitxKeyMapping.FcitxKey_F12)

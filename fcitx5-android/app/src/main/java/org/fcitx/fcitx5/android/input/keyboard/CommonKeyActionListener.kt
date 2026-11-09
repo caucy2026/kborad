@@ -34,6 +34,7 @@ import org.fcitx.fcitx5.android.input.keyboard.KeyAction.RemoteSystemKeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.PickerSwitchAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.QuickPhraseAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.ScreenSwitchAction
+import org.fcitx.fcitx5.android.input.keyboard.KeyAction.ShiftToggleAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.ShowInputMethodPickerAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.SpaceLongPressAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.SymAction
@@ -178,6 +179,10 @@ class CommonKeyActionListener :
                             service.switchToNextIME()
                         }
                     }
+                }
+                is ShiftToggleAction -> service.postFcitxJob {
+                    service.selectOutputRoute(inputView.overlayRequestId)
+                    toggleIme()
                 }
                 is ShowInputMethodPickerAction -> showInputMethodPicker()
                 is ScreenSwitchAction -> {

@@ -82,6 +82,7 @@ import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.cursor.CursorRange
 import org.fcitx.fcitx5.android.input.cursor.CursorTracker
+import org.fcitx.fcitx5.android.input.keyboard.DesktopKeyPolicy
 import org.fcitx.fcitx5.android.input.keyboard.RemoteMouseInputProtocol
 import org.fcitx.fcitx5.android.input.overlay.KBoardOverlaySession
 import org.fcitx.fcitx5.android.input.overlay.KBoardOverlayService
@@ -117,6 +118,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     private val cachedKeyEvents = LruCache<Int, KeyEvent>(78)
     private var cachedKeyEventIndex = 0
+
+    /** 实体键盘单独轻按 Shift 的候选状态；0 表示当前没有候选。 */
+    private var shiftTapKeyCode = 0
+    private var shiftTapDownTime = 0L
 
     /**
      * Saves MetaState produced by hardware keyboard with "sticky" modifier keys, to clear them in order.
@@ -1469,8 +1474,22 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             }
             forceShowSelf()
         }
+        if (isShiftKeyCode(keyCode)) {
+            if (event.repeatCount == 0) {
+                val chord = event.isCtrlPressed || event.isAltPressed || event.isMetaPressed
+                shiftTapKeyCode = if (chord) 0 else keyCode
+                shiftTapDownTime = event.eventTime
+            }
+            // Shift 不进入 Fcitx，避免内置 AltTriggerKeys(Shift_L) 与轻按切换重复触发；
+            // 原事件交还目标应用，Shift+字母的状态由字母事件自身的 metaState 携带。
+            return super.onKeyDown(keyCode, event)
+        }
+        shiftTapKeyCode = 0
         return forwardKeyEvent(event) || super.onKeyDown(keyCode, event)
     }
+
+    private fun isShiftKeyCode(keyCode: Int): Boolean =
+        keyCode == KeyEvent.KEYCODE_SHIFT_LEFT || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         // PAD firmware represents the physical mouse right button as BACK.
@@ -1479,6 +1498,15 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         // System BACK must reach the focused application; see onKeyDown above.
         if (keyCode == KeyEvent.KEYCODE_BACK && shouldConsumeImeNavigationBack(event.flags, event.source)) {
             return true
+        }
+        if (isShiftKeyCode(keyCode)) {
+            val tap = shiftTapKeyCode == keyCode &&
+                event.eventTime - shiftTapDownTime <= DesktopKeyPolicy.SHIFT_TAP_MAX_MS
+            shiftTapKeyCode = 0
+            if (tap) {
+                postFcitxJob { toggleIme() }
+            }
+            return super.onKeyUp(keyCode, event)
         }
         return forwardKeyEvent(event) || super.onKeyUp(keyCode, event)
     }

@@ -52,6 +52,9 @@ sealed class KeyAction {
 
     data object LangSwitchAction : KeyAction()
 
+    /** 桌面键盘单独轻按 Shift：只在中英之间切换，不受语言键行为设置影响。 */
+    data object ShiftToggleAction : KeyAction()
+
     data object ShowInputMethodPickerAction : KeyAction()
 
     data object ScreenSwitchAction : KeyAction()

@@ -7,6 +7,7 @@ package org.fcitx.fcitx5.android.input.keyboard
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.InputDevice
 import android.view.View
@@ -378,6 +379,9 @@ class DesktopKeyboard private constructor(
     // ── Runtime state ──
     private val modifierStates = linkedSetOf<KeyState>()
     private val heldModifierKeys = linkedMapOf<TextKeyView, KeyState>()
+
+    /** 单独轻按 Shift 切换中英的候选按下时刻；-1 表示没有候选。 */
+    private var shiftTapDownTime = -1L
     private val textKeys by lazy { allViews.filterIsInstance<TextKeyView>() }
     private var capsLockEnabled = false
     private var currentImeName: String = ""
@@ -392,6 +396,10 @@ class DesktopKeyboard private constructor(
     }
 
     override fun onAction(action: KeyAction, source: KeyActionListener.Source) {
+        // Shift 按住期间出现任何字符、控制键或触控板动作，都不再算单独轻按。
+        if (action !is KeyAction.ModifierStateAction && action !is KeyAction.ShiftToggleAction) {
+            shiftTapDownTime = -1L
+        }
         if (action is KeyAction.SpaceLongPressAction &&
             DesktopKeyPolicy.hasShortcutModifier(modifierStates)
         ) {
@@ -502,6 +510,7 @@ class DesktopKeyboard private constructor(
         releaseHeldModifierKeys()
         heldModifierKeys.clear()
         modifierStates.clear()
+        shiftTapDownTime = -1L
         updateModifierKeys()
         updateShortcutHints()
         updateLetterKeys()
@@ -516,6 +525,7 @@ class DesktopKeyboard private constructor(
         releaseHeldModifierKeys()
         heldModifierKeys.clear()
         modifierStates.clear()
+        shiftTapDownTime = -1L
         updateModifierKeys()
         updateShortcutHints()
         touchpadView.releaseInputState()
@@ -602,6 +612,11 @@ class DesktopKeyboard private constructor(
                 when (event.type) {
                     GestureType.Down -> {
                         if (key !in heldModifierKeys) {
+                            shiftTapDownTime = if (state == KeyState.Shift && heldModifierKeys.isEmpty()) {
+                                SystemClock.uptimeMillis()
+                            } else {
+                                -1L
+                            }
                             val stateAlreadyHeld = state in heldModifierKeys.values
                             heldModifierKeys[key] = state
                             // The layout contains two Shift keys. The second physical touch must
@@ -618,6 +633,12 @@ class DesktopKeyboard private constructor(
                         // is normalized to Up by CustomGestureView and follows this same path.
                         if (removed != null && state !in heldModifierKeys.values) {
                             onAction(KeyAction.ModifierStateAction(state, down = false))
+                            val tap = state == KeyState.Shift && !event.cancelled &&
+                                shiftTapDownTime >= 0 &&
+                                SystemClock.uptimeMillis() - shiftTapDownTime <=
+                                DesktopKeyPolicy.SHIFT_TAP_MAX_MS
+                            shiftTapDownTime = -1L
+                            if (tap) onAction(KeyAction.ShiftToggleAction)
                         }
                     }
                     GestureType.Move -> return@OnGestureListener false

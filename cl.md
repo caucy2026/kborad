@@ -1,5 +1,16 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-11-05 - 单独轻按 Shift 切换中英（实体键盘与全局桌面键盘）
+
+- 行为：实体键盘左右 Shift、全局桌面键盘两枚 Shift，单独按下并在 500ms 内松开、期间无其他按键/触控板动作、按下时未持有 Ctrl/Alt/Meta，即在中文与英文之间切换（`toggleIme()`），不受语言键行为设置影响。中文有未上屏拼音时，拼音引擎默认 `SwitchInputMethodBehavior=CommitPreedit` 会先把已输入字母原样上屏再切换。普通虚拟键盘 Shift 仍是大小写键，未改。
+- 根因：原先只有 Fcitx 内置 `AltTriggerKeys`（默认 `Shift_L`）生效，仅左 Shift，且只能从已激活的中文状态切回英文；初始为英文时无效。全局桌面键盘 Shift 只向远端发送真实 DOWN/UP，没有切换逻辑。
+- `FcitxInputMethodService.kt`：实体 Shift 不再送入 Fcitx（避免与内置 AltTriggerKeys 重复切换），原事件交回目标应用；Shift+字母的状态由字母事件自身 metaState 携带。服务内记录轻按候选，其他键按下即取消。
+- `DesktopKeyboard.kt`：首枚 Shift 按下且无其他修饰键时记录候选；任何非修饰键动作（字符、控制键、触控板鼠标/滚轮/系统键）取消；最后一枚 Shift 松开先照常发送 Shift UP，再发 `ShiftToggleAction`。`onAttach/onDetach` 清空候选。
+- `KeyAction.kt` 新增 `ShiftToggleAction`；`CommonKeyActionListener.kt` 先 `selectOutputRoute(overlayRequestId)` 再 `toggleIme()`，保证上屏字母进入远程/Overlay 编辑器。`DesktopKeyPolicy.kt` 新增共用阈值 `SHIFT_TAP_MAX_MS=500`。
+- 验证：Windows 本机 `:app:compileDebugKotlin` 与 `:app:testDebugUnitTest --tests DesktopKeyPolicyTest` 通过。本机无原生构建环境与平台签名凭据，当前连接设备 192.168.137.229 装的是 `com.newlink.etoe.eboard`，未生成/安装 APK，**真机交互未验证**。
+- 待验收：实体键盘左右 Shift 从中/英双向切换、`nihao`+Shift 上屏字母、Shift+A 不切换、长按 Shift 与 Ctrl+Shift 不切换；全局键盘 Shift 轻按切换且空格/中英键标签同步、按住 Shift 用触控板不切换、远端 Shift DOWN/UP 仍成对。
+- 风险：实体 Shift+物理鼠标选择若在 500ms 内松开，IME 无法感知鼠标，可能误切换；全局键盘按住 Shift 点字符但先松 Shift 再松字符时，切换会先于字符动作发生。
+
 ## 2026-10-10 - 1.4.10/272 商城正式发布
 
 - 用户在本对话确认“人工验收项目已完成，请继续走正式上架流程”；人工项目按用户确认登记，不冒充代理独立实测。上一商城正式版1.4.5/222，本次1.4.10/272，2026-10-10 09:14:12（Asia/Shanghai）正式上架，app_id=20、history_id=263；已撤销仅升级测试的1.4.11/282草稿。
@@ -2632,3 +2643,14 @@ KEMI 设置页品牌化与动态名称中文化。
 - 正式 `com.newlink.kemi.kboard` Release 1.4.6+232 构建成功（Kotlin、R8、Lint Vital）；APK `fcitx5-android/build/kboard.apk` SHA-256 为 `d3104bf48313f7830c9e00d61a43bed7190af4fc012552372aeab5c0cffd3fe5`，v1/v2 签名有效，平台证书指纹 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。75 `adb install -r` 成功，system UID 1000、默认 IME 和用户数据均保留。
 - 真机专项：在网络仍缺少 `VALIDATED` 时，极简、普通、全局模式语音键截图均呈可用状态；每个模式分别做一次 70ms 短按，日志均出现对应 `iFlytek ASR gesture=Down/Up` 且保持 `Idle`，没有被网络预检拦截，也没有启动录音。截图为 `/private/tmp/kboard75-voice-fix-before-input.png`、`/private/tmp/kboard75-voice-fix-normal.png`、`/private/tmp/kboard75-voice-fix-global-late.png`。该窗口未见新 FATAL/ANR。
 - 边界：本次未作实际录音、ASR 服务连接或文字回填，不得把按钮恢复误报为端到端语音识别通过；完整发布稳定性门禁仍为 BLOCK。本次只完成 75 的针对性修复验证，未推送其他设备。
+
+## 2026-10-17 Redmine 82110 处理（KEMI 语音输入法语音提示英文未本地化）
+- 工单：82110 【软件】【系统应用】【KEMI语音输入法】中文语言下KBoard键盘语音输入提示语显示英文未本地化（项目 7M600-AI办公伴侣，错误，指派 W吴雪明，新建）。
+- 现状核对：修复已存在于 main（提交 f0370ed7「fix: complete Chinese voice status translations for release」之前的补全中文语音状态翻译）：
+  - `fcitx5-android/app/src/main/res/values-zh-rCN/strings.xml` 已含完整 `voice_input_*` 中文串（voice_input_no_speech/released_before_ready/connecting/listening/calibrating/error 系列等）。
+  - `KawaiiBarComponent.kt` 的 `localizeVoiceError()` 已把 ASR 回传的英文错误（如 no speech detected）映射为中文资源；`onGesture Up` 时 State.Starting 也走 `voice_input_released_before_ready` 中文串。
+  - 与工单两个复现场景对应：场景1（不说话/松开→no speech detected）→ voice_input_no_speech；场景2（快速松开→released_before_ready）→ voice_input_released_before_ready。
+- 产物核对：`/home/newlink/kboard-kemi/release-output/com.newlink.kemi.kboard-1.4.10-arm64-v8a-debug.apk` 解出 `resources.arsc`，UTF-8 字节检索引中“未识别到语音/正在听，请继续说/语音连接尚未就绪/麦克风不可用”，确认 1.4.10 包已内嵌中文串。
+- 结论：82110 代码侧修复已完成并进入 main 与 1.4.10 构建产物，无需新代码改动。待办：真机在 zh-CN 下按工单两个场景实测语音提示显示中文（按 kemi-android-validation 流程）。
+- Redmine 回写：已向工单 82110 追加“处理反馈”备注（2026-10-17），说明 main 提交 f0370ed7、场景 1/2 映射、1.4.10 产物已内嵌中文串，以及真机验证待办。工单状态/完成率未改。
+- 备注修正：过程中曾误写入一条「test note」验证备注，已追加一句更正说明请忽略，不影响正式结论。
