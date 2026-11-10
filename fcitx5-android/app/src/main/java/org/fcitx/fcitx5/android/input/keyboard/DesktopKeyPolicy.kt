@@ -13,6 +13,14 @@ internal object DesktopKeyPolicy {
     /** 单独轻按 Shift 切换中英的最长按住时长；超过视为按住 Shift 做选择等操作。 */
     const val SHIFT_TAP_MAX_MS = 500L
 
+    /** 手指滑出键面或被系统取消的按下，都不是切换中英的轻按。 */
+    fun isCleanShiftTap(
+        cancelled: Boolean,
+        movedOutside: Boolean,
+        heldMs: Long,
+        maxMs: Long = SHIFT_TAP_MAX_MS
+    ): Boolean = !cancelled && !movedOutside && heldMs in 0..maxMs
+
     private val rawControlKeySyms = buildSet {
         add(FcitxKeyMapping.FcitxKey_Escape)
         addAll(FcitxKeyMapping.FcitxKey_F1..FcitxKeyMapping.FcitxKey_F12)

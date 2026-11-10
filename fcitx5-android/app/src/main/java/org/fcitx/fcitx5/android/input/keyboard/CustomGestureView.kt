@@ -36,7 +36,8 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
         val countY: Int,
         val totalX: Int,
         val totalY: Int,
-        val cancelled: Boolean = false
+        val cancelled: Boolean = false,
+        val movedOutside: Boolean = false
     )
 
     fun interface OnGestureListener {
@@ -308,7 +309,8 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
             countY,
             swipeTotalX,
             swipeTotalY,
-            cancelled
+            cancelled,
+            touchMovedOutside
         )
         val consumed = onGestureListener?.onGesture(this, event) ?: return
         if (consumed && !gestureConsumed) {

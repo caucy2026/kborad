@@ -128,8 +128,19 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         // alive. Build the first drawable frame from the user's retained desktop-mode choice;
         // attaching TextKeyboard here and switching asynchronously in onStartInput caused a
         // visible one-frame flash of the ordinary keyboard in remote-desktop clients.
-        attachLayout(presentationMode.layoutName)
+        // 同屏时不得恢复摸鱼键盘，避免首帧闪一下水族布局。
+        attachLayout(resolveAttachPresentationMode().layoutName)
         return keyboardView
+    }
+
+    /** 偏好若为 Desktop 但当前不允许跨屏，降级为普通键盘并写回偏好。 */
+    private fun resolveAttachPresentationMode(): KeyboardPresentationMode {
+        if (presentationMode != KeyboardPresentationMode.Desktop) return presentationMode
+        if (service.canEnterDesktopKeyboard()) return presentationMode
+        AppPrefs.getInstance().keyboard.floatingKeyboard.setValue(false)
+        floatingMode = false
+        rememberPresentationMode(KeyboardPresentationMode.Normal)
+        return KeyboardPresentationMode.Normal
     }
 
     private fun detachCurrentLayout() {
@@ -194,7 +205,8 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     }
 
     override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
-        val targetLayout = when (presentationMode) {
+        val mode = resolveAttachPresentationMode()
+        val targetLayout = when (mode) {
             KeyboardPresentationMode.Desktop -> DesktopKeyboard.Name
             KeyboardPresentationMode.Minimal -> MinimalKeyboard.Name
             else -> {
@@ -216,9 +228,12 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         }
     }
 
-    fun showDesktopKeyboard() {
+    /** @return false 表示当前同屏等条件不允许进入全局摸鱼键盘 */
+    fun showDesktopKeyboard(): Boolean {
+        if (!service.canEnterDesktopKeyboard()) return false
         rememberPresentationMode(KeyboardPresentationMode.Desktop)
         switchLayout(DesktopKeyboard.Name, remember = false)
+        return true
     }
 
     fun showMinimalKeyboard() {
@@ -232,9 +247,13 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     }
 
     private fun restorePreviousKeyboard() {
-        val restored = KeyboardPresentationMode.decodePrevious(
+        var restored = KeyboardPresentationMode.decodePrevious(
             AppPrefs.getInstance().internal.previousKeyboardPresentationMode.getValue()
         )
+        // 恢复到 Desktop 前再过一遍跨屏门禁，避免同屏误开摸鱼键盘。
+        if (restored == KeyboardPresentationMode.Desktop && !service.canEnterDesktopKeyboard()) {
+            restored = KeyboardPresentationMode.Normal
+        }
         floatingMode = restored == KeyboardPresentationMode.Floating
         when (restored) {
             KeyboardPresentationMode.Floating ->
@@ -279,16 +298,35 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         switchLayout(restored.layoutName, remember = false)
     }
 
-    fun toggleDesktopKeyboard() {
+    /**
+     * 切换全局摸鱼键盘。
+     * @return false 表示尝试进入时被跨屏门禁拒绝；退出始终成功并返回 true。
+     */
+    fun toggleDesktopKeyboard(): Boolean {
         val target = if (currentKeyboardName == DesktopKeyboard.Name) {
             AppPrefs.getInstance().keyboard.floatingKeyboard.setValue(false)
             rememberPresentationMode(KeyboardPresentationMode.Normal)
             TextKeyboard.Name
         } else {
+            if (!service.canEnterDesktopKeyboard()) return false
             rememberPresentationMode(KeyboardPresentationMode.Desktop)
             DesktopKeyboard.Name
         }
         switchLayout(target, remember = false)
+        return true
+    }
+
+    /** 变同屏或不满足条件时强制退出摸鱼键盘，回到普通布局。 */
+    fun forceExitDesktopIfNeeded() {
+        val inDesktop =
+            currentKeyboardName == DesktopKeyboard.Name ||
+                presentationMode == KeyboardPresentationMode.Desktop
+        if (!inDesktop) return
+        if (service.canEnterDesktopKeyboard()) return
+        AppPrefs.getInstance().keyboard.floatingKeyboard.setValue(false)
+        floatingMode = false
+        rememberPresentationMode(KeyboardPresentationMode.Normal)
+        switchLayout(TextKeyboard.Name, remember = false)
     }
 
     fun selectFloatingKeyboard(enabled: Boolean) {

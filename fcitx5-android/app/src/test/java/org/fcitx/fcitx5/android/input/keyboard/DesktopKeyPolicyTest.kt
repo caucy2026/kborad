@@ -70,6 +70,16 @@ class DesktopKeyPolicyTest {
     }
 
     @Test
+    fun shiftTapIgnoresSlideOffAndCancellation() {
+        assertTrue(DesktopKeyPolicy.isCleanShiftTap(false, false, 100))
+        assertTrue(DesktopKeyPolicy.isCleanShiftTap(false, false, 500))
+        assertFalse(DesktopKeyPolicy.isCleanShiftTap(false, true, 100))
+        assertFalse(DesktopKeyPolicy.isCleanShiftTap(true, false, 100))
+        assertFalse(DesktopKeyPolicy.isCleanShiftTap(false, false, 501))
+        assertFalse(DesktopKeyPolicy.isCleanShiftTap(false, false, -1))
+    }
+
+    @Test
     fun capsAndShiftUsePhysicalKeyboardXorForLetters() {
         assertEquals("a", DesktopKeyPolicy.applyLetterCase("a", false, false))
         assertEquals("A", DesktopKeyPolicy.applyLetterCase("a", false, true))

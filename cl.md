@@ -1,5 +1,36 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-11-10 - 修复未解锁崩溃与全键盘 Shift 滑出误切换
+
+- 行为：用户选择的输入语言改存设备加密存储，开机未解锁时可以读取，读不到旧记录时仍默认拼音。全键盘手指滑出 Shift 键面后再松开，不再切换中英；仍留在键内、500 毫秒内松开才切换。
+- 根因：输入法服务允许开机直接运行，原先 `getSharedPreferences` 走凭据加密区，未解锁时抛异常并带崩进程。全键盘只把系统取消的触摸排除在轻按之外，滑出键面后的松开仍算一次轻按。
+- `InputLanguageStore` 固定使用 `createDeviceProtectedStorageContext`，失败时返回空结果；已有凭据区记录在可读时迁入。`CustomGestureView.Event` 带上 `movedOutside`，`DesktopKeyPolicy.isCleanShiftTap` 同时拒绝取消和滑出。
+- 验证：2026-11-10 本机 `:app:testDebugUnitTest --tests org.fcitx.fcitx5.android.input.keyboard.DesktopKeyPolicyTest --tests org.fcitx.fcitx5.android.input.InputLanguagePolicyTest` 与 `:app:compileDebugKotlin` 通过，耗时 3 分 47 秒。同日在 `172.21.16.196` 重打平台签名 Release，耗时 62 秒。本地包 `bin/KBoard-1.4.11-282-directboot-shift-release.apk`，45,709,572 字节，SHA-256 `8a7f233f241818cc7676cb4cf95d516c57d971a00afd2de53f6f2317a5753821`，与远端一致。v1/v2 为 true，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。`aapt2`：`com.newlink.kemi.kboard`，1.4.11/282，`arm64-v8a`，无 debuggable。用户确认真机行为正常，包括默认拼音，以及切换后的语言会保持。早先不含这两处修复的 `bin/KBoard-1.4.11-282-default-zh-release.apk` 仍保留。
+
+## 2026-11-10 - 版本号升至 1.4.11/282
+
+- 行为：arm64 正式包版本由 1.4.10/272 升为 1.4.11/282。计算仍是 `baseVersionCode * 10 + abiId`，arm64 的 abiId 为 2。
+- `Versions.kt`：`baseVersionCode` 27 → 28，`baseVersionName` 1.4.10 → 1.4.11。`gradle.properties` 的 `buildVersionName` 同步为 1.4.11，避免构建属性把显示版本压回旧值。
+- 已发布的 1.4.10/272 包保留，不覆盖。2026-11-10 在 `172.21.16.196` 重打平台签名 Release，耗时 128 秒。本地包 `bin/KBoard-1.4.11-282-default-zh-release.apk`，45,709,129 字节，SHA-256 `35814ecb5bbdb644e964ed1ef69a76d2bbf8c39d512020edb110572ebd5d21c7`，与远端一致。v1/v2 为 true，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。`aapt2`：`com.newlink.kemi.kboard`，1.4.11/282，`arm64-v8a`，无 debuggable。未安装。
+
+## 2026-11-10 - 默认中文，并记住用户切换的输入语言
+
+- 行为：没有本地记录时进入拼音。用户用中英键、Shift 轻按、枚举或输入法选择器切换后，把当前输入法唯一名写入 `kboard_input_language`。下次进程启动只按这份记录恢复一次；已经是目标语言、或本进程已经恢复过，就不再改引擎状态。密码框和禁用输入法的编辑框不恢复、也不把临时英文写回去。
+- 根因：Fcitx 未激活时固定用分组第一项 `keyboard-us`，`ActiveByDefault` 为 false，激活状态只存在输入上下文里。进程重建后总会回到英文，用户选过的语言没有本地副本。
+- `InputLanguagePolicy` / `InputLanguageStore`：默认 `pinyin`；仅在选择与已存值不同时 `commit`。恢复动作自己触发的切换不写盘。`FcitxInputMethodService` 在普通输入框和物理 Overlay 聚焦后各尝试一次。普通键盘与全局键盘空格标签在引擎回报前先按这份记录显示。
+- 验证：`:app:testDebugUnitTest --tests org.fcitx.fcitx5.android.input.InputLanguagePolicyTest` 与 `:app:compileDebugKotlin` 已通过。2026-11-10 在 `172.21.16.196` 打平台签名 Release，耗时 135 秒。本地包 `bin/KBoard-1.4.10-272-default-zh-release.apk`，45,709,157 字节，SHA-256 `4532dacac24f8542d500466973e51e3887bcc6686386ee9661364b0151842cae`，与远端一致。`apksigner`：v1/v2 为 true，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。`aapt2`：`com.newlink.kemi.kboard`，1.4.10/272，`arm64-v8a`，无 debuggable。未安装。
+- 风险：恢复发生在首次可用输入框，冷启动第一帧仍可能短暂是英文。切屏重建服务时若进程还在，不会再次覆盖原生引擎里的当前语言；若进程被杀掉，则只认上次成功写入的值。
+
+## 2026-11-09 - 仅跨屏可开全局摸鱼键盘
+
+- 行为：同屏只能用普通/悬浮/极简；同屏点「全键盘」入口仍可见可点，短提示「请先将键盘切到另一块屏幕」，不自动切屏。已开摸鱼后若变同屏（切回同屏、副屏掉线、偏好恢复时同屏等）立即退回普通键盘。物理 Overlay 仍要求 source≠target，并继续允许 Desktop。
+- 根因：原先工具栏/`toggleDesktopKeyboard`/偏好首帧恢复均可在同屏进入 Desktop，与远程 Overlay 分屏契约不一致，也与「输入画面与键盘分屏才摸鱼」产品定义冲突。
+- `DesktopAvailabilityPolicy`：`physicalOverlayActive` 放行，否则需在线屏≥2 且 `editorDisplayId != imeDisplayId`；`editorDisplayId` 未知则保守拒绝。不把远程包名白名单或 H730 DeadZone 当成跨屏。
+- `FcitxInputMethodService`：`canEnterDesktopKeyboard` / `reevaluateDesktopKeyboardAvailability`；`onWindowShown`、`onStartInputView`、DisplayListener 复查并强制退出。
+- `KeyboardWindow`：进入 Desktop 门禁、偏好首帧/`onStartInput` 降级、`forceExitDesktopIfNeeded`；`KawaiiBarComponent` 拒绝时 Toast。字符串：`desktop_keyboard_requires_other_screen`（values / zh-rCN / zh-rTW）。
+- 验证：`:app:testDebugUnitTest --tests DesktopAvailabilityPolicyTest` 与 `compileDebugKotlin` 通过（5 项策略单测）。2026-11-09 真机 `192.168.137.229:5555` 覆盖安装平台签名 Release `bin/KBoard-1.4.10-272-cross-desktop-shift-release.apk`（`com.newlink.kemi.kboard`）后：Notes 同屏点顶栏从右数第 4 个（含麦克风；约 x=1199,y=580）弹出 Toast「请先将键盘切到另一块屏幕」，未进入 Desktop；`KBoardNavHideBridge` 仍报 `editorDisplay=0 imeDisplay=0 cross=false`。右下跨屏键已发出 `Requested IME display switch: current=0 target=2 mode=local`，但新 token 仍落在 D0（`mCurTokenDisplayId=0`），故跨屏开摸鱼与变同屏退出未在本轮完成。
+- 风险：`editorDisplayId` 依赖 RunningTasks 反射，探测失败时会误拒跨屏进入；需用户先确保双屏且任务探测可用。不改水族、语音与 Overlay IPC。跨屏落地仍依赖厂商 `com.newlink.action.SET_DISPLAY_IME_POLICY` 与 DisplaySwitch 中继。
+
 ## 2026-11-05 - 单独轻按 Shift 切换中英（实体键盘与全局桌面键盘）
 
 - 行为：实体键盘左右 Shift、全局桌面键盘两枚 Shift，单独按下并在 500ms 内松开、期间无其他按键/触控板动作、按下时未持有 Ctrl/Alt/Meta，即在中文与英文之间切换（`toggleIme()`），不受语言键行为设置影响。中文有未上屏拼音时，拼音引擎默认 `SwitchInputMethodBehavior=CommitPreedit` 会先把已输入字母原样上屏再切换。普通虚拟键盘 Shift 仍是大小写键，未改。
@@ -7,8 +38,8 @@
 - `FcitxInputMethodService.kt`：实体 Shift 不再送入 Fcitx（避免与内置 AltTriggerKeys 重复切换），原事件交回目标应用；Shift+字母的状态由字母事件自身 metaState 携带。服务内记录轻按候选，其他键按下即取消。
 - `DesktopKeyboard.kt`：首枚 Shift 按下且无其他修饰键时记录候选；任何非修饰键动作（字符、控制键、触控板鼠标/滚轮/系统键）取消；最后一枚 Shift 松开先照常发送 Shift UP，再发 `ShiftToggleAction`。`onAttach/onDetach` 清空候选。
 - `KeyAction.kt` 新增 `ShiftToggleAction`；`CommonKeyActionListener.kt` 先 `selectOutputRoute(overlayRequestId)` 再 `toggleIme()`，保证上屏字母进入远程/Overlay 编辑器。`DesktopKeyPolicy.kt` 新增共用阈值 `SHIFT_TAP_MAX_MS=500`。
-- 验证：Windows 本机 `:app:compileDebugKotlin` 与 `:app:testDebugUnitTest --tests DesktopKeyPolicyTest` 通过。本机无原生构建环境与平台签名凭据，当前连接设备 192.168.137.229 装的是 `com.newlink.etoe.eboard`，未生成/安装 APK，**真机交互未验证**。
-- 待验收：实体键盘左右 Shift 从中/英双向切换、`nihao`+Shift 上屏字母、Shift+A 不切换、长按 Shift 与 Ctrl+Shift 不切换；全局键盘 Shift 轻按切换且空格/中英键标签同步、按住 Shift 用触控板不切换、远端 Shift DOWN/UP 仍成对。
+- 验证：Windows 本机 `:app:compileDebugKotlin` 与 `:app:testDebugUnitTest --tests DesktopKeyPolicyTest` 通过。2026-11-09 真机 `192.168.137.229:5555` 已装上述 cross-desktop-shift Release：Notes 同屏下 `KEYCODE_SHIFT_LEFT` 轻按后空格键标签由 `English` 变为 `拼音`，实体 Shift 中英切换通过。全局桌面键盘 Shift 因同屏无法进入 Desktop，本轮未测；Shift+A / 长按 / Ctrl+Shift 取消条件仍待验收。
+- 待验收：实体键盘右 Shift、`nihao`+Shift 上屏字母、Shift+A 不切换、长按 Shift 与 Ctrl+Shift 不切换；全局键盘 Shift 轻按切换且空格/中英键标签同步、按住 Shift 用触控板不切换、远端 Shift DOWN/UP 仍成对。
 - 风险：实体 Shift+物理鼠标选择若在 500ms 内松开，IME 无法感知鼠标，可能误切换；全局键盘按住 Shift 点字符但先松 Shift 再松字符时，切换会先于字符动作发生。
 
 ## 2026-10-10 - 1.4.10/272 商城正式发布

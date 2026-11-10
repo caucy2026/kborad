@@ -23,6 +23,7 @@ import org.fcitx.fcitx5.android.core.KeyStates
 import org.fcitx.fcitx5.android.core.KeySym
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.InputFeedbacks
+import org.fcitx.fcitx5.android.input.InputLanguageStore
 import org.fcitx.fcitx5.android.input.keyboard.aquarium.DesktopAquariumView
 import org.fcitx.fcitx5.android.input.keyboard.CustomGestureView.GestureType
 import org.fcitx.fcitx5.android.input.keyboard.CustomGestureView.OnGestureListener
@@ -384,7 +385,7 @@ class DesktopKeyboard private constructor(
     private var shiftTapDownTime = -1L
     private val textKeys by lazy { allViews.filterIsInstance<TextKeyView>() }
     private var capsLockEnabled = false
-    private var currentImeName: String = ""
+    private var currentImeName: String = InputLanguageStore.preferred(context)
     private var currentImeLanguageCode: String = ""
 
     fun sendEnterFromOperationBar() {
@@ -633,10 +634,17 @@ class DesktopKeyboard private constructor(
                         // is normalized to Up by CustomGestureView and follows this same path.
                         if (removed != null && state !in heldModifierKeys.values) {
                             onAction(KeyAction.ModifierStateAction(state, down = false))
-                            val tap = state == KeyState.Shift && !event.cancelled &&
-                                shiftTapDownTime >= 0 &&
-                                SystemClock.uptimeMillis() - shiftTapDownTime <=
-                                DesktopKeyPolicy.SHIFT_TAP_MAX_MS
+                            val heldMs = if (shiftTapDownTime >= 0) {
+                                SystemClock.uptimeMillis() - shiftTapDownTime
+                            } else {
+                                -1L
+                            }
+                            val tap = state == KeyState.Shift &&
+                                DesktopKeyPolicy.isCleanShiftTap(
+                                    cancelled = event.cancelled,
+                                    movedOutside = event.movedOutside,
+                                    heldMs = heldMs
+                                )
                             shiftTapDownTime = -1L
                             if (tap) onAction(KeyAction.ShiftToggleAction)
                         }
