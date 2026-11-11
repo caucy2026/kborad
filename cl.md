@@ -1,5 +1,20 @@
 # KBoard 输入法项目变更日志（cl）
 
+## 2026-11-11 - 全键盘恢复为直接打开，不再提示切屏
+
+chore(release): bump version to 1.4.12 (293)
+
+baseVersionCode 28 -> 29；arm64 产物 versionCode = 293，versionName = 1.4.12
+
+最近两个提交：
+
+- `8d875e5a` Enable light Shift tap to toggle Chinese/English on hardware and desktop keyboards. 实体键盘和全键盘上，单独轻按 Shift 在中文和英文之间切换。
+- `958c0221` Remember the chosen input language and default to pinyin. 记住用户选择的输入语言，没有记录时默认拼音，并升到 1.4.11/282。该提交同时加上同屏点全键盘的提示和门禁。
+
+- 行为：点全键盘直接进入或退出，同屏不再提示「请先将键盘切到另一块屏幕」，也不再因为同屏拒绝进入或强制退出。屏幕切换键仍按原来的方式切屏。arm64 正式包版本仍是 1.4.12/293。
+- 原因：这条提示和同屏门禁是后来一起加上的。去掉之后回到没有提示时的打开方式。
+- 验证：2026-11-11 在 `172.21.16.196` 重打平台签名 Release，耗时 48 秒。本地包 `bin/KBoard-1.4.12-293-no-desktop-prompt-release.apk`，45,708,568 字节，SHA-256 `cfd05aa5383852482f0472e0a4e84ed4a7fdf3f1290a3b5f92cd848dac4efafd`，与远端一致。v1/v2 为 true，证书 SHA-256 `c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8`。`aapt2`：`com.newlink.kemi.kboard`，1.4.12/293，`arm64-v8a`，无 debuggable。未安装。
+
 ## 2026-11-10 - 修复未解锁崩溃与全键盘 Shift 滑出误切换
 
 - 行为：用户选择的输入语言改存设备加密存储，开机未解锁时可以读取，读不到旧记录时仍默认拼音。全键盘手指滑出 Shift 键面后再松开，不再切换中英；仍留在键内、500 毫秒内松开才切换。

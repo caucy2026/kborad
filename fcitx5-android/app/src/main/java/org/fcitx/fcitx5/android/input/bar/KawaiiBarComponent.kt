@@ -804,16 +804,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 desktopKeyboardButton.setOnClickListener {
                     Timber.d("Desktop keyboard button clicked")
                     windowManager.attachWindow(KeyboardWindow)
-                    val keyboard =
-                        windowManager.getEssentialWindow(KeyboardWindow) as KeyboardWindow
-                    // 同屏保留入口可点；拒绝进入时短提示，不自动切屏。
-                    if (!keyboard.toggleDesktopKeyboard()) {
-                        Toast.makeText(
-                            service,
-                            R.string.desktop_keyboard_requires_other_screen,
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+                    (windowManager.getEssentialWindow(KeyboardWindow) as KeyboardWindow)
+                        .toggleDesktopKeyboard()
                 }
                 minimalKeyboardButton.setOnClickListener {
                     Timber.d("Minimal keyboard button clicked")

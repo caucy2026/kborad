@@ -125,7 +125,6 @@
     <string name="punctuation_pos_none">無</string>
     <string name="expand_toolbar_by_default">預設展開工具列</string>
     <string name="desktop_keyboard">全鍵盤</string>
-    <string name="desktop_keyboard_requires_other_screen">請先將鍵盤切到另一塊螢幕</string>
     <string name="exit_desktop_keyboard">退出全鍵盤</string>
     <string name="minimal_keyboard">極簡鍵盤</string>
     <string name="minimal_keyboard_return">返回上一個鍵盤</string>

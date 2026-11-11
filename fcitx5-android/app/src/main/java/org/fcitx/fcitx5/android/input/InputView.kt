@@ -742,11 +742,6 @@ class InputView(
         )
     }
 
-    /** 跨屏条件失效时强制退出摸鱼键盘。 */
-    fun forceExitDesktopIfNeeded() {
-        keyboardWindow.forceExitDesktopIfNeeded()
-    }
-
     fun physicalOverlayLayoutName(): String = keyboardWindow.overlayLayoutName()
 
     internal fun refreshPhysicalOverlayInputMethod(entry: InputMethodEntry) {

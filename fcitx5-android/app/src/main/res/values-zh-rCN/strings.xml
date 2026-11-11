@@ -139,7 +139,6 @@
     <string name="floating_keyboard">悬浮键盘</string>
     <string name="dock_keyboard">停靠键盘</string>
     <string name="desktop_keyboard">全键盘</string>
-    <string name="desktop_keyboard_requires_other_screen">请先将键盘切到另一块屏幕</string>
     <string name="exit_desktop_keyboard">退出全键盘</string>
     <string name="desktop_enter">回车</string>
     <string name="return_previous_input_method">返回上一输入法</string>

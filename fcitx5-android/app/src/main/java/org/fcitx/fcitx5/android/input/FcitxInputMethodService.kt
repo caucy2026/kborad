@@ -83,7 +83,6 @@ import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.cursor.CursorRange
 import org.fcitx.fcitx5.android.input.cursor.CursorTracker
-import org.fcitx.fcitx5.android.input.keyboard.DesktopAvailabilityPolicy
 import org.fcitx.fcitx5.android.input.keyboard.DesktopKeyPolicy
 import org.fcitx.fcitx5.android.input.keyboard.RemoteMouseInputProtocol
 import org.fcitx.fcitx5.android.input.overlay.KBoardOverlaySession
@@ -100,7 +99,6 @@ import splitties.bitflags.hasFlag
 import splitties.dimensions.dp
 import splitties.resources.styledColor
 import timber.log.Timber
-import android.view.Display
 import java.lang.ref.WeakReference
 import kotlin.math.max
 
@@ -172,20 +170,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private var candidatesView: CandidatesView? = null
     private var inputViewGeneration = 0
     private var ownedResourcesReleased = false
-    private var desktopDisplayListenerRegistered = false
-    private val desktopDisplayListener = object : DisplayManager.DisplayListener {
-        override fun onDisplayAdded(displayId: Int) {
-            reevaluateDesktopKeyboardAvailability()
-        }
-
-        override fun onDisplayChanged(displayId: Int) {
-            reevaluateDesktopKeyboardAvailability()
-        }
-
-        override fun onDisplayRemoved(displayId: Int) {
-            reevaluateDesktopKeyboardAvailability()
-        }
-    }
 
     private val navbarMgr = NavigationBarManager()
     private val inputDeviceMgr = InputDeviceManager { isVirtualKeyboard ->
@@ -359,57 +343,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         decorViewRef = window.window!!.decorView
         contentViewRef = decorView.findViewById(android.R.id.content)
         lastKnownConfig = resources.configuration
-        registerDesktopDisplayListener()
         Log.i(IME_LIFECYCLE_TAG, "created service instance=${System.identityHashCode(this)}")
         KBoardOverlayService.onImeGenerationAvailable(this)
-    }
-
-    /**
-     * 全局摸鱼键盘仅跨屏可开：物理 Overlay 已分屏放行；本地比较编辑器屏与 IME 屏。
-     * editorDisplayId 探测失败时保守拒绝，避免同屏误开。
-     */
-    fun canEnterDesktopKeyboard(): Boolean {
-        val displays = getSystemService(DisplayManager::class.java)?.displays.orEmpty()
-        val onlineCount = displays.count {
-            it.isValid && it.state != Display.STATE_OFF
-        }
-        return DesktopAvailabilityPolicy.allowDesktop(
-            physicalOverlayActive = KBoardOverlaySession.isPhysicalOverlayActive,
-            onlineDisplayCount = onlineCount,
-            imeDisplayId = currentImeDisplayId(),
-            editorDisplayId = DesktopNavigationHideBridge.editorDisplayId(
-                applicationContext,
-                currentInputEditorInfo?.packageName
-            )
-        )
-    }
-
-    fun reevaluateDesktopKeyboardAvailability() {
-        if (ownedResourcesReleased) return
-        // DisplayListener 可能在非主线程回调，统一切回主线程改布局。
-        window.window?.decorView?.post {
-            if (!ownedResourcesReleased) {
-                inputView?.forceExitDesktopIfNeeded()
-            }
-        } ?: run {
-            if (Looper.myLooper() == Looper.getMainLooper()) {
-                inputView?.forceExitDesktopIfNeeded()
-            }
-        }
-    }
-
-    private fun registerDesktopDisplayListener() {
-        if (desktopDisplayListenerRegistered) return
-        val manager = getSystemService(DisplayManager::class.java) ?: return
-        manager.registerDisplayListener(desktopDisplayListener, null)
-        desktopDisplayListenerRegistered = true
-    }
-
-    private fun unregisterDesktopDisplayListener() {
-        if (!desktopDisplayListenerRegistered) return
-        getSystemService(DisplayManager::class.java)
-            ?.unregisterDisplayListener(desktopDisplayListener)
-        desktopDisplayListenerRegistered = false
     }
 
     /**
@@ -436,7 +371,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             IME_LIFECYCLE_TAG,
             "release service instance=${System.identityHashCode(this)} reason=$reason"
         )
-        unregisterDesktopDisplayListener()
         cancelPendingTouchHideRequest()
         releaseDesktopInputStates()
         clearPendingDesktopMouseMove()
@@ -1244,8 +1178,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 )
             }
         }
-        // 切屏或重建后复查：变同屏则强制退出摸鱼键盘。
-        reevaluateDesktopKeyboardAvailability()
         inputView?.onImeWindowShown()
         inputView?.requestCurrentDisplayInsets("window_shown")
         try {
@@ -1737,7 +1669,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         Timber.d("onStartInputView: restarting=$restarting")
         inputView?.requestCurrentDisplayInsets("start_input_view")
-        reevaluateDesktopKeyboardAvailability()
         postFcitxJob {
             focus(true)
         }
